@@ -376,11 +376,11 @@ const Index = () => {
 
           {/* Rotating Tagline (SEO Hook) */}
           <div className="flex justify-center mt-8 mb-12">
-            <div className="relative h-8 flex items-center max-w-3xl px-4" aria-live="polite">
+            <div className="relative h-8 flex items-center w-full px-4" aria-live="polite">
               {taglines.map((tagline, index) => (
                 <p
                   key={index}
-                  className={`absolute inset-0 text-lg md:text-xl text-muted-foreground text-center transition-opacity duration-500 flex items-center justify-center ${
+                  className={`absolute inset-0 text-lg md:text-xl text-muted-foreground text-center transition-opacity duration-500 flex items-center justify-center whitespace-nowrap ${
                     index === taglineIndex ? 'opacity-100' : 'opacity-0'
                   }`}
                 >

@@ -121,12 +121,28 @@ const Index = () => {
       description: "Generate personalized certificates for course completions, awards, or event attendance.",
     },
     {
+      title: "Mailing Labels",
+      description: "Create address labels for bulk mailings, packages, or organized filing systems with ease.",
+    },
+    {
       title: "Product Labels",
       description: "Create variable data labels for inventory, shipping, or product packaging in bulk.",
     },
     {
       title: "Name Badges",
       description: "Design and print professional name badges for conferences, workshops, or company events.",
+    },
+    {
+      title: "Postcards",
+      description: "Design personalized postcards for marketing campaigns, event announcements, or customer outreach.",
+    },
+    {
+      title: "Invitations",
+      description: "Create custom invitations for weddings, parties, corporate events with personalized guest details.",
+    },
+    {
+      title: "Tickets",
+      description: "Generate numbered tickets for events, raffles, or admissions with unique codes and details.",
     },
     {
       title: "Greeting Cards",

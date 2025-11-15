@@ -10,8 +10,27 @@ const Index = () => {
   const [rotatingWordIndex, setRotatingWordIndex] = useState(0);
   const [activeInputIndex, setActiveInputIndex] = useState(0);
   const [activeOutputIndex, setActiveOutputIndex] = useState(0);
+  const [taglineIndex, setTaglineIndex] = useState(0);
 
   const rotatingWords = ['Certificates', 'Labels', 'Cards', 'Name Badges', 'Stickers', 'Invitations', 'Tickets', 'Vouchers'];
+  
+  const inputMockups = ['Spreadsheet', 'Text Document', 'Word Document', 'PDF'];
+  const outputMockups = ['Certificate', 'Product Label', 'Greeting Card', 'Name Badge'];
+  
+  const taglines = [
+    "Never mail-merge in Word again.",
+    "Turn any spreadsheet into perfect documents — instantly.",
+    "Variable data, without the headaches.",
+    "From messy Excel to finished PDFs in minutes.",
+    "Finally… mail merge that actually works.",
+    "One upload. One template. Thousands of documents.",
+    "Your data → beautiful documents. Zero stress.",
+    "Labels, certificates, badges… all done automatically.",
+    "No more formatting. No more mistakes.",
+    "The easiest way to create anything from a spreadsheet.",
+    "Give us your data — we'll do the rest.",
+    "The future of mail merge starts here."
+  ];
 
   useEffect(() => {
     const wordInterval = setInterval(() => {
@@ -19,17 +38,22 @@ const Index = () => {
     }, 1500);
 
     const inputInterval = setInterval(() => {
-      setActiveInputIndex((prev) => (prev + 1) % 4);
+      setActiveInputIndex((prev) => (prev + 1) % inputMockups.length);
     }, 2000);
 
     const outputInterval = setInterval(() => {
-      setActiveOutputIndex((prev) => (prev + 1) % 4);
+      setActiveOutputIndex((prev) => (prev + 1) % outputMockups.length);
     }, 2000);
+
+    const taglineInterval = setInterval(() => {
+      setTaglineIndex((prev) => (prev + 1) % taglines.length);
+    }, 1500);
 
     return () => {
       clearInterval(wordInterval);
       clearInterval(inputInterval);
       clearInterval(outputInterval);
+      clearInterval(taglineInterval);
     };
   }, []);
 
@@ -181,82 +205,88 @@ const Index = () => {
           </div>
 
           {/* Visual Split with Diagonal Slash */}
-          <div className="relative grid md:grid-cols-[1fr,120px,1fr] gap-4 md:gap-0 items-center mb-12">
-            {/* Inputs (Left) */}
+          <div className="relative grid md:grid-cols-[1fr,80px,1fr] gap-4 md:gap-0 items-center mb-12">
+            {/* Inputs (Left) - Circular Peek-In */}
             <div className="relative h-64 md:h-80 flex items-center justify-center">
-              {/* Spreadsheet */}
-              <div className={`absolute transition-all duration-700 ${activeInputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-card rounded-lg shadow-lg p-6 border-2 border-success/30 w-56 md:w-72">
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <div className="h-3 bg-success/40 rounded flex-1"></div>
-                      <div className="h-3 bg-success/40 rounded flex-1"></div>
-                      <div className="h-3 bg-success/40 rounded flex-1"></div>
-                    </div>
-                    {[...Array(6)].map((_, i) => (
-                      <div key={i} className="flex gap-2">
-                        <div className="h-2 bg-muted rounded flex-1"></div>
-                        <div className="h-2 bg-muted rounded flex-1"></div>
-                        <div className="h-2 bg-muted rounded flex-1"></div>
+              <div className="w-56 h-56 md:w-72 md:h-72 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
+                <div className="relative w-full h-full flex items-center justify-center">
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Input</div>
+                  
+                  {/* Spreadsheet */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-success/30 w-40 md:w-48 mt-6">
+                      <div className="space-y-1.5">
+                        <div className="flex gap-1.5">
+                          <div className="h-2 bg-success/40 rounded flex-1"></div>
+                          <div className="h-2 bg-success/40 rounded flex-1"></div>
+                          <div className="h-2 bg-success/40 rounded flex-1"></div>
+                        </div>
+                        {[...Array(5)].map((_, i) => (
+                          <div key={i} className="flex gap-1.5">
+                            <div className="h-1.5 bg-muted rounded flex-1"></div>
+                            <div className="h-1.5 bg-muted rounded flex-1"></div>
+                            <div className="h-1.5 bg-muted rounded flex-1"></div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                      <p className="text-xs text-success font-semibold mt-2">Spreadsheet</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-success font-semibold mt-3">Spreadsheet</p>
-                </div>
-              </div>
-              
-              {/* Text Document */}
-              <div className={`absolute transition-all duration-700 ${activeInputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-card rounded-lg shadow-lg p-6 border-2 border-primary/30 w-56 md:w-72">
-                  <div className="space-y-2">
-                    {[...Array(8)].map((_, i) => (
-                      <div key={i} className={`h-2 bg-muted rounded ${i % 3 === 0 ? 'w-3/4' : 'w-full'}`}></div>
-                    ))}
+                  
+                  {/* Text Document */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-primary/30 w-40 md:w-48 mt-6">
+                      <div className="space-y-1.5">
+                        {[...Array(7)].map((_, i) => (
+                          <div key={i} className={`h-1.5 bg-muted rounded ${i % 3 === 0 ? 'w-3/4' : 'w-full'}`}></div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-primary font-semibold mt-2">Text Document</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-primary font-semibold mt-3">Text Document</p>
-                </div>
-              </div>
 
-              {/* Word Document */}
-              <div className={`absolute transition-all duration-700 ${activeInputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-card rounded-lg shadow-lg p-6 border-2 border-info/30 w-56 md:w-72">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-4 h-4 bg-info rounded"></div>
-                    <div className="h-2 bg-info/60 rounded w-20"></div>
+                  {/* Word Document */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-info/30 w-40 md:w-48 mt-6">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-3 h-3 bg-info rounded"></div>
+                        <div className="h-1.5 bg-info/60 rounded w-16"></div>
+                      </div>
+                      <div className="space-y-1.5">
+                        {[...Array(6)].map((_, i) => (
+                          <div key={i} className="h-1.5 bg-muted rounded"></div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-info font-semibold mt-2">Word Doc</p>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    {[...Array(7)].map((_, i) => (
-                      <div key={i} className="h-2 bg-muted rounded"></div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-info font-semibold mt-3">Word Doc</p>
-                </div>
-              </div>
 
-              {/* PDF */}
-              <div className={`absolute transition-all duration-700 ${activeInputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-card rounded-lg shadow-lg p-6 border-2 border-destructive/30 w-56 md:w-72">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-6 h-6 bg-destructive rounded flex items-center justify-center text-[8px] text-white font-bold">PDF</div>
+                  {/* PDF */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-destructive/30 w-40 md:w-48 mt-6">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-5 h-5 bg-destructive rounded flex items-center justify-center text-[7px] text-white font-bold">PDF</div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-2 bg-muted rounded w-2/3"></div>
+                        {[...Array(5)].map((_, i) => (
+                          <div key={i} className="h-1.5 bg-muted rounded"></div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-destructive font-semibold mt-2">PDF Document</p>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <div className="h-3 bg-muted rounded w-2/3"></div>
-                    {[...Array(6)].map((_, i) => (
-                      <div key={i} className="h-2 bg-muted rounded"></div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-destructive font-semibold mt-3">PDF Document</p>
                 </div>
               </div>
             </div>
 
-            {/* Diagonal Slash */}
+            {/* Diagonal Slash - Thinner and More Angled */}
             <div className="hidden md:block relative h-80">
               <div className="absolute inset-0 flex items-center justify-center">
                 <div 
-                  className="w-24 h-full bg-gradient-to-br from-primary via-accent to-primary bg-[length:200%_200%] animate-gradient-shift"
+                  className="w-20 h-full bg-gradient-to-br from-primary via-accent to-primary bg-[length:200%_200%] animate-gradient-shift"
                   style={{
-                    clipPath: 'polygon(20% 0%, 100% 0%, 80% 100%, 0% 100%)',
+                    clipPath: 'polygon(35% 0%, 100% 0%, 65% 100%, 0% 100%)',
                     boxShadow: '0 10px 40px -10px hsl(var(--primary) / 0.5)'
                   }}
                 ></div>
@@ -270,71 +300,93 @@ const Index = () => {
               </div>
             </div>
 
-            {/* Outputs (Right) */}
+            {/* Outputs (Right) - Circular Peek-In */}
             <div className="relative h-64 md:h-80 flex items-center justify-center">
-              {/* Certificate */}
-              <div className={`absolute transition-all duration-700 ${activeOutputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg shadow-xl p-6 border-4 border-warning/40 w-56 md:w-72">
-                  <div className="text-center space-y-3">
-                    <div className="h-2 bg-warning/60 rounded w-32 mx-auto"></div>
-                    <div className="h-4 bg-warning rounded w-40 mx-auto"></div>
-                    <div className="h-2 bg-muted rounded w-36 mx-auto"></div>
-                    <div className="w-12 h-12 rounded-full bg-warning/30 mx-auto mt-4 flex items-center justify-center">
-                      <div className="w-8 h-8 rounded-full bg-warning"></div>
-                    </div>
-                  </div>
-                  <p className="text-xs text-warning font-semibold mt-3 text-center">Certificate</p>
-                </div>
-              </div>
-
-              {/* Label */}
-              <div className={`absolute transition-all duration-700 ${activeOutputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-card rounded-lg shadow-xl p-6 border-2 border-success/40 w-56 md:w-72">
-                  <div className="space-y-2">
-                    <div className="h-3 bg-success rounded w-24"></div>
-                    <div className="h-6 bg-success/60 rounded w-full"></div>
-                    <div className="flex gap-2 mt-3">
-                      <div className="h-2 bg-muted rounded flex-1"></div>
-                      <div className="h-2 bg-muted rounded flex-1"></div>
-                    </div>
-                    <div className="h-8 bg-muted/50 rounded w-16 mt-2"></div>
-                  </div>
-                  <p className="text-xs text-success font-semibold mt-3">Product Label</p>
-                </div>
-              </div>
-
-              {/* Card */}
-              <div className={`absolute transition-all duration-700 ${activeOutputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-gradient-to-br from-accent/10 to-primary/10 rounded-lg shadow-xl p-6 border-2 border-accent/40 w-56 md:w-72">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-accent/30"></div>
-                      <div className="space-y-1 flex-1">
-                        <div className="h-3 bg-accent rounded w-20"></div>
-                        <div className="h-2 bg-muted rounded w-28"></div>
+              <div className="w-56 h-56 md:w-72 md:h-72 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
+                <div className="relative w-full h-full flex items-center justify-center">
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Output</div>
+                  
+                  {/* Certificate */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg shadow-xl p-4 border-4 border-warning/40 w-40 md:w-48 mt-6">
+                      <div className="text-center space-y-2">
+                        <div className="h-1.5 bg-warning/60 rounded w-24 mx-auto"></div>
+                        <div className="h-3 bg-warning rounded w-32 mx-auto"></div>
+                        <div className="h-1.5 bg-muted rounded w-28 mx-auto"></div>
+                        <div className="w-8 h-8 rounded-full bg-warning/30 mx-auto mt-2 flex items-center justify-center">
+                          <div className="w-6 h-6 rounded-full bg-warning"></div>
+                        </div>
                       </div>
+                      <p className="text-xs text-warning font-semibold mt-2 text-center">Certificate</p>
                     </div>
-                    <div className="h-2 bg-muted rounded"></div>
-                    <div className="h-2 bg-muted rounded w-3/4"></div>
                   </div>
-                  <p className="text-xs text-accent font-semibold mt-3">Greeting Card</p>
-                </div>
-              </div>
 
-              {/* Name Badge */}
-              <div className={`absolute transition-all duration-700 ${activeOutputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                <div className="bg-card rounded-lg shadow-xl p-6 border-2 border-primary/40 w-56 md:w-72">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-lg bg-primary/20"></div>
-                    <div className="space-y-2 flex-1">
-                      <div className="h-4 bg-primary rounded w-24"></div>
-                      <div className="h-2 bg-muted rounded w-20"></div>
-                      <div className="h-2 bg-muted rounded w-16"></div>
+                  {/* Label */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-card rounded-lg shadow-xl p-4 border-2 border-success/40 w-40 md:w-48 mt-6">
+                      <div className="space-y-1.5">
+                        <div className="h-2 bg-success rounded w-20"></div>
+                        <div className="h-4 bg-success/60 rounded w-full"></div>
+                        <div className="flex gap-1.5 mt-2">
+                          <div className="h-1.5 bg-muted rounded flex-1"></div>
+                          <div className="h-1.5 bg-muted rounded flex-1"></div>
+                        </div>
+                        <div className="h-6 bg-muted/50 rounded w-12 mt-1"></div>
+                      </div>
+                      <p className="text-xs text-success font-semibold mt-2">Product Label</p>
                     </div>
                   </div>
-                  <p className="text-xs text-primary font-semibold mt-3">Name Badge</p>
+
+                  {/* Card */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-gradient-to-br from-accent/10 to-primary/10 rounded-lg shadow-xl p-4 border-2 border-accent/40 w-40 md:w-48 mt-6">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-10 h-10 rounded-full bg-accent/30"></div>
+                          <div className="space-y-1 flex-1">
+                            <div className="h-2 bg-accent rounded w-16"></div>
+                            <div className="h-1.5 bg-muted rounded w-20"></div>
+                          </div>
+                        </div>
+                        <div className="h-1.5 bg-muted rounded"></div>
+                        <div className="h-1.5 bg-muted rounded w-3/4"></div>
+                      </div>
+                      <p className="text-xs text-accent font-semibold mt-2">Greeting Card</p>
+                    </div>
+                  </div>
+
+                  {/* Name Badge */}
+                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+                    <div className="bg-card rounded-lg shadow-xl p-4 border-2 border-primary/40 w-40 md:w-48 mt-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-lg bg-primary/20"></div>
+                        <div className="space-y-1.5 flex-1">
+                          <div className="h-3 bg-primary rounded w-20"></div>
+                          <div className="h-1.5 bg-muted rounded w-16"></div>
+                          <div className="h-1.5 bg-muted rounded w-12"></div>
+                        </div>
+                      </div>
+                      <p className="text-xs text-primary font-semibold mt-2">Name Badge</p>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Rotating Tagline (SEO Hook) */}
+          <div className="flex justify-center mt-8 mb-12">
+            <div className="relative h-8 flex items-center max-w-3xl px-4" aria-live="polite">
+              {taglines.map((tagline, index) => (
+                <p
+                  key={index}
+                  className={`absolute inset-0 text-lg md:text-xl text-muted-foreground text-center transition-opacity duration-500 flex items-center justify-center ${
+                    index === taglineIndex ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  {tagline}
+                </p>
+              ))}
             </div>
           </div>
 

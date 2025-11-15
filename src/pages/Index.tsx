@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Check, Zap, Shield, Download, Upload, Wand2, ArrowRight, PlayCircle, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import heroMergeVisual from "@/assets/hero-merge-visual.png";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -222,59 +223,12 @@ const Index = () => {
 
             {/* Right Column - Visual */}
             <div className="relative flex items-center justify-center lg:justify-end">
-              <div className="relative w-full max-w-md lg:max-w-lg scale-90 lg:scale-85 xl:scale-100 lgshort-scale">
-                {/* Spreadsheet Card (Left) */}
-                <div className="absolute left-0 top-0 lg:left-[-20px] z-10 bg-card rounded-2xl shadow-xl border border-border p-6 transform hover:scale-105 transition-transform">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-2 px-3 text-foreground font-semibold">Name</th>
-                        <th className="text-left py-2 px-3 text-foreground font-semibold">ID</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-muted-foreground">
-                      <tr className="border-b border-border/50">
-                        <td className="py-2 px-3">Alice Smith</td>
-                        <td className="py-2 px-3">001</td>
-                      </tr>
-                      <tr className="border-b border-border/50">
-                        <td className="py-2 px-3">John Doe</td>
-                        <td className="py-2 px-3">002</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 px-3">Emily Johnson</td>
-                        <td className="py-2 px-3">003</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Magic Circle (Center) */}
-                <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
-                  <div className="relative">
-                    <div className="w-24 h-24 md:w-28 md:h-28 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-2xl">
-                      <Sparkles className="w-10 h-10 text-primary-foreground" />
-                    </div>
-                    {/* Arrow */}
-                    <ArrowRight className="absolute -right-8 top-1/2 -translate-y-1/2 w-6 h-6 text-primary" />
-                  </div>
-                </div>
-
-                {/* Badge Card (Right) */}
-                <div className="absolute right-0 bottom-0 lg:right-[-20px] z-30 bg-card rounded-2xl shadow-2xl border border-border p-8 w-72 transform hover:scale-105 transition-transform">
-                  <div className="space-y-4">
-                    <div className="h-2 w-full bg-primary/20 rounded-full"></div>
-                    <div className="text-center space-y-3">
-                      <h3 className="text-2xl font-bold text-foreground">Alice Smith</h3>
-                      <p className="text-lg text-muted-foreground font-mono">001</p>
-                    </div>
-                    <div className="flex justify-end mt-6">
-                      <div className="w-16 h-16 bg-foreground/5 rounded-lg flex items-center justify-center">
-                        <div className="text-xs text-muted-foreground">QR</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <div className="w-full max-w-md lg:max-w-lg visual-scale">
+                <img 
+                  src={heroMergeVisual} 
+                  alt="Data merge visualization showing spreadsheet transforming into ID badge" 
+                  className="w-full h-auto"
+                />
               </div>
             </div>
           </div>

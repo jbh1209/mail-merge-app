@@ -174,280 +174,192 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/20">
       {/* Navigation */}
-      <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+      <nav className="border-b bg-card/80 backdrop-blur-xl supports-[backdrop-filter]:bg-card/60 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-8">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+            <h1 className="font-display text-2xl font-bold text-foreground">
               Mail Merge
             </h1>
             <div className="hidden md:flex space-x-6">
-              <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
-              <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
-              <a href="#use-cases" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Use Cases</a>
+              <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-300">Features</a>
+              <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-300">Pricing</a>
+              <a href="#use-cases" className="text-sm text-muted-foreground hover:text-foreground transition-colors duration-300">Use Cases</a>
             </div>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <Button variant="ghost" onClick={() => navigate('/auth')}>Log In</Button>
-            <Button onClick={() => navigate('/auth')}>Sign Up</Button>
+            <Button variant="premium" onClick={() => navigate('/auth')}>Sign Up</Button>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="container mx-auto px-4 py-16 md:py-24">
-        <div className="max-w-7xl mx-auto">
-          {/* Dynamic Headline */}
-          <div className="text-center mb-12 md:mb-16">
-            <h2 className="text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-extrabold mb-4 leading-tight">
-              <span className="text-foreground">CREATE </span>
-              <span 
-                key={rotatingWordIndex}
-                className="inline-block bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent animate-fade-in"
-              >
-                {rotatingWords[rotatingWordIndex]}
-              </span>
-            </h2>
-            <p className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-4xl mx-auto mt-6 whitespace-nowrap overflow-hidden text-ellipsis px-4">
-              We help you every step of the way to create the perfect{' '}
-              <span 
-                key={docTypeIndex}
-                className="inline-block text-primary font-semibold animate-fade-in"
-              >
-                {docTypes[docTypeIndex]}
-              </span>
-              {' '}document.
-            </p>
-          </div>
-
-          {/* Visual Split with Diagonal Slash */}
-          <div className="relative grid md:grid-cols-[1fr,100px,1fr] lg:grid-cols-[1fr,120px,1fr] gap-4 md:gap-0 items-center mb-12">
-            {/* Inputs (Left) - Circular Peek-In */}
-            <div className="relative h-56 md:h-64 lg:h-72 flex items-center justify-center">
-              <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
-                <div className="relative w-full h-full flex items-center justify-center">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Input</div>
-                  
-                  {/* Spreadsheet */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-success/30 w-32 md:w-36 lg:w-40 mt-6">
-                      <div className="space-y-1.5">
-                        <div className="flex gap-1.5">
-                          <div className="h-2 bg-success/40 rounded flex-1"></div>
-                          <div className="h-2 bg-success/40 rounded flex-1"></div>
-                          <div className="h-2 bg-success/40 rounded flex-1"></div>
-                        </div>
-                        {[...Array(5)].map((_, i) => (
-                          <div key={i} className="flex gap-1.5">
-                            <div className="h-1.5 bg-muted rounded flex-1"></div>
-                            <div className="h-1.5 bg-muted rounded flex-1"></div>
-                            <div className="h-1.5 bg-muted rounded flex-1"></div>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-success font-semibold mt-2">Spreadsheet</p>
-                    </div>
-                  </div>
-                  
-                  {/* Text Document */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-primary/30 w-40 md:w-48 mt-6">
-                      <div className="space-y-1.5">
-                        {[...Array(7)].map((_, i) => (
-                          <div key={i} className={`h-1.5 bg-muted rounded ${i % 3 === 0 ? 'w-3/4' : 'w-full'}`}></div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-primary font-semibold mt-2">Text Document</p>
-                    </div>
-                  </div>
-
-                  {/* Word Document */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-info/30 w-40 md:w-48 mt-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-3 h-3 bg-info rounded"></div>
-                        <div className="h-1.5 bg-info/60 rounded w-16"></div>
-                      </div>
-                      <div className="space-y-1.5">
-                        {[...Array(6)].map((_, i) => (
-                          <div key={i} className="h-1.5 bg-muted rounded"></div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-info font-semibold mt-2">Word Doc</p>
-                    </div>
-                  </div>
-
-                  {/* PDF */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-destructive/30 w-40 md:w-48 mt-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-5 h-5 bg-destructive rounded flex items-center justify-center text-[7px] text-white font-bold">PDF</div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="h-2 bg-muted rounded w-2/3"></div>
-                        {[...Array(5)].map((_, i) => (
-                          <div key={i} className="h-1.5 bg-muted rounded"></div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-destructive font-semibold mt-2">PDF Document</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Arrow Divider - Desktop */}
-            <div className="hidden md:flex items-center justify-center h-56 md:h-64 lg:h-72">
-              <div className="relative flex items-center justify-center">
-                <div className="absolute w-24 h-24 rounded-full bg-gradient-to-br from-warning/20 via-warning/10 to-transparent blur-xl"></div>
-                <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-warning to-warning/80 flex items-center justify-center shadow-xl">
-                  <ArrowRight className="w-8 h-8 md:w-10 md:h-10 text-white" strokeWidth={3} />
-                </div>
-              </div>
-            </div>
-
-            {/* Mobile Divider */}
-            <div className="md:hidden flex items-center justify-center py-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-r from-primary to-accent flex items-center justify-center animate-pulse">
-                <Wand2 className="w-8 h-8 text-white" />
-              </div>
-            </div>
-
-            {/* Outputs (Right) - Circular Peek-In */}
-            <div className="relative h-56 md:h-64 lg:h-72 flex items-center justify-center">
-              <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
-                <div className="relative w-full h-full flex items-center justify-center">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Output</div>
-                  
-                  {/* Certificate */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg shadow-xl p-4 border-4 border-warning/40 w-32 md:w-36 lg:w-40 mt-6">
-                      <div className="text-center space-y-2">
-                        <div className="h-1.5 bg-warning/60 rounded w-24 mx-auto"></div>
-                        <div className="h-3 bg-warning rounded w-32 mx-auto"></div>
-                        <div className="h-1.5 bg-muted rounded w-28 mx-auto"></div>
-                        <div className="w-8 h-8 rounded-full bg-warning/30 mx-auto mt-2 flex items-center justify-center">
-                          <div className="w-6 h-6 rounded-full bg-warning"></div>
-                        </div>
-                      </div>
-                      <p className="text-xs text-warning font-semibold mt-2 text-center">Certificate</p>
-                    </div>
-                  </div>
-
-                  {/* Label */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-xl p-4 border-2 border-success/40 w-40 md:w-48 mt-6">
-                      <div className="space-y-1.5">
-                        <div className="h-2 bg-success rounded w-20"></div>
-                        <div className="h-4 bg-success/60 rounded w-full"></div>
-                        <div className="flex gap-1.5 mt-2">
-                          <div className="h-1.5 bg-muted rounded flex-1"></div>
-                          <div className="h-1.5 bg-muted rounded flex-1"></div>
-                        </div>
-                        <div className="h-6 bg-muted/50 rounded w-12 mt-1"></div>
-                      </div>
-                      <p className="text-xs text-success font-semibold mt-2">Product Label</p>
-                    </div>
-                  </div>
-
-                  {/* Card */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-gradient-to-br from-accent/10 to-primary/10 rounded-lg shadow-xl p-4 border-2 border-accent/40 w-40 md:w-48 mt-6">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-10 h-10 rounded-full bg-accent/30"></div>
-                          <div className="space-y-1 flex-1">
-                            <div className="h-2 bg-accent rounded w-16"></div>
-                            <div className="h-1.5 bg-muted rounded w-20"></div>
-                          </div>
-                        </div>
-                        <div className="h-1.5 bg-muted rounded"></div>
-                        <div className="h-1.5 bg-muted rounded w-3/4"></div>
-                      </div>
-                      <p className="text-xs text-accent font-semibold mt-2">Greeting Card</p>
-                    </div>
-                  </div>
-
-                  {/* Name Badge */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-xl p-4 border-2 border-primary/40 w-40 md:w-48 mt-6">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-lg bg-primary/20"></div>
-                        <div className="space-y-1.5 flex-1">
-                          <div className="h-3 bg-primary rounded w-20"></div>
-                          <div className="h-1.5 bg-muted rounded w-16"></div>
-                          <div className="h-1.5 bg-muted rounded w-12"></div>
-                        </div>
-                      </div>
-                      <p className="text-xs text-primary font-semibold mt-2">Name Badge</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Rotating Tagline (SEO Hook) */}
-          <div className="flex justify-center mt-6 mb-8">
-            <div className="relative h-8 flex items-center w-full px-4" aria-live="polite">
-              {taglines.map((tagline, index) => (
-                <p
-                  key={index}
-                  className={`absolute inset-0 text-lg md:text-xl text-warning font-bold text-center transition-opacity duration-500 flex items-center justify-center whitespace-nowrap ${
-                    index === taglineIndex ? 'opacity-100' : 'opacity-0'
-                  }`}
-                >
-                  {tagline}
+      <section className="container mx-auto px-4 py-20 md:py-32 relative overflow-hidden">
+        {/* Gradient mesh background */}
+        <div className="absolute inset-0 opacity-20" style={{ background: 'var(--gradient-mesh)' }}></div>
+        <div className="grain-texture"></div>
+        
+        <div className="max-w-7xl mx-auto relative z-10">
+          {/* Asymmetric Layout */}
+          <div className="grid lg:grid-cols-[1.2fr,1fr] gap-12 lg:gap-20 items-center">
+            {/* Left: Headline & CTA */}
+            <div className="space-y-8">
+              <div className="space-y-6">
+                <h1 className="font-display text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-bold leading-[1.1] tracking-tight">
+                  Transform Your Data Into
+                  <span className="block text-accent mt-2">Perfect Documents</span>
+                </h1>
+                <p className="text-lg md:text-xl text-muted-foreground max-w-xl leading-relaxed">
+                  Professional certificates, labels, and more—created instantly from your spreadsheets. 
+                  No design skills required.
                 </p>
-              ))}
-            </div>
-          </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button 
+                  size="lg" 
+                  variant="premium" 
+                  onClick={() => navigate('/auth')}
+                  className="text-base group"
+                >
+                  Start Creating Free
+                  <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Button>
+                <Button 
+                  size="lg" 
+                  variant="outline"
+                  className="text-base"
+                >
+                  Watch Demo
+                </Button>
+              </div>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mt-12">
-            <Button size="lg" className="text-lg px-8" onClick={() => navigate('/auth')}>
-              Get Started Free
-            </Button>
-            <Button size="lg" variant="outline" className="text-lg px-8">
-              Watch Demo
-            </Button>
+              {/* Social proof */}
+              <div className="flex items-center gap-6 text-sm text-muted-foreground pt-4">
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-success" />
+                  <span>No credit card</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-success" />
+                  <span>Setup in 60 seconds</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Visual Demo with Floating Cards */}
+            <div className="relative h-[400px] lg:h-[500px]">
+              {/* Input Card - Floating */}
+              <div className="absolute top-0 left-0 w-64 animate-float">
+                <Card className="shadow-xl backdrop-blur-sm bg-card/95 border-border/50">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider">
+                      <Upload className="w-3 h-3" />
+                      Input Data
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex gap-2">
+                      <div className="h-3 bg-success/30 rounded flex-1"></div>
+                      <div className="h-3 bg-success/30 rounded flex-1"></div>
+                      <div className="h-3 bg-success/30 rounded flex-1"></div>
+                    </div>
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className="flex gap-2">
+                        <div className="h-2 bg-muted rounded flex-1"></div>
+                        <div className="h-2 bg-muted rounded flex-1"></div>
+                        <div className="h-2 bg-muted rounded flex-1"></div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Arrow */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-accent/20 blur-xl rounded-full"></div>
+                  <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-accent to-accent/80 flex items-center justify-center shadow-xl">
+                    <ArrowRight className="w-7 h-7 text-white" strokeWidth={2.5} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Output Card - Floating with delay */}
+              <div className="absolute bottom-0 right-0 w-72" style={{ animationDelay: '1s' }}>
+                <Card className="shadow-2xl backdrop-blur-sm bg-card/95 border-accent/30 border-2">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider">
+                      <Download className="w-3 h-3" />
+                      Generated Output
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="aspect-[4/3] rounded bg-gradient-to-br from-accent/10 to-success/10 border border-border/50 flex items-center justify-center">
+                      <div className="text-center space-y-2 p-6">
+                        <div className="w-12 h-12 mx-auto rounded-full bg-accent/20 flex items-center justify-center">
+                          <Wand2 className="w-6 h-6 text-accent" />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="h-2 bg-foreground/80 rounded w-24 mx-auto"></div>
+                          <div className="h-1.5 bg-foreground/40 rounded w-32 mx-auto"></div>
+                          <div className="h-1.5 bg-foreground/40 rounded w-28 mx-auto"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="container mx-auto px-4 py-20">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">Simple, Transparent Pricing</h2>
-          <p className="text-xl text-muted-foreground">Choose the plan that fits your needs</p>
+      <section id="pricing" className="container mx-auto px-4 py-24 relative">
+        <div className="grain-texture"></div>
+        <div className="text-center mb-16 relative z-10">
+          <Badge variant="outline" className="mb-4 text-xs uppercase tracking-wider">Pricing</Badge>
+          <h2 className="font-display text-4xl md:text-5xl font-bold mb-4">Simple, Transparent Pricing</h2>
+          <p className="text-xl text-muted-foreground">Choose the plan that works for you</p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto relative z-10">
           {pricingTiers.map((tier, index) => (
-            <Card key={index} className={`relative hover:shadow-xl transition-all duration-300 ${tier.popular ? 'border-primary shadow-lg scale-105' : ''}`}>
+            <Card 
+              key={index} 
+              className={`relative ${tier.popular ? 'border-accent shadow-xl scale-105' : ''}`}
+            >
               {tier.popular && (
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-success">
-                  Most Popular
-                </Badge>
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
+                  <Badge className="bg-accent text-accent-foreground shadow-lg">Most Popular</Badge>
+                </div>
               )}
-              <CardHeader>
-                <CardTitle className="text-2xl">{tier.name}</CardTitle>
-                <CardDescription>
-                  <span className="text-4xl font-bold text-foreground">{tier.price}</span>
-                  <span className="text-muted-foreground">{tier.period}</span>
-                </CardDescription>
+              <CardHeader className="pb-4">
+                <CardTitle className="text-2xl font-display">{tier.name}</CardTitle>
+                <CardDescription className="text-xs uppercase tracking-wider">{tier.pages} pages/month</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-6">
+                <div className="space-y-1">
+                  <div className="flex items-baseline">
+                    <span className="text-5xl font-bold font-display">{tier.price}</span>
+                    <span className="text-muted-foreground ml-2">{tier.period}</span>
+                  </div>
+                </div>
                 <ul className="space-y-3">
                   {tier.features.map((feature, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      <Check className="w-5 h-5 text-success" />
-                      <span className="text-sm">{feature}</span>
+                    <li key={i} className="flex items-start gap-3 text-sm">
+                      <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
+                      <span className="text-muted-foreground">{feature}</span>
                     </li>
                   ))}
                 </ul>
               </CardContent>
               <CardFooter>
-                <Button className="w-full" variant={tier.popular ? "default" : "outline"}>
+                <Button 
+                  className="w-full" 
+                  variant={tier.popular ? "premium" : "outline"}
+                >
                   {tier.cta}
                 </Button>
               </CardFooter>
@@ -457,57 +369,71 @@ const Index = () => {
       </section>
 
       {/* How It Works */}
-      <section className="container mx-auto px-4 py-20 bg-muted/30">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">How It Works</h2>
-          <p className="text-xl text-muted-foreground">Three simple steps to beautiful documents</p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <Upload className="w-8 h-8 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">1. Upload Your Data</h3>
-            <p className="text-muted-foreground">Import from CSV, Excel, Google Sheets, or paste directly</p>
+      <section className="py-24 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-muted/30 to-background"></div>
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="text-center mb-16">
+            <Badge variant="outline" className="mb-4 text-xs uppercase tracking-wider">Process</Badge>
+            <h2 className="font-display text-4xl md:text-5xl font-bold mb-4">How It Works</h2>
+            <p className="text-xl text-muted-foreground">Three simple steps to beautiful documents</p>
           </div>
 
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-              <Wand2 className="w-8 h-8 text-accent" />
+          <div className="grid md:grid-cols-3 gap-12 max-w-6xl mx-auto">
+            <div className="text-center space-y-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto backdrop-blur-sm border border-border/50 shadow-lg">
+                <Upload className="w-10 h-10 text-primary" strokeWidth={1.5} />
+              </div>
+              <div className="space-y-2">
+                <div className="font-display text-sm text-accent font-semibold">STEP 01</div>
+                <h3 className="text-2xl font-display font-semibold">Upload Your Data</h3>
+                <p className="text-muted-foreground leading-relaxed">Import from CSV, Excel, Google Sheets, or paste directly</p>
+              </div>
             </div>
-            <h3 className="text-xl font-semibold mb-2">2. Design Your Template</h3>
-            <p className="text-muted-foreground">Choose a template or upload your own design</p>
-          </div>
 
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-4">
-              <Download className="w-8 h-8 text-success" />
+            <div className="text-center space-y-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-accent/20 to-accent/5 flex items-center justify-center mx-auto backdrop-blur-sm border border-border/50 shadow-lg">
+                <Wand2 className="w-10 h-10 text-accent" strokeWidth={1.5} />
+              </div>
+              <div className="space-y-2">
+                <div className="font-display text-sm text-accent font-semibold">STEP 02</div>
+                <h3 className="text-2xl font-display font-semibold">Design Your Template</h3>
+                <p className="text-muted-foreground leading-relaxed">Choose a template or upload your own design</p>
+              </div>
             </div>
-            <h3 className="text-xl font-semibold mb-2">3. Generate & Download</h3>
-            <p className="text-muted-foreground">Get your personalized PDFs in seconds</p>
+
+            <div className="text-center space-y-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-success/20 to-success/5 flex items-center justify-center mx-auto backdrop-blur-sm border border-border/50 shadow-lg">
+                <Download className="w-10 h-10 text-success" strokeWidth={1.5} />
+              </div>
+              <div className="space-y-2">
+                <div className="font-display text-sm text-accent font-semibold">STEP 03</div>
+                <h3 className="text-2xl font-display font-semibold">Generate & Download</h3>
+                <p className="text-muted-foreground leading-relaxed">Get your personalized PDFs in seconds</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Features */}
-      <section id="features" className="container mx-auto px-4 py-20">
+      <section id="features" className="container mx-auto px-4 py-24">
         <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">Powerful Features</h2>
+          <Badge variant="outline" className="mb-4 text-xs uppercase tracking-wider">Features</Badge>
+          <h2 className="font-display text-4xl md:text-5xl font-bold mb-4">Powerful Features</h2>
           <p className="text-xl text-muted-foreground">Everything you need to create professional documents</p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
           {features.map((feature, index) => (
-            <Card key={index} className="hover:shadow-lg transition-shadow">
+            <Card key={index} className="group">
               <CardHeader>
-                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-                  <feature.icon className="w-6 h-6 text-primary" />
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/10 to-accent/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                  <feature.icon className="w-7 h-7 text-primary" strokeWidth={1.5} />
                 </div>
-                <CardTitle className="text-xl">{feature.title}</CardTitle>
+                <CardTitle className="text-xl font-display">{feature.title}</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">{feature.description}</p>
+                <p className="text-muted-foreground leading-relaxed">{feature.description}</p>
               </CardContent>
             </Card>
           ))}
@@ -515,78 +441,105 @@ const Index = () => {
       </section>
 
       {/* Use Cases */}
-      <section id="use-cases" className="container mx-auto px-4 py-20 bg-muted/30">
-        <div className="text-center mb-16">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">Perfect For</h2>
-          <p className="text-xl text-muted-foreground">See what you can create</p>
-        </div>
+      <section id="use-cases" className="py-24 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-background to-muted/30"></div>
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="text-center mb-16">
+            <Badge variant="outline" className="mb-4 text-xs uppercase tracking-wider">Use Cases</Badge>
+            <h2 className="font-display text-4xl md:text-5xl font-bold mb-4">Perfect For</h2>
+            <p className="text-xl text-muted-foreground">See what you can create</p>
+          </div>
 
-        <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-          {useCases.map((useCase, index) => (
-            <Card key={index} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <CardTitle>{useCase.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">{useCase.description}</p>
-              </CardContent>
-            </Card>
-          ))}
+          <div className="grid md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            {useCases.map((useCase, index) => (
+              <Card key={index} className="group">
+                <CardHeader>
+                  <CardTitle className="text-xl font-display group-hover:text-accent transition-colors duration-300">{useCase.title}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-muted-foreground leading-relaxed">{useCase.description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* CTA Section */}
-      <section className="container mx-auto px-4 py-20">
-        <div className="max-w-4xl mx-auto text-center bg-gradient-to-r from-primary to-accent rounded-2xl p-12 text-white">
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">Ready to Get Started?</h2>
-          <p className="text-xl mb-8 opacity-90">
-            Join thousands of users creating beautiful documents
-          </p>
-          <Button size="lg" variant="secondary" className="text-lg px-8">
-            Start Free Trial
-          </Button>
+      <section className="container mx-auto px-4 py-24">
+        <div className="max-w-5xl mx-auto relative">
+          <div className="absolute inset-0 bg-gradient-to-br from-accent/10 via-primary/5 to-success/10 rounded-3xl blur-3xl"></div>
+          <Card className="relative border-accent/20 shadow-2xl overflow-hidden">
+            <div className="absolute inset-0 opacity-5" style={{ background: 'var(--gradient-mesh)' }}></div>
+            <CardContent className="p-12 md:p-16 text-center relative z-10">
+              <div className="space-y-6">
+                <Badge variant="outline" className="text-xs uppercase tracking-wider">Get Started</Badge>
+                <h2 className="font-display text-4xl md:text-5xl lg:text-6xl font-bold">
+                  Ready to Transform
+                  <span className="block text-accent mt-2">Your Data?</span>
+                </h2>
+                <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+                  Join thousands of users creating beautiful, professional documents in seconds
+                </p>
+                <div className="pt-4">
+                  <Button 
+                    size="lg" 
+                    variant="premium" 
+                    className="text-base px-10 py-6 h-auto"
+                  >
+                    Start Free Trial
+                    <ArrowRight className="ml-2 w-5 h-5" />
+                  </Button>
+                  <p className="text-sm text-muted-foreground mt-4">No credit card required • Setup in 60 seconds</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t bg-muted/30">
-        <div className="container mx-auto px-4 py-12">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div>
-              <h3 className="text-lg font-bold mb-4 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+      <footer className="border-t bg-muted/20 relative overflow-hidden">
+        <div className="grain-texture"></div>
+        <div className="container mx-auto px-4 py-16 relative z-10">
+          <div className="grid md:grid-cols-4 gap-12 mb-12">
+            <div className="space-y-4">
+              <h3 className="font-display text-2xl font-bold text-foreground">
                 Mail Merge
               </h3>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground leading-relaxed">
                 Transform your data into professional documents with AI-powered mail merge.
               </p>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Product</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#features" className="hover:text-foreground transition-colors">Features</a></li>
-                <li><a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a></li>
-                <li><a href="#use-cases" className="hover:text-foreground transition-colors">Use Cases</a></li>
+              <h4 className="font-display font-semibold mb-4 text-sm uppercase tracking-wider">Product</h4>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li><a href="#features" className="hover:text-foreground transition-colors duration-300">Features</a></li>
+                <li><a href="#pricing" className="hover:text-foreground transition-colors duration-300">Pricing</a></li>
+                <li><a href="#use-cases" className="hover:text-foreground transition-colors duration-300">Use Cases</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Company</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground transition-colors">About</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Blog</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Contact</a></li>
+              <h4 className="font-display font-semibold mb-4 text-sm uppercase tracking-wider">Company</h4>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li><a href="#" className="hover:text-foreground transition-colors duration-300">About</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors duration-300">Blog</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors duration-300">Contact</a></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Legal</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground transition-colors">Privacy</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Terms</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Security</a></li>
+              <h4 className="font-display font-semibold mb-4 text-sm uppercase tracking-wider">Legal</h4>
+              <ul className="space-y-3 text-sm text-muted-foreground">
+                <li><a href="#" className="hover:text-foreground transition-colors duration-300">Privacy</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors duration-300">Terms</a></li>
+                <li><a href="#" className="hover:text-foreground transition-colors duration-300">Security</a></li>
               </ul>
             </div>
           </div>
-          <div className="border-t mt-8 pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; 2024 Mail Merge. All rights reserved.</p>
+          <div className="border-t border-border pt-8">
+            <p className="text-center text-sm text-muted-foreground">
+              © 2024 Mail Merge. All rights reserved.
+            </p>
           </div>
         </div>
       </footer>

@@ -11,11 +11,14 @@ const Index = () => {
   const [activeInputIndex, setActiveInputIndex] = useState(0);
   const [activeOutputIndex, setActiveOutputIndex] = useState(0);
   const [taglineIndex, setTaglineIndex] = useState(0);
+  const [docTypeIndex, setDocTypeIndex] = useState(0);
 
   const rotatingWords = ['Certificates', 'Labels', 'Cards', 'Name Badges', 'Stickers', 'Invitations', 'Tickets', 'Vouchers'];
   
   const inputMockups = ['Spreadsheet', 'Text Document', 'Word Document', 'PDF'];
   const outputMockups = ['Certificate', 'Product Label', 'Greeting Card', 'Name Badge'];
+  
+  const docTypes = ['mail merged', 'variable data', 'personalized', 'custom'];
   
   const taglines = [
     "Never mail-merge in Word again.",
@@ -49,11 +52,16 @@ const Index = () => {
       setTaglineIndex((prev) => (prev + 1) % taglines.length);
     }, 1500);
 
+    const docTypeInterval = setInterval(() => {
+      setDocTypeIndex((prev) => (prev + 1) % docTypes.length);
+    }, 1500);
+
     return () => {
       clearInterval(wordInterval);
       clearInterval(inputInterval);
       clearInterval(outputInterval);
       clearInterval(taglineInterval);
+      clearInterval(docTypeInterval);
     };
   }, []);
 
@@ -200,7 +208,14 @@ const Index = () => {
               </span>
             </h2>
             <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mt-6">
-              No design skills required. Just upload your data.
+              We help you every step of the way to create the perfect{' '}
+              <span 
+                key={docTypeIndex}
+                className="inline-block text-primary font-semibold animate-fade-in"
+              >
+                {docTypes[docTypeIndex]}
+              </span>
+              {' '}document.
             </p>
           </div>
 
@@ -380,7 +395,7 @@ const Index = () => {
               {taglines.map((tagline, index) => (
                 <p
                   key={index}
-                  className={`absolute inset-0 text-lg md:text-xl text-muted-foreground text-center transition-opacity duration-500 flex items-center justify-center whitespace-nowrap ${
+                  className={`absolute inset-0 text-lg md:text-xl text-primary font-bold text-center transition-opacity duration-500 flex items-center justify-center whitespace-nowrap ${
                     index === taglineIndex ? 'opacity-100' : 'opacity-0'
                   }`}
                 >

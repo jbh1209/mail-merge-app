@@ -168,7 +168,7 @@ const Index = () => {
               <div>
                 <h1 className="text-4xl md:text-5xl lg:text-[44px] xl:text-7xl font-extrabold leading-[1.08] mb-4 lg:mb-6 lgshort-h1">
                   Create Beautiful<br />
-                  <span className="whitespace-nowrap">Variable Data Documents</span><br />
+                  <span className="whitespace-nowrap">Mail Merges & Variable Data</span><br />
                   in Seconds
                 </h1>
                 

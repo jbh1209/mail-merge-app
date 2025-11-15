@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Zap, Shield, Download, Upload, Wand2 } from "lucide-react";
+import { Check, Zap, Shield, Download, Upload, Wand2, ArrowRight } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -198,7 +198,7 @@ const Index = () => {
         <div className="max-w-7xl mx-auto">
           {/* Dynamic Headline */}
           <div className="text-center mb-12 md:mb-16">
-            <h2 className="text-5xl md:text-7xl lg:text-8xl font-extrabold mb-4 leading-tight">
+            <h2 className="text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-extrabold mb-4 leading-tight">
               <span className="text-foreground">CREATE </span>
               <span 
                 key={rotatingWordIndex}
@@ -220,16 +220,16 @@ const Index = () => {
           </div>
 
           {/* Visual Split with Diagonal Slash */}
-          <div className="relative grid md:grid-cols-[1fr,80px,1fr] gap-4 md:gap-0 items-center mb-12">
+          <div className="relative grid md:grid-cols-[1fr,100px,1fr] lg:grid-cols-[1fr,120px,1fr] gap-4 md:gap-0 items-center mb-12">
             {/* Inputs (Left) - Circular Peek-In */}
-            <div className="relative h-64 md:h-80 flex items-center justify-center">
-              <div className="w-56 h-56 md:w-72 md:h-72 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
+            <div className="relative h-56 md:h-64 lg:h-72 flex items-center justify-center">
+              <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
                 <div className="relative w-full h-full flex items-center justify-center">
                   <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Input</div>
                   
                   {/* Spreadsheet */}
                   <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-success/30 w-40 md:w-48 mt-6">
+                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-success/30 w-32 md:w-36 lg:w-40 mt-6">
                       <div className="space-y-1.5">
                         <div className="flex gap-1.5">
                           <div className="h-2 bg-success/40 rounded flex-1"></div>
@@ -295,16 +295,13 @@ const Index = () => {
               </div>
             </div>
 
-            {/* Diagonal Slash - Thinner and More Angled */}
-            <div className="hidden md:block relative h-80">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div 
-                  className="w-20 h-full bg-gradient-to-br from-primary via-accent to-primary bg-[length:200%_200%] animate-gradient-shift"
-                  style={{
-                    clipPath: 'polygon(35% 0%, 100% 0%, 65% 100%, 0% 100%)',
-                    boxShadow: '0 10px 40px -10px hsl(var(--primary) / 0.5)'
-                  }}
-                ></div>
+            {/* Arrow Divider - Desktop */}
+            <div className="hidden md:flex items-center justify-center h-56 md:h-64 lg:h-72">
+              <div className="relative flex items-center justify-center">
+                <div className="absolute w-24 h-24 rounded-full bg-gradient-to-br from-warning/20 via-warning/10 to-transparent blur-xl"></div>
+                <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-warning to-warning/80 flex items-center justify-center shadow-xl animate-pulse">
+                  <ArrowRight className="w-8 h-8 md:w-10 md:h-10 text-white" strokeWidth={3} />
+                </div>
               </div>
             </div>
 
@@ -316,14 +313,14 @@ const Index = () => {
             </div>
 
             {/* Outputs (Right) - Circular Peek-In */}
-            <div className="relative h-64 md:h-80 flex items-center justify-center">
-              <div className="w-56 h-56 md:w-72 md:h-72 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
+            <div className="relative h-56 md:h-64 lg:h-72 flex items-center justify-center">
+              <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
                 <div className="relative w-full h-full flex items-center justify-center">
                   <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Output</div>
                   
                   {/* Certificate */}
                   <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg shadow-xl p-4 border-4 border-warning/40 w-40 md:w-48 mt-6">
+                    <div className="bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg shadow-xl p-4 border-4 border-warning/40 w-32 md:w-36 lg:w-40 mt-6">
                       <div className="text-center space-y-2">
                         <div className="h-1.5 bg-warning/60 rounded w-24 mx-auto"></div>
                         <div className="h-3 bg-warning rounded w-32 mx-auto"></div>
@@ -390,12 +387,12 @@ const Index = () => {
           </div>
 
           {/* Rotating Tagline (SEO Hook) */}
-          <div className="flex justify-center mt-8 mb-12">
+          <div className="flex justify-center mt-6 mb-8">
             <div className="relative h-8 flex items-center w-full px-4" aria-live="polite">
               {taglines.map((tagline, index) => (
                 <p
                   key={index}
-                  className={`absolute inset-0 text-lg md:text-xl text-primary font-bold text-center transition-opacity duration-500 flex items-center justify-center whitespace-nowrap ${
+                  className={`absolute inset-0 text-lg md:text-xl text-warning font-bold text-center transition-opacity duration-500 flex items-center justify-center whitespace-nowrap ${
                     index === taglineIndex ? 'opacity-100' : 'opacity-0'
                   }`}
                 >

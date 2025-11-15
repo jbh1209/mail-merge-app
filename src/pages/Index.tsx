@@ -1,67 +1,29 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Zap, Shield, Download, Upload, Wand2, ArrowRight } from "lucide-react";
+import { Check, Zap, Shield, Download, Upload, Wand2, ArrowRight, PlayCircle, Sparkles } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const navigate = useNavigate();
-  const [rotatingWordIndex, setRotatingWordIndex] = useState(0);
-  const [activeInputIndex, setActiveInputIndex] = useState(0);
-  const [activeOutputIndex, setActiveOutputIndex] = useState(0);
-  const [taglineIndex, setTaglineIndex] = useState(0);
-  const [docTypeIndex, setDocTypeIndex] = useState(0);
+  const [painPointIndex, setPainPointIndex] = useState(0);
 
-  const rotatingWords = ['Certificates', 'Labels', 'Cards', 'Name Badges', 'Stickers', 'Invitations', 'Tickets', 'Vouchers'];
-  
-  const inputMockups = ['Spreadsheet', 'Text Document', 'Word Document', 'PDF'];
-  const outputMockups = ['Certificate', 'Product Label', 'Greeting Card', 'Name Badge'];
-  
-  const docTypes = ['mail merged', 'variable data', 'personalized', 'custom'];
-  
-  const taglines = [
-    "Never mail-merge in Word again.",
-    "Turn any spreadsheet into perfect documents — instantly.",
-    "Variable data, without the headaches.",
-    "From messy Excel to finished PDFs in minutes.",
-    "Finally… mail merge that actually works.",
-    "One upload. One template. Thousands of documents.",
-    "Your data → beautiful documents. Zero stress.",
-    "Labels, certificates, badges… all done automatically.",
-    "No more formatting. No more mistakes.",
-    "The easiest way to create anything from a spreadsheet.",
-    "Give us your data — we'll do the rest.",
-    "The future of mail merge starts here."
+  const painPoints = [
+    "Fighting with Word mail merge again.",
+    "Trying to line up Avery labels by hand.",
+    "Rebuilding the same certificate in Canva for the 50th name.",
+    "Copy-pasting address labels one by one.",
+    "Wondering why your PDF has the wrong bleed — again."
   ];
 
   useEffect(() => {
-    const wordInterval = setInterval(() => {
-      setRotatingWordIndex((prev) => (prev + 1) % rotatingWords.length);
-    }, 1500);
-
-    const inputInterval = setInterval(() => {
-      setActiveInputIndex((prev) => (prev + 1) % inputMockups.length);
-    }, 2000);
-
-    const outputInterval = setInterval(() => {
-      setActiveOutputIndex((prev) => (prev + 1) % outputMockups.length);
-    }, 2000);
-
-    const taglineInterval = setInterval(() => {
-      setTaglineIndex((prev) => (prev + 1) % taglines.length);
-    }, 1500);
-
-    const docTypeInterval = setInterval(() => {
-      setDocTypeIndex((prev) => (prev + 1) % docTypes.length);
-    }, 1500);
+    const painInterval = setInterval(() => {
+      setPainPointIndex((prev) => (prev + 1) % painPoints.length);
+    }, 3000);
 
     return () => {
-      clearInterval(wordInterval);
-      clearInterval(inputInterval);
-      clearInterval(outputInterval);
-      clearInterval(taglineInterval);
-      clearInterval(docTypeInterval);
+      clearInterval(painInterval);
     };
   }, []);
 
@@ -194,222 +156,131 @@ const Index = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="container mx-auto px-4 py-16 md:py-24">
-        <div className="max-w-7xl mx-auto">
-          {/* Dynamic Headline */}
-          <div className="text-center mb-12 md:mb-16">
-            <h2 className="text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-extrabold mb-4 leading-tight">
-              <span className="text-foreground">CREATE </span>
-              <span 
-                key={rotatingWordIndex}
-                className="inline-block bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent animate-fade-in"
-              >
-                {rotatingWords[rotatingWordIndex]}
-              </span>
-            </h2>
-            <p className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-4xl mx-auto mt-6 whitespace-nowrap overflow-hidden text-ellipsis px-4">
-              We help you every step of the way to create the perfect{' '}
-              <span 
-                key={docTypeIndex}
-                className="inline-block text-primary font-semibold animate-fade-in"
-              >
-                {docTypes[docTypeIndex]}
-              </span>
-              {' '}document.
-            </p>
-          </div>
-
-          {/* Visual Split with Diagonal Slash */}
-          <div className="relative grid md:grid-cols-[1fr,100px,1fr] lg:grid-cols-[1fr,120px,1fr] gap-4 md:gap-0 items-center mb-12">
-            {/* Inputs (Left) - Circular Peek-In */}
-            <div className="relative h-56 md:h-64 lg:h-72 flex items-center justify-center">
-              <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
-                <div className="relative w-full h-full flex items-center justify-center">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Input</div>
-                  
-                  {/* Spreadsheet */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-success/30 w-32 md:w-36 lg:w-40 mt-6">
-                      <div className="space-y-1.5">
-                        <div className="flex gap-1.5">
-                          <div className="h-2 bg-success/40 rounded flex-1"></div>
-                          <div className="h-2 bg-success/40 rounded flex-1"></div>
-                          <div className="h-2 bg-success/40 rounded flex-1"></div>
-                        </div>
-                        {[...Array(5)].map((_, i) => (
-                          <div key={i} className="flex gap-1.5">
-                            <div className="h-1.5 bg-muted rounded flex-1"></div>
-                            <div className="h-1.5 bg-muted rounded flex-1"></div>
-                            <div className="h-1.5 bg-muted rounded flex-1"></div>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-success font-semibold mt-2">Spreadsheet</p>
-                    </div>
-                  </div>
-                  
-                  {/* Text Document */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-primary/30 w-40 md:w-48 mt-6">
-                      <div className="space-y-1.5">
-                        {[...Array(7)].map((_, i) => (
-                          <div key={i} className={`h-1.5 bg-muted rounded ${i % 3 === 0 ? 'w-3/4' : 'w-full'}`}></div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-primary font-semibold mt-2">Text Document</p>
-                    </div>
-                  </div>
-
-                  {/* Word Document */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-info/30 w-40 md:w-48 mt-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-3 h-3 bg-info rounded"></div>
-                        <div className="h-1.5 bg-info/60 rounded w-16"></div>
-                      </div>
-                      <div className="space-y-1.5">
-                        {[...Array(6)].map((_, i) => (
-                          <div key={i} className="h-1.5 bg-muted rounded"></div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-info font-semibold mt-2">Word Doc</p>
-                    </div>
-                  </div>
-
-                  {/* PDF */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeInputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-lg p-4 border-2 border-destructive/30 w-40 md:w-48 mt-6">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-5 h-5 bg-destructive rounded flex items-center justify-center text-[7px] text-white font-bold">PDF</div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="h-2 bg-muted rounded w-2/3"></div>
-                        {[...Array(5)].map((_, i) => (
-                          <div key={i} className="h-1.5 bg-muted rounded"></div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-destructive font-semibold mt-2">PDF Document</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Arrow Divider - Desktop */}
-            <div className="hidden md:flex items-center justify-center h-56 md:h-64 lg:h-72">
-              <div className="relative flex items-center justify-center">
-                <div className="absolute w-24 h-24 rounded-full bg-gradient-to-br from-warning/20 via-warning/10 to-transparent blur-xl"></div>
-                <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-warning to-warning/80 flex items-center justify-center shadow-xl">
-                  <ArrowRight className="w-8 h-8 md:w-10 md:h-10 text-white" strokeWidth={3} />
-                </div>
-              </div>
-            </div>
-
-            {/* Mobile Divider */}
-            <div className="md:hidden flex items-center justify-center py-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-r from-primary to-accent flex items-center justify-center animate-pulse">
-                <Wand2 className="w-8 h-8 text-white" />
-              </div>
-            </div>
-
-            {/* Outputs (Right) - Circular Peek-In */}
-            <div className="relative h-56 md:h-64 lg:h-72 flex items-center justify-center">
-              <div className="w-48 h-48 md:w-56 md:h-56 lg:w-64 lg:h-64 rounded-full overflow-hidden bg-card border-4 border-primary/20 shadow-2xl">
-                <div className="relative w-full h-full flex items-center justify-center">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider absolute top-6 z-10">Output</div>
-                  
-                  {/* Certificate */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 0 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-gradient-to-br from-warning/10 to-warning/5 rounded-lg shadow-xl p-4 border-4 border-warning/40 w-32 md:w-36 lg:w-40 mt-6">
-                      <div className="text-center space-y-2">
-                        <div className="h-1.5 bg-warning/60 rounded w-24 mx-auto"></div>
-                        <div className="h-3 bg-warning rounded w-32 mx-auto"></div>
-                        <div className="h-1.5 bg-muted rounded w-28 mx-auto"></div>
-                        <div className="w-8 h-8 rounded-full bg-warning/30 mx-auto mt-2 flex items-center justify-center">
-                          <div className="w-6 h-6 rounded-full bg-warning"></div>
-                        </div>
-                      </div>
-                      <p className="text-xs text-warning font-semibold mt-2 text-center">Certificate</p>
-                    </div>
-                  </div>
-
-                  {/* Label */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-xl p-4 border-2 border-success/40 w-40 md:w-48 mt-6">
-                      <div className="space-y-1.5">
-                        <div className="h-2 bg-success rounded w-20"></div>
-                        <div className="h-4 bg-success/60 rounded w-full"></div>
-                        <div className="flex gap-1.5 mt-2">
-                          <div className="h-1.5 bg-muted rounded flex-1"></div>
-                          <div className="h-1.5 bg-muted rounded flex-1"></div>
-                        </div>
-                        <div className="h-6 bg-muted/50 rounded w-12 mt-1"></div>
-                      </div>
-                      <p className="text-xs text-success font-semibold mt-2">Product Label</p>
-                    </div>
-                  </div>
-
-                  {/* Card */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 2 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-gradient-to-br from-accent/10 to-primary/10 rounded-lg shadow-xl p-4 border-2 border-accent/40 w-40 md:w-48 mt-6">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-10 h-10 rounded-full bg-accent/30"></div>
-                          <div className="space-y-1 flex-1">
-                            <div className="h-2 bg-accent rounded w-16"></div>
-                            <div className="h-1.5 bg-muted rounded w-20"></div>
-                          </div>
-                        </div>
-                        <div className="h-1.5 bg-muted rounded"></div>
-                        <div className="h-1.5 bg-muted rounded w-3/4"></div>
-                      </div>
-                      <p className="text-xs text-accent font-semibold mt-2">Greeting Card</p>
-                    </div>
-                  </div>
-
-                  {/* Name Badge */}
-                  <div className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ${activeOutputIndex === 3 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-                    <div className="bg-card rounded-lg shadow-xl p-4 border-2 border-primary/40 w-40 md:w-48 mt-6">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-lg bg-primary/20"></div>
-                        <div className="space-y-1.5 flex-1">
-                          <div className="h-3 bg-primary rounded w-20"></div>
-                          <div className="h-1.5 bg-muted rounded w-16"></div>
-                          <div className="h-1.5 bg-muted rounded w-12"></div>
-                        </div>
-                      </div>
-                      <p className="text-xs text-primary font-semibold mt-2">Name Badge</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Rotating Tagline (SEO Hook) */}
-          <div className="flex justify-center mt-6 mb-8">
-            <div className="relative h-8 flex items-center w-full px-4" aria-live="polite">
-              {taglines.map((tagline, index) => (
-                <p
-                  key={index}
-                  className={`absolute inset-0 text-lg md:text-xl text-warning font-bold text-center transition-opacity duration-500 flex items-center justify-center whitespace-nowrap ${
-                    index === taglineIndex ? 'opacity-100' : 'opacity-0'
-                  }`}
-                >
-                  {tagline}
+      <section className="relative px-6 md:px-12 py-20 md:py-32 overflow-hidden bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
+        {/* Radial gradient overlays */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.35),transparent_60%),radial-gradient(circle_at_bottom_left,_rgba(56,189,248,0.4),transparent_60%)]"></div>
+        
+        <div className="relative max-w-7xl mx-auto">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            {/* Left Column - Content */}
+            <div className="space-y-8">
+              <div>
+                <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold leading-[1.1] mb-6">
+                  <span className="text-foreground">Create Beautiful</span>
+                  <br />
+                  <span className="text-foreground">Variable Data</span>
+                  <br />
+                  <span className="text-foreground">Documents</span>
+                  <br />
+                  <span className="text-foreground">in Seconds</span>
+                </h1>
+                
+                <p className="text-lg md:text-xl text-muted-foreground max-w-xl leading-relaxed">
+                  Turn any spreadsheet into labels, certificates, badges, shelf strips, event passes and more. Upload your data and template — we handle the merge, layout and print-ready PDF.
                 </p>
-              ))}
-            </div>
-          </div>
+              </div>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mt-12">
-            <Button size="lg" className="text-lg px-8" onClick={() => navigate('/auth')}>
-              Get Started Free
-            </Button>
-            <Button size="lg" variant="outline" className="text-lg px-8">
-              Watch Demo
-            </Button>
+              {/* Rotating Pain Points */}
+              <div className="space-y-2">
+                <p className="text-base md:text-lg text-muted-foreground">
+                  <span className="font-semibold text-foreground">Never again:</span>
+                </p>
+                <div className="relative h-8 flex items-center" aria-live="polite">
+                  {painPoints.map((point, index) => (
+                    <p
+                      key={index}
+                      className={`absolute text-base md:text-lg text-muted-foreground transition-opacity duration-300 ${
+                        index === painPointIndex ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    >
+                      {point}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              {/* Blue Tagline */}
+              <p className="text-xl md:text-2xl font-semibold text-primary">
+                From spreadsheet to finished documents — instantly
+              </p>
+
+              {/* CTA Buttons */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button 
+                  size="lg" 
+                  className="text-base px-8 py-6 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  onClick={() => navigate('/auth')}
+                >
+                  Start Free — No Credit Card
+                </Button>
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="text-base px-8 py-6 border-2 border-foreground/20 hover:bg-foreground/5"
+                >
+                  <PlayCircle className="w-5 h-5 mr-2" />
+                  See How It Works
+                </Button>
+              </div>
+            </div>
+
+            {/* Right Column - Visual */}
+            <div className="relative flex items-center justify-center lg:justify-end">
+              <div className="relative w-full max-w-md lg:max-w-lg">
+                {/* Spreadsheet Card (Left) */}
+                <div className="absolute left-0 top-0 lg:left-[-20px] z-10 bg-card rounded-2xl shadow-xl border border-border p-6 transform hover:scale-105 transition-transform">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-2 px-3 text-foreground font-semibold">Name</th>
+                        <th className="text-left py-2 px-3 text-foreground font-semibold">ID</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-muted-foreground">
+                      <tr className="border-b border-border/50">
+                        <td className="py-2 px-3">Alice Smith</td>
+                        <td className="py-2 px-3">001</td>
+                      </tr>
+                      <tr className="border-b border-border/50">
+                        <td className="py-2 px-3">John Doe</td>
+                        <td className="py-2 px-3">002</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3">Emily Johnson</td>
+                        <td className="py-2 px-3">003</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Magic Circle (Center) */}
+                <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20">
+                  <div className="relative">
+                    <div className="w-24 h-24 md:w-28 md:h-28 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-2xl">
+                      <Sparkles className="w-10 h-10 text-primary-foreground" />
+                    </div>
+                    {/* Arrow */}
+                    <ArrowRight className="absolute -right-8 top-1/2 -translate-y-1/2 w-6 h-6 text-primary" />
+                  </div>
+                </div>
+
+                {/* Badge Card (Right) */}
+                <div className="absolute right-0 bottom-0 lg:right-[-20px] z-30 bg-card rounded-2xl shadow-2xl border border-border p-8 w-72 transform hover:scale-105 transition-transform">
+                  <div className="space-y-4">
+                    <div className="h-2 w-full bg-primary/20 rounded-full"></div>
+                    <div className="text-center space-y-3">
+                      <h3 className="text-2xl font-bold text-foreground">Alice Smith</h3>
+                      <p className="text-lg text-muted-foreground font-mono">001</p>
+                    </div>
+                    <div className="flex justify-end mt-6">
+                      <div className="w-16 h-16 bg-foreground/5 rounded-lg flex items-center justify-center">
+                        <div className="text-xs text-muted-foreground">QR</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

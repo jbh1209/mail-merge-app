@@ -299,7 +299,7 @@ const Index = () => {
             <div className="hidden md:flex items-center justify-center h-56 md:h-64 lg:h-72">
               <div className="relative flex items-center justify-center">
                 <div className="absolute w-24 h-24 rounded-full bg-gradient-to-br from-warning/20 via-warning/10 to-transparent blur-xl"></div>
-                <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-warning to-warning/80 flex items-center justify-center shadow-xl animate-pulse">
+                <div className="relative w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-warning to-warning/80 flex items-center justify-center shadow-xl">
                   <ArrowRight className="w-8 h-8 md:w-10 md:h-10 text-white" strokeWidth={3} />
                 </div>
               </div>

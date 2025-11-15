@@ -207,7 +207,7 @@ const Index = () => {
                 {rotatingWords[rotatingWordIndex]}
               </span>
             </h2>
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mt-6">
+            <p className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-4xl mx-auto mt-6 whitespace-nowrap overflow-hidden text-ellipsis px-4">
               We help you every step of the way to create the perfect{' '}
               <span 
                 key={docTypeIndex}

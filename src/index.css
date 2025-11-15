@@ -145,3 +145,15 @@ All colors MUST be HSL.
     animation: gradient-shift 3s ease infinite;
   }
 }
+
+@layer utilities {
+  @media (max-height: 820px) and (min-width: 1024px) {
+    .lgshort-py-10 { padding-top: 40px !important; padding-bottom: 40px !important; }
+    .lgshort-gap > * + * { margin-top: 16px !important; }
+    .lgshort-h1 { font-size: 44px !important; line-height: 1.05 !important; margin-bottom: 12px !important; }
+    .lgshort-scale { transform: scale(0.8) !important; transform-origin: right center; }
+  }
+  @media (max-height: 700px) and (min-width: 1024px) {
+    .lgshort-hide { display: none !important; }
+  }
+}

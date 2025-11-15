@@ -186,7 +186,7 @@ All colors MUST be HSL.
 
   /* Visual scaling - Responsive image/illustration sizing */
   .visual-scale {
-    @apply scale-90 lg:scale-85 xl:scale-100;
+    @apply scale-90 lg:scale-95 xl:scale-100;
   }
 
   /* Laptop-specific responsive utilities (height-aware) */

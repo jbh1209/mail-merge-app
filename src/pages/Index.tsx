@@ -156,23 +156,19 @@ const Index = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative px-6 md:px-12 py-12 lg:py-16 xl:py-24 overflow-hidden bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 min-h-[600px] lg:min-h-[700px] xl:min-h-screen">
+      <section className="relative px-6 md:px-12 py-12 lg:py-16 xl:py-24 lgshort-py-10 overflow-hidden bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 min-h-[560px] xl:min-h-[90vh]">
         {/* Radial gradient overlays */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.35),transparent_60%),radial-gradient(circle_at_bottom_left,_rgba(56,189,248,0.4),transparent_60%)]"></div>
         
         <div className="relative max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start lg:items-center">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-start lg:items-center">
             {/* Left Column - Content */}
-            <div className="space-y-4 md:space-y-5 lg:space-y-6 xl:space-y-8">
+            <div className="space-y-4 md:space-y-5 lg:space-y-6 xl:space-y-8 lgshort-gap">
               <div>
-                <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-extrabold leading-[1.1] mb-4 lg:mb-6">
-                  <span className="text-foreground">Create Beautiful</span>
-                  <br />
-                  <span className="text-foreground">Variable Data</span>
-                  <br />
-                  <span className="text-foreground">Documents</span>
-                  <br />
-                  <span className="text-foreground">in Seconds</span>
+                <h1 className="text-4xl md:text-5xl lg:text-[44px] xl:text-7xl font-extrabold leading-[1.08] mb-4 lg:mb-6 lgshort-h1">
+                  Create Beautiful<br />
+                  <span className="whitespace-nowrap">Variable Data Documents</span><br />
+                  in Seconds
                 </h1>
                 
                 <p className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl leading-relaxed">
@@ -185,7 +181,7 @@ const Index = () => {
                 <p className="text-base md:text-lg text-muted-foreground">
                   <span className="font-semibold text-foreground">Never again:</span>
                 </p>
-                <div className="relative h-8 flex items-center" aria-live="polite">
+                <div className="relative h-6 md:h-7 flex items-center" aria-live="polite">
                   {painPoints.map((point, index) => (
                     <p
                       key={index}
@@ -208,7 +204,7 @@ const Index = () => {
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button 
                   size="lg" 
-                  className="text-base px-8 py-4 lg:py-5 xl:py-6 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  className="text-base px-7 py-3 lg:py-4 xl:py-5 bg-primary hover:bg-primary/90 text-primary-foreground"
                   onClick={() => navigate('/auth')}
                 >
                   Start Free — No Credit Card
@@ -216,7 +212,7 @@ const Index = () => {
                 <Button 
                   size="lg" 
                   variant="outline" 
-                  className="text-base px-8 py-4 lg:py-5 xl:py-6 border-2 border-foreground/20 hover:bg-foreground/5"
+                  className="text-base px-7 py-3 lg:py-4 xl:py-5 border-2 border-foreground/20 hover:bg-foreground/5"
                 >
                   <PlayCircle className="w-5 h-5 mr-2" />
                   See How It Works
@@ -226,7 +222,7 @@ const Index = () => {
 
             {/* Right Column - Visual */}
             <div className="relative flex items-center justify-center lg:justify-end">
-              <div className="relative w-full max-w-md lg:max-w-lg scale-90 xl:scale-100">
+              <div className="relative w-full max-w-md lg:max-w-lg scale-90 lg:scale-85 xl:scale-100 lgshort-scale">
                 {/* Spreadsheet Card (Left) */}
                 <div className="absolute left-0 top-0 lg:left-[-20px] z-10 bg-card rounded-2xl shadow-xl border border-border p-6 transform hover:scale-105 transition-transform">
                   <table className="w-full text-sm">

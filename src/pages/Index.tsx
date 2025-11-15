@@ -156,16 +156,16 @@ const Index = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative px-6 md:px-12 py-20 md:py-32 overflow-hidden bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
+      <section className="relative px-6 md:px-12 py-12 lg:py-16 xl:py-24 overflow-hidden bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 min-h-[600px] lg:min-h-[700px] xl:min-h-screen">
         {/* Radial gradient overlays */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.35),transparent_60%),radial-gradient(circle_at_bottom_left,_rgba(56,189,248,0.4),transparent_60%)]"></div>
         
         <div className="relative max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-start lg:items-center">
             {/* Left Column - Content */}
-            <div className="space-y-8">
+            <div className="space-y-4 md:space-y-5 lg:space-y-6 xl:space-y-8">
               <div>
-                <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold leading-[1.1] mb-6">
+                <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-extrabold leading-[1.1] mb-4 lg:mb-6">
                   <span className="text-foreground">Create Beautiful</span>
                   <br />
                   <span className="text-foreground">Variable Data</span>
@@ -175,13 +175,13 @@ const Index = () => {
                   <span className="text-foreground">in Seconds</span>
                 </h1>
                 
-                <p className="text-lg md:text-xl text-muted-foreground max-w-xl leading-relaxed">
+                <p className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl leading-relaxed">
                   Turn any spreadsheet into labels, certificates, badges, shelf strips, event passes and more. Upload your data and template — we handle the merge, layout and print-ready PDF.
                 </p>
               </div>
 
               {/* Rotating Pain Points */}
-              <div className="space-y-2">
+              <div className="space-y-1 md:space-y-2">
                 <p className="text-base md:text-lg text-muted-foreground">
                   <span className="font-semibold text-foreground">Never again:</span>
                 </p>
@@ -200,7 +200,7 @@ const Index = () => {
               </div>
 
               {/* Blue Tagline */}
-              <p className="text-xl md:text-2xl font-semibold text-primary">
+              <p className="text-lg md:text-xl lg:text-2xl font-semibold text-primary">
                 From spreadsheet to finished documents — instantly
               </p>
 
@@ -208,7 +208,7 @@ const Index = () => {
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button 
                   size="lg" 
-                  className="text-base px-8 py-6 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  className="text-base px-8 py-4 lg:py-5 xl:py-6 bg-primary hover:bg-primary/90 text-primary-foreground"
                   onClick={() => navigate('/auth')}
                 >
                   Start Free — No Credit Card
@@ -216,7 +216,7 @@ const Index = () => {
                 <Button 
                   size="lg" 
                   variant="outline" 
-                  className="text-base px-8 py-6 border-2 border-foreground/20 hover:bg-foreground/5"
+                  className="text-base px-8 py-4 lg:py-5 xl:py-6 border-2 border-foreground/20 hover:bg-foreground/5"
                 >
                   <PlayCircle className="w-5 h-5 mr-2" />
                   See How It Works
@@ -226,7 +226,7 @@ const Index = () => {
 
             {/* Right Column - Visual */}
             <div className="relative flex items-center justify-center lg:justify-end">
-              <div className="relative w-full max-w-md lg:max-w-lg">
+              <div className="relative w-full max-w-md lg:max-w-lg scale-90 xl:scale-100">
                 {/* Spreadsheet Card (Left) */}
                 <div className="absolute left-0 top-0 lg:left-[-20px] z-10 bg-card rounded-2xl shadow-xl border border-border p-6 transform hover:scale-105 transition-transform">
                   <table className="w-full text-sm">

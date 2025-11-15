@@ -146,7 +146,50 @@ All colors MUST be HSL.
   }
 }
 
+/* ==========================================================================
+   DESIGN SYSTEM UTILITIES - Default App Style
+   ========================================================================== */
+
 @layer utilities {
+  /* Gradient Backgrounds - Default hero/section style */
+  .gradient-hero {
+    @apply bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50;
+  }
+  
+  .gradient-hero-dark {
+    @apply bg-gradient-to-br from-blue-950 via-purple-950 to-pink-950;
+  }
+
+  /* Radial gradient overlays - Adds depth to sections */
+  .radial-overlay-blue {
+    background: radial-gradient(circle at top right, rgba(129,140,248,0.35), transparent 60%),
+                radial-gradient(circle at bottom left, rgba(56,189,248,0.4), transparent 60%);
+  }
+
+  .radial-overlay-purple {
+    background: radial-gradient(circle at top left, rgba(168,85,247,0.3), transparent 60%),
+                radial-gradient(circle at bottom right, rgba(236,72,153,0.3), transparent 60%);
+  }
+
+  /* Typography - Refined heading scale */
+  .heading-hero {
+    @apply text-4xl md:text-5xl lg:text-[44px] xl:text-7xl font-extrabold leading-[1.08];
+  }
+
+  .heading-section {
+    @apply text-3xl md:text-4xl lg:text-5xl font-bold leading-tight;
+  }
+
+  .text-subtle {
+    @apply text-base md:text-lg text-muted-foreground leading-relaxed;
+  }
+
+  /* Visual scaling - Responsive image/illustration sizing */
+  .visual-scale {
+    @apply scale-90 lg:scale-85 xl:scale-100;
+  }
+
+  /* Laptop-specific responsive utilities (height-aware) */
   @media (max-height: 820px) and (min-width: 1024px) {
     .lgshort-py-10 { padding-top: 40px !important; padding-bottom: 40px !important; }
     .lgshort-gap > * + * { margin-top: 16px !important; }

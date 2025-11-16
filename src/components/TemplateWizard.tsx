@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { TemplateLibrary } from "./TemplateLibrary";
 import { TemplateUpload } from "./TemplateUpload";
 import { LabelSize } from "@/lib/avery-labels";
+import { ScopedAIChat } from "./ScopedAIChat";
+import { useSubscription } from "@/hooks/useSubscription";
 
 interface TemplateWizardProps {
   open: boolean;
@@ -34,6 +36,7 @@ export function TemplateWizard({
   const [templateName, setTemplateName] = useState("");
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  const { data: subscription } = useSubscription(workspaceId);
 
   const handleTemplateSelect = (template: LabelSize) => {
     setSelectedTemplate(template);
@@ -135,9 +138,13 @@ export function TemplateWizard({
 
         {step === "select" && (
           <Tabs value={sourceType} onValueChange={(v) => setSourceType(v as any)}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="library">Template Library</TabsTrigger>
-              <TabsTrigger value="upload">Upload Template</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="library">Library</TabsTrigger>
+              <TabsTrigger value="upload">Upload</TabsTrigger>
+              <TabsTrigger value="help" className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                Layout Help
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="library" className="mt-4">
@@ -156,6 +163,29 @@ export function TemplateWizard({
                   handleClose();
                 }}
               />
+            </TabsContent>
+
+            <TabsContent value="help" className="space-y-4">
+              {subscription?.subscription_tier && subscription.subscription_tier !== 'starter' ? (
+                <ScopedAIChat
+                  persona="layout-assistant"
+                  context={{
+                    projectType: 'label',
+                    templateName: selectedTemplate?.name,
+                    width_mm: selectedTemplate?.width_mm,
+                    height_mm: selectedTemplate?.height_mm,
+                    labelsPerSheet: selectedTemplate?.labelsPerSheet,
+                    category: selectedTemplate?.category
+                  }}
+                  maxHeight="h-[500px]"
+                />
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="mb-2">Layout Assistant requires Pro or Business plan</p>
+                  <p className="text-sm">Upgrade to get AI-powered layout guidance</p>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         )}

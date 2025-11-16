@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface TemplateUploadProps {
   projectId: string;
   workspaceId: string;
-  onUploadComplete: () => void;
+  onUploadComplete: (template: { id: string; fields: string[] }) => void;
 }
 
 export function TemplateUpload({ projectId, workspaceId, onUploadComplete }: TemplateUploadProps) {
@@ -83,7 +83,7 @@ export function TemplateUpload({ projectId, workspaceId, onUploadComplete }: Tem
         : "uploaded_image";
 
       // Create template record
-      const { error: insertError } = await supabase
+      const { data: newTemplate, error: insertError } = await supabase
         .from("templates")
         .insert({
           project_id: projectId,
@@ -92,7 +92,9 @@ export function TemplateUpload({ projectId, workspaceId, onUploadComplete }: Tem
           file_url: publicUrl,
           template_type: templateType,
           is_public: false
-        });
+        })
+        .select()
+        .single();
 
       if (insertError) throw insertError;
 
@@ -104,7 +106,10 @@ export function TemplateUpload({ projectId, workspaceId, onUploadComplete }: Tem
       // Reset form
       setFile(null);
       setTemplateName("");
-      onUploadComplete();
+      onUploadComplete({
+        id: newTemplate.id,
+        fields: ['field_1', 'field_2', 'field_3', 'field_4']
+      });
     } catch (error: any) {
       console.error("Upload error:", error);
       toast({

@@ -246,7 +246,7 @@ export function FieldMappingWizard({
                     <SelectItem value="none">
                       <span className="text-muted-foreground">No mapping</span>
                     </SelectItem>
-                    {dataColumns.map(col => (
+                    {dataColumns.filter(col => col && col.trim() !== '').map(col => (
                       <SelectItem key={col} value={col}>{col}</SelectItem>
                     ))}
                   </SelectContent>

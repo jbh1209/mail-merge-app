@@ -79,6 +79,12 @@ serve(async (req) => {
 
       // Parse headers using proper CSV parsing
       columns = parseCSVLine(lines[0]).map(col => col.replace(/^"|"$/g, ''));
+      
+      // Filter out empty columns and rename unnamed ones
+      columns = columns.map((col, idx) => 
+        col && col.trim() !== '' ? col : `Unnamed_Column_${idx + 1}`
+      ).filter(col => col && col.trim() !== '');
+      
       console.log('📊 Detected columns:', columns);
       console.log('🔢 Column count:', columns.length);
       
@@ -123,7 +129,22 @@ serve(async (req) => {
 
       // Extract columns from first row
       columns = Object.keys(jsonData[0] as Record<string, any>);
-      rows = jsonData as Record<string, any>[];
+      
+      // Filter out empty columns and rename unnamed ones
+      columns = columns.map((col, idx) => 
+        col && col.trim() !== '' ? col : `Unnamed_Column_${idx + 1}`
+      ).filter(col => col && col.trim() !== '');
+      
+      // Rebuild rows to exclude empty-named columns
+      rows = jsonData.map((row: any) => {
+        const cleanRow: Record<string, any> = {};
+        columns.forEach(col => {
+          if (col && col.trim() !== '') {
+            cleanRow[col] = row[col];
+          }
+        });
+        return cleanRow;
+      });
       
       console.log('📊 Detected columns:', columns);
       console.log('🔢 Column count:', columns.length);

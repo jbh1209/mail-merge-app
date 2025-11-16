@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 interface MergeJobRunnerProps {
   projectId: string;
@@ -30,7 +31,25 @@ export function MergeJobRunner({
   const [generating, setGenerating] = useState(false);
   const { toast } = useToast();
 
-  const canGenerate = selectedDataSource && selectedTemplate;
+  // Check quota
+  const { data: workspace } = useQuery({
+    queryKey: ["workspace", workspaceId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("workspaces")
+        .select("pages_used_this_month, pages_quota, subscription_tier")
+        .eq("id", workspaceId)
+        .single();
+      return data;
+    }
+  });
+
+  const dataSource = dataSources.find(ds => ds.id === selectedDataSource);
+  const totalPages = dataSource?.row_count || 0;
+  const remaining = workspace ? workspace.pages_quota - workspace.pages_used_this_month : 0;
+  const wouldExceedQuota = totalPages > remaining;
+
+  const canGenerate = selectedDataSource && selectedTemplate && !wouldExceedQuota;
 
   // Check if mapping exists for selected combo
   const hasMapping = fieldMappings.some(
@@ -199,6 +218,22 @@ export function MergeJobRunner({
               No field mapping exists for this combination. Please create one in the Field Mappings tab.
             </AlertDescription>
           </Alert>
+        )}
+
+        {wouldExceedQuota && workspace && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              This would generate {totalPages} pages, but you only have {remaining} remaining in your quota. 
+              Used: {workspace.pages_used_this_month} / {workspace.pages_quota}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {workspace && !wouldExceedQuota && selectedDataSource && (
+          <div className="text-sm text-muted-foreground">
+            Will generate {totalPages} pages. Remaining quota: {remaining - totalPages} / {workspace.pages_quota}
+          </div>
         )}
 
         <Button

@@ -53,8 +53,9 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center gradient-hero dark:gradient-hero-dark p-4 relative overflow-hidden">
+      <div className="radial-overlay-blue dark:radial-overlay-purple" />
+      <Card className="w-full max-w-md relative z-10 backdrop-blur-sm bg-background/95 border-border/50 shadow-2xl">
         <CardHeader>
           <CardTitle>{isSignUp ? "Create Account" : "Sign In"}</CardTitle>
           <CardDescription>

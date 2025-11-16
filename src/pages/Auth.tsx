@@ -6,8 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { AppHeader } from "@/components/AppHeader";
-import { AppFooter } from "@/components/AppFooter";
 
 export default function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -55,74 +53,68 @@ export default function Auth() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <AppHeader isAuthenticated={false} />
-      
-      <div className="flex-1 flex items-center justify-center gradient-hero dark:gradient-hero-dark p-4 relative overflow-hidden">
-        <div className="radial-overlay-blue dark:radial-overlay-purple" />
-        <Card className="w-full max-w-md relative z-10 backdrop-blur-sm bg-background/95 border-border/50 shadow-2xl">
-          <CardHeader>
-            <CardTitle>{isSignUp ? "Create Account" : "Sign In"}</CardTitle>
-            <CardDescription>
-              {isSignUp
-                ? "Sign up to start using Mail-Merge.app"
-                : "Welcome back to Mail-Merge.app"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleAuth} className="space-y-4">
-              {isSignUp && (
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
-                  <Input
-                    id="fullName"
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    required
-                  />
-                </div>
-              )}
+    <div className="flex items-center justify-center min-h-screen gradient-hero dark:gradient-hero-dark p-4 relative overflow-hidden">
+      <div className="radial-overlay-blue dark:radial-overlay-purple" />
+      <Card className="w-full max-w-md relative z-10 backdrop-blur-sm bg-background/95 border-border/50 shadow-2xl">
+        <CardHeader>
+          <CardTitle>{isSignUp ? "Create Account" : "Sign In"}</CardTitle>
+          <CardDescription>
+            {isSignUp
+              ? "Sign up to start using Mail-Merge.app"
+              : "Welcome back to Mail-Merge.app"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleAuth} className="space-y-4">
+            {isSignUp && (
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="fullName">Full Name</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="fullName"
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
-              </Button>
-            </form>
-            <div className="mt-4 text-center text-sm">
-              {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
-              <button
-                type="button"
-                onClick={() => setIsSignUp(!isSignUp)}
-                className="text-primary hover:underline"
-              >
-                {isSignUp ? "Sign In" : "Sign Up"}
-              </button>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
             </div>
-          </CardContent>
-        </Card>
-      </div>
-      
-      <AppFooter />
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
+            </Button>
+          </form>
+          <div className="mt-4 text-center text-sm">
+            {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
+            <button
+              type="button"
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-primary hover:underline"
+            >
+              {isSignUp ? "Sign In" : "Sign Up"}
+            </button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

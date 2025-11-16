@@ -62,7 +62,8 @@ const WIZARD_STEPS = [
 export default function ProjectCreationWizard({ open, onOpenChange, userId, workspaceId }: ProjectCreationWizardProps) {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { features: subscriptionFeatures } = useSubscription();
+  const { data: subscription } = useSubscription(workspaceId || undefined);
+  const subscriptionFeatures = subscription?.features;
   const [submitting, setSubmitting] = useState(false);
   
   const [wizardState, setWizardState] = useState<WizardState>({
@@ -93,10 +94,14 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
     }
     setSubmitting(true);
     try {
-      const { data, error } = await supabase.from("projects").insert({
-        name: wizardState.projectName, description: wizardState.description || null, project_type: wizardState.projectType,
-        created_by: userId, workspace_id: workspaceId, status: "draft"
-      }).select().single();
+      const { data, error } = await supabase.from("projects").insert([{
+        name: wizardState.projectName, 
+        description: wizardState.description || null, 
+        project_type: wizardState.projectType as "label" | "certificate" | "card" | "shelf_strip" | "badge" | "custom",
+        created_by: userId!, 
+        workspace_id: workspaceId!, 
+        status: "draft"
+      }]).select().single();
       if (error) throw error;
       toast({ title: "Project created!", description: "Now let's set up your data and template" });
       setWizardState(prev => ({ ...prev, projectId: data.id, step: 4 }));

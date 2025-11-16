@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { columns, preview, rowCount } = await req.json();
+    const { columns, preview, rowCount, workspaceId } = await req.json();
     
     // Get auth header to check subscription
     const authHeader = req.headers.get('authorization');
@@ -38,30 +38,71 @@ serve(async (req) => {
       );
     }
 
-    // Get user's workspace and subscription
-    const { data: profile } = await supabaseClient
-      .from('profiles')
-      .select('workspace_id')
-      .eq('id', user.id)
+    // Determine target workspace and verify membership when workspaceId is provided
+    console.log('AI clean request - user:', user.id, 'requested workspaceId:', workspaceId);
+
+    let targetWorkspaceId: string | null = workspaceId ?? null;
+
+    if (targetWorkspaceId) {
+      const { data: membership, error: membershipError } = await supabaseClient
+        .from('user_roles')
+        .select('workspace_id')
+        .eq('user_id', user.id)
+        .eq('workspace_id', targetWorkspaceId)
+        .maybeSingle();
+
+      if (membershipError) {
+        console.error('Membership check error:', membershipError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to verify workspace membership' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!membership) {
+        console.warn('User not a member of requested workspace');
+        return new Response(
+          JSON.stringify({ error: 'Forbidden - not a member of this workspace' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else {
+      // Fallback to user's profile workspace when none is provided
+      const { data: profile } = await supabaseClient
+        .from('profiles')
+        .select('workspace_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!profile?.workspace_id) {
+        return new Response(
+          JSON.stringify({ error: 'No workspace found' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      targetWorkspaceId = profile.workspace_id;
+    }
+
+    // Get target workspace subscription tier
+    const { data: workspace, error: workspaceError } = await supabaseClient
+      .from('workspaces')
+      .select('subscription_tier')
+      .eq('id', targetWorkspaceId as string)
       .single();
 
-    if (!profile?.workspace_id) {
+    if (workspaceError) {
+      console.error('Workspace fetch error:', workspaceError);
       return new Response(
-        JSON.stringify({ error: 'No workspace found' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to load workspace' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const { data: workspace } = await supabaseClient
-      .from('workspaces')
-      .select('subscription_tier')
-      .eq('id', profile.workspace_id)
-      .single();
-
     // Check if user has access to AI cleaning (not starter tier)
     if (workspace?.subscription_tier === 'starter') {
+      console.warn('Plan restriction - starter tier for workspace', targetWorkspaceId);
       return new Response(
-        JSON.stringify({ error: 'AI data cleaning requires Pro or Business plan' }),
+        JSON.stringify({ error: 'AI data cleaning requires Pro or Business plan', code: 'PLAN_REQUIRED' }),
         { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -153,14 +194,26 @@ Be VERY critical and flag any suspicious patterns. If data looks incorrectly spl
 
     if (!aiResponse.ok) {
       if (aiResponse.status === 429) {
-        throw new Error('Rate limit exceeded. Please try again in a moment.');
+        console.error('AI API rate limit hit');
+        return new Response(
+          JSON.stringify({ error: 'Rate limit exceeded. Please try again in a moment.', code: 'RATE_LIMITED' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
       if (aiResponse.status === 402) {
-        throw new Error('AI credits depleted. Please add credits to continue.');
+        const errorText = await aiResponse.text();
+        console.error('AI credits depleted:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'AI credits depleted. Please add credits to continue.', code: 'AI_CREDITS_EXHAUSTED' }),
+          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
       const errorText = await aiResponse.text();
       console.error('AI API error:', aiResponse.status, errorText);
-      throw new Error('Failed to analyze data with AI');
+      return new Response(
+        JSON.stringify({ error: 'Failed to analyze data with AI' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const aiData = await aiResponse.json();

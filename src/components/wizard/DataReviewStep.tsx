@@ -95,6 +95,7 @@ export function DataReviewStep({
           columns,
           preview: preview.slice(0, 10),
           rowCount,
+          workspaceId,
         },
       });
 
@@ -108,11 +109,15 @@ export function DataReviewStep({
       const msg = String(error?.message || '');
       const status = (error?.status ?? error?.context?.response?.status ?? error?.cause?.status) as number | undefined;
 
-      if (status === 402 || msg.includes('402')) {
+      const lower = msg.toLowerCase();
+
+      if ((status === 402 || msg.includes('402')) && (msg.includes('PLAN_REQUIRED') || lower.includes('requires pro'))) {
+        toast.error("AI data cleaning requires Pro or Business plan. Upgrade in Settings → Plans, then retry.");
+      } else if (status === 402 || msg.includes('402')) {
         toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage, then try again.");
       } else if (status === 429 || msg.includes('429')) {
         toast.error("You're being rate limited. Please wait a minute and try again.");
-      } else if (status === 401 || status === 403 || msg.toLowerCase().includes('unauthorized')) {
+      } else if (status === 401 || status === 403 || lower.includes('unauthorized')) {
         toast.error("Authentication required. Please sign in again and retry.");
       } else {
         toast.error("AI analysis failed. You can still proceed manually.");

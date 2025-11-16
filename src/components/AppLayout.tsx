@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { Home, FolderKanban, Plus, LogOut, User } from "lucide-react";
+import { Home, FolderKanban, Plus, LogOut, User, Settings } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -32,6 +32,7 @@ const navItems = [
   { title: "Dashboard", url: "/dashboard", icon: Home },
   { title: "Projects", url: "/projects", icon: FolderKanban },
   { title: "New Project", url: "/projects/new", icon: Plus },
+  { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 function AppSidebar() {
@@ -124,6 +125,10 @@ export default function AppLayout() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign Out

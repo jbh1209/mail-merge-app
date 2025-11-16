@@ -95,9 +95,31 @@ export function DataPreview({
       setEditedColumns(initialEdits);
 
       toast.success("AI analysis complete!");
-    } catch (error) {
+    } catch (error: any) {
       console.error('Analysis error:', error);
-      toast.error(error instanceof Error ? error.message : "Failed to analyze data");
+      
+      // Parse specific error codes from backend
+      const msg = String(error?.message || '');
+      const status = (error?.status ?? error?.context?.response?.status) as number | undefined;
+      let errorCode = null;
+      try {
+        if (error?.message) {
+          const parsed = JSON.parse(error.message);
+          errorCode = parsed?.code;
+        }
+      } catch {}
+
+      if (errorCode === 'PLAN_REQUIRED' || ((status === 402 || msg.includes('402')) && msg.toLowerCase().includes('requires pro'))) {
+        toast.error("AI data cleaning requires Pro or Business plan. Upgrade in Settings → Plans.");
+      } else if (errorCode === 'AI_CREDITS_EXHAUSTED' || (status === 402 || msg.includes('402'))) {
+        toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
+      } else if (errorCode === 'RATE_LIMITED' || status === 429 || msg.includes('429')) {
+        toast.error("Rate limit exceeded. Please wait a minute and try again.");
+      } else if (status === 401 || status === 403) {
+        toast.error("Authentication error. Please refresh the page.");
+      } else {
+        toast.error(error instanceof Error ? error.message : "Failed to analyze data");
+      }
       
       // Fallback: use original column names
       const fallbackMappings = columns.map(col => ({

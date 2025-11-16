@@ -86,7 +86,7 @@ serve(async (req) => {
     // Get target workspace subscription tier
     const { data: workspace, error: workspaceError } = await supabaseClient
       .from('workspaces')
-      .select('subscription_tier')
+      .select('subscription_tier, subscription_status, trial_end_date')
       .eq('id', targetWorkspaceId as string)
       .single();
 
@@ -98,9 +98,20 @@ serve(async (req) => {
       );
     }
 
-    // Check if user has access to AI cleaning (not starter tier)
-    if (workspace?.subscription_tier === 'starter') {
-      console.warn('Plan restriction - starter tier for workspace', targetWorkspaceId);
+    // Check if user has access to AI cleaning (Pro/Business OR trialing)
+    console.log('Workspace details:', {
+      tier: workspace?.subscription_tier,
+      status: workspace?.subscription_status,
+      trial_end: workspace?.trial_end_date
+    });
+
+    const isTrialing = workspace?.subscription_status === 'trialing' && 
+                       workspace?.trial_end_date && 
+                       new Date(workspace.trial_end_date) > new Date();
+    const allowAICleaning = workspace?.subscription_tier !== 'starter' || isTrialing;
+
+    if (!allowAICleaning) {
+      console.warn('Plan restriction - starter tier without active trial for workspace', targetWorkspaceId);
       return new Response(
         JSON.stringify({ error: 'AI data cleaning requires Pro or Business plan', code: 'PLAN_REQUIRED' }),
         { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -1,16 +1,26 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Upload, FileText, Play } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Play, Plus } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DataUpload } from "@/components/DataUpload";
+import { DataPreview } from "@/components/DataPreview";
+import { DataSourcesList } from "@/components/DataSourcesList";
+import { toast } from "sonner";
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadStep, setUploadStep] = useState<'upload' | 'preview'>('upload');
+  const [parsedData, setParsedData] = useState<any>(null);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -39,6 +49,35 @@ export default function ProjectDetail() {
     },
     enabled: !!id,
   });
+
+  const handleUploadComplete = (result: any) => {
+    setParsedData(result);
+    setUploadStep('preview');
+  };
+
+  const handlePreviewComplete = () => {
+    setUploadModalOpen(false);
+    setUploadStep('upload');
+    setParsedData(null);
+    queryClient.invalidateQueries({ queryKey: ["data-sources", id] });
+  };
+
+  const handleDeleteDataSource = async (dataSourceId: string) => {
+    try {
+      const { error } = await supabase
+        .from("data_sources")
+        .delete()
+        .eq("id", dataSourceId);
+
+      if (error) throw error;
+
+      toast.success("Data source deleted");
+      queryClient.invalidateQueries({ queryKey: ["data-sources", id] });
+    } catch (error) {
+      console.error("Delete error:", error);
+      toast.error("Failed to delete data source");
+    }
+  };
 
   const { data: templates } = useQuery({
     queryKey: ["templates", id],
@@ -106,37 +145,21 @@ export default function ProjectDetail() {
 
         <TabsContent value="data" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Data Sources</CardTitle>
-              <CardDescription>Upload and manage your data files</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Data Sources</CardTitle>
+                <CardDescription>Upload and manage your data files</CardDescription>
+              </div>
+              <Button onClick={() => setUploadModalOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Upload Data
+              </Button>
             </CardHeader>
             <CardContent>
-              {dataSources && dataSources.length > 0 ? (
-                <div className="space-y-3">
-                  {dataSources.map((source) => (
-                    <div key={source.id} className="p-3 rounded-lg border">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium capitalize">{source.source_type}</p>
-                          <p className="text-sm text-muted-foreground">{source.row_count} rows</p>
-                        </div>
-                        <Badge variant="secondary">
-                          {new Date(source.created_at).toLocaleDateString()}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground mb-4">No data sources yet</p>
-                  <Button disabled>
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload Data (Coming Soon)
-                  </Button>
-                </div>
-              )}
+              <DataSourcesList 
+                dataSources={dataSources || []} 
+                onDelete={handleDeleteDataSource}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -199,6 +222,43 @@ export default function ProjectDetail() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {uploadStep === 'upload' ? 'Upload Data File' : 'Review & Save Data'}
+            </DialogTitle>
+            <DialogDescription>
+              {uploadStep === 'upload' 
+                ? 'Upload a CSV or Excel file to import data into your project' 
+                : 'Review the parsed data and column mappings before saving'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {uploadStep === 'upload' ? (
+            <DataUpload
+              projectId={id!}
+              workspaceId={project?.workspace_id!}
+              onUploadComplete={handleUploadComplete}
+            />
+          ) : (
+            parsedData && (
+              <DataPreview
+                projectId={id!}
+                workspaceId={project?.workspace_id!}
+                columns={parsedData.columns}
+                rows={parsedData.rows}
+                rowCount={parsedData.rowCount}
+                preview={parsedData.preview}
+                filePath={parsedData.filePath}
+                fileName={parsedData.fileName}
+                onComplete={handlePreviewComplete}
+              />
+            )
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -104,7 +104,19 @@ export function DataReviewStep({
       toast.success("AI analysis complete!");
     } catch (error: any) {
       console.error('Analysis error:', error);
-      toast.error("AI analysis failed. You can still proceed manually.");
+      // Provide specific, actionable messages for common AI errors
+      const msg = String(error?.message || '');
+      const status = (error?.status ?? error?.context?.response?.status ?? error?.cause?.status) as number | undefined;
+
+      if (status === 402 || msg.includes('402')) {
+        toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage, then try again.");
+      } else if (status === 429 || msg.includes('429')) {
+        toast.error("You're being rate limited. Please wait a minute and try again.");
+      } else if (status === 401 || status === 403 || msg.toLowerCase().includes('unauthorized')) {
+        toast.error("Authentication required. Please sign in again and retry.");
+      } else {
+        toast.error("AI analysis failed. You can still proceed manually.");
+      }
     } finally {
       setAnalyzing(false);
     }

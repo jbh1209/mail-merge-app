@@ -428,8 +428,8 @@ export default function ProjectDetail() {
       </Tabs>
 
       <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-7xl w-[95vw] max-h-[95vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
             <DialogTitle>
               {uploadStep === 'upload' ? 'Upload Data File' : 'Preview Data'}
             </DialogTitle>
@@ -440,30 +440,32 @@ export default function ProjectDetail() {
             </DialogDescription>
           </DialogHeader>
           
-          {uploadStep === 'upload' ? (
-            workspace && (
-              <DataUpload
-                projectId={id!}
-                workspaceId={workspace}
-                onUploadComplete={handleUploadComplete}
-              />
-            )
-          ) : (
-            workspace && parsedData && (
-              <DataPreview
-                projectId={id!}
-                workspaceId={workspace}
-                columns={parsedData.columns}
-                rows={parsedData.rows}
-                rowCount={parsedData.rowCount}
-                preview={parsedData.preview}
-                filePath={parsedData.filePath}
-                fileName={parsedData.fileName}
-                subscriptionFeatures={subscription?.features}
-                onComplete={handlePreviewComplete}
-              />
-            )
-          )}
+          <div className="overflow-y-auto flex-1 px-6 py-4">
+            {uploadStep === 'upload' ? (
+              workspace && (
+                <DataUpload
+                  projectId={id!}
+                  workspaceId={workspace}
+                  onUploadComplete={handleUploadComplete}
+                />
+              )
+            ) : (
+              workspace && parsedData && (
+                <DataPreview
+                  projectId={id!}
+                  workspaceId={workspace}
+                  columns={parsedData.columns}
+                  rows={parsedData.rows}
+                  rowCount={parsedData.rowCount}
+                  preview={parsedData.preview}
+                  filePath={parsedData.filePath}
+                  fileName={parsedData.fileName}
+                  subscriptionFeatures={subscription?.features}
+                  onComplete={handlePreviewComplete}
+                />
+              )
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

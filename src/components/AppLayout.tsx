@@ -42,7 +42,7 @@ function AppSidebar() {
   const { isAdmin } = useAdminRole();
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" layout="sticky" offsetTopClassName="top-16">
       <SidebarContent>
         <div className="p-4 border-b">
           {open && <h2 className="text-lg font-semibold">Mail Merge</h2>}

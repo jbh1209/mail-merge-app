@@ -77,7 +77,7 @@ export function DataPreview({
     setAnalyzing(true);
     try {
       const { data, error } = await supabase.functions.invoke('clean-data-with-ai', {
-        body: { columns, preview, rowCount }
+        body: { columns, preview, rowCount, workspaceId }
       });
 
       if (error) throw error;

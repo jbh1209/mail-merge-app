@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, FolderKanban, FileText } from "lucide-react";
+import { Plus, FolderKanban, FileText, Sparkles } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { TrialStatusBanner } from "@/components/TrialStatusBanner";
@@ -88,6 +88,59 @@ export default function Dashboard() {
 
       <TrialStatusBanner workspaceId={profile?.workspace_id} />
       <QuotaExceededBanner workspaceId={profile?.workspace_id} />
+
+      {/* First-time user onboarding */}
+      {projects && projects.length === 0 && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Welcome to Mail Merge!
+            </CardTitle>
+            <CardDescription>
+              Let's get you started with your first project
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">1</div>
+                <div>
+                  <p className="font-medium">Create a Project</p>
+                  <p className="text-sm text-muted-foreground">Choose a project type (labels, certificates, badges, etc.)</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-semibold">2</div>
+                <div>
+                  <p className="font-medium">Upload Your Data</p>
+                  <p className="text-sm text-muted-foreground">Import a CSV or Excel file with your contact information</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-semibold">3</div>
+                <div>
+                  <p className="font-medium">Choose a Template</p>
+                  <p className="text-sm text-muted-foreground">Select from our library or upload your own design</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-semibold">4</div>
+                <div>
+                  <p className="font-medium">Generate PDFs</p>
+                  <p className="text-sm text-muted-foreground">Create personalized documents in seconds</p>
+                </div>
+              </div>
+            </div>
+            <Button asChild className="w-full">
+              <Link to="/projects/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Create Your First Project
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 md:grid-cols-3">
         <Card>

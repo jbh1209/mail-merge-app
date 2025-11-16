@@ -230,6 +230,9 @@ const Index = () => {
                   size="lg" 
                   variant="outline" 
                   className="text-base px-7 py-3 lg:py-4 xl:py-5 border-2 border-foreground/20 hover:bg-foreground/5"
+                  onClick={() => {
+                    document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
                 >
                   <PlayCircle className="w-5 h-5 mr-2" />
                   See How It Works
@@ -284,7 +287,17 @@ const Index = () => {
                 </ul>
               </CardContent>
               <CardFooter>
-                <Button className="w-full" variant={tier.popular ? "default" : "outline"}>
+                <Button 
+                  className="w-full" 
+                  variant={tier.popular ? "default" : "outline"}
+                  onClick={() => {
+                    if (tier.cta === "Contact Sales") {
+                      window.location.href = "mailto:sales@mail-merge.app";
+                    } else {
+                      navigate('/auth');
+                    }
+                  }}
+                >
                   {tier.cta}
                 </Button>
               </CardFooter>
@@ -294,7 +307,7 @@ const Index = () => {
       </section>
 
       {/* How It Works */}
-      <section className="container mx-auto px-4 py-20 bg-muted/30">
+      <section id="how-it-works" className="container mx-auto px-4 py-20 bg-muted/30">
         <div className="text-center mb-16">
           <h2 className="text-4xl md:text-5xl font-bold mb-4">How It Works</h2>
           <p className="text-xl text-muted-foreground">Three simple steps to beautiful documents</p>
@@ -379,7 +392,12 @@ const Index = () => {
           <p className="text-xl mb-8 opacity-90">
             Join thousands of users creating beautiful documents
           </p>
-          <Button size="lg" variant="secondary" className="text-lg px-8">
+          <Button 
+            size="lg" 
+            variant="secondary" 
+            className="text-lg px-8"
+            onClick={() => navigate('/auth')}
+          >
             Start Free Trial
           </Button>
         </div>

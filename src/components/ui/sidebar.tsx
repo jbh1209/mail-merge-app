@@ -181,23 +181,24 @@ const Sidebar = React.forwardRef<
       data-variant={variant}
       data-side={side}
     >
-      {/* This is what handles the sidebar gap on desktop */}
-      <div
-        className={cn(
-          "relative h-svh w-[--sidebar-width] bg-transparent transition-[width] duration-200 ease-linear",
-          "group-data-[collapsible=offcanvas]:w-0",
-          "group-data-[side=right]:rotate-180",
-          variant === "floating" || variant === "inset"
-            ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4))]"
-            : "group-data-[collapsible=icon]:w-[--sidebar-width-icon]",
-        )}
-      />
+      {/* This is what handles the sidebar gap on desktop - only needed for fixed positioning */}
+      {layout === "fixed" && (
+        <div
+          className={cn(
+            "relative h-svh w-[--sidebar-width] bg-transparent transition-[width] duration-200 ease-linear",
+            "group-data-[collapsible=offcanvas]:w-0",
+            "group-data-[side=right]:rotate-180",
+            variant === "floating" || variant === "inset"
+              ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4))]"
+              : "group-data-[collapsible=icon]:w-[--sidebar-width-icon]",
+          )}
+        />
+      )}
       <div
         className={cn(
           layout === "sticky"
             ? cn(
-                "sticky z-10 hidden h-[calc(100svh-4rem)] w-[--sidebar-width] transition-[width] duration-200 ease-linear md:flex",
-                offsetTopClassName ?? "top-16",
+                "sticky top-0 self-start z-10 hidden w-[--sidebar-width] transition-[width] duration-200 ease-linear md:flex",
                 side === "left" ? "left-0" : "right-0"
               )
             : cn(

@@ -123,48 +123,48 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[90vw] max-w-7xl h-[90vh] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Create New Project</DialogTitle>
-          <DialogDescription>{wizardState.step < 7 ? "Follow the steps to set up your mail merge project" : "Your project is ready!"}</DialogDescription>
+          <DialogTitle className="text-xl sm:text-2xl">Create New Project</DialogTitle>
+          <DialogDescription className="text-sm sm:text-base">{wizardState.step < 7 ? "Follow the steps to set up your mail merge project" : "Your project is ready!"}</DialogDescription>
         </DialogHeader>
         
         {wizardState.step < 7 && (
-          <div className="space-y-3 mb-4">
+          <div className="space-y-3 mb-4 sm:mb-6">
             <div className="flex items-center justify-between gap-1">
               {WIZARD_STEPS.slice(0, -1).map((stepConfig, idx) => (
                 <div key={idx} className="flex items-center flex-1">
-                  <div className={cn("flex items-center justify-center w-8 h-8 rounded-full text-xs font-semibold transition-all",
+                  <div className={cn("flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full text-xs font-semibold transition-all",
                     wizardState.step === idx ? "bg-primary text-primary-foreground scale-110" : wizardState.step > idx ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground")}>
-                    {wizardState.step > idx ? <CheckCircle2 className="h-4 w-4" /> : idx + 1}
+                    {wizardState.step > idx ? <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4" /> : <span className="hidden sm:inline">{idx + 1}</span>}
                   </div>
-                  {idx < WIZARD_STEPS.length - 2 && <div className={cn("flex-1 h-1 mx-2 rounded-full transition-colors", wizardState.step > idx ? "bg-primary" : "bg-muted")} />}
+                  {idx < WIZARD_STEPS.length - 2 && <div className={cn("flex-1 h-0.5 sm:h-1 mx-1 sm:mx-2 rounded-full transition-colors", wizardState.step > idx ? "bg-primary" : "bg-muted")} />}
                 </div>
               ))}
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium">{WIZARD_STEPS[wizardState.step].title}</p>
+              <p className="text-xs sm:text-sm font-medium">{WIZARD_STEPS[wizardState.step].title}</p>
               <p className="text-xs text-muted-foreground">Step {wizardState.step + 1} of {WIZARD_STEPS.length - 1}</p>
             </div>
           </div>
         )}
 
         {wizardState.step === 0 && (
-          <div className="space-y-6 py-6">
+          <div className="space-y-6 py-6 sm:py-8">
             <div className="text-center space-y-4">
-              <div className="mx-auto w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center">
-                <Sparkles className="w-10 h-10 text-primary" />
+              <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-primary/10 rounded-full flex items-center justify-center">
+                <Sparkles className="w-8 h-8 sm:w-10 sm:h-10 text-primary" />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-semibold">Welcome to Project Creation</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
+                <h3 className="text-lg sm:text-xl font-semibold">Welcome to Project Creation</h3>
+                <p className="text-sm sm:text-base text-muted-foreground max-w-md mx-auto px-4">
                   This wizard will guide you through creating your mail merge project. 
                   We'll help you choose the right type, set up your details, and get you ready to merge.
                 </p>
               </div>
             </div>
-            <div className="flex justify-center">
-              <Button size="lg" onClick={handleNext}>
+            <div className="flex justify-center px-4">
+              <Button size="lg" onClick={handleNext} className="w-full sm:w-auto">
                 Get Started <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
@@ -173,7 +173,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
 
         {wizardState.step === 1 && (
           <div className="space-y-6 py-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {projectTypes.map((type) => {
                 const Icon = type.icon;
                 return (
@@ -185,10 +185,10 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                     )}
                     onClick={() => setWizardState(prev => ({ ...prev, projectType: type.value }))}
                   >
-                    <CardContent className="p-6 text-center space-y-3">
-                      <Icon className="h-12 w-12 mx-auto text-primary" />
-                      <h3 className="font-semibold text-lg">{type.label}</h3>
-                      <p className="text-sm text-muted-foreground">
+                    <CardContent className="p-4 sm:p-6 text-center space-y-2 sm:space-y-3">
+                      <Icon className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-primary" />
+                      <h3 className="font-semibold text-base sm:text-lg">{type.label}</h3>
+                      <p className="text-xs sm:text-sm text-muted-foreground">
                         {type.description}
                       </p>
                       <p className="text-xs text-muted-foreground italic">
@@ -233,13 +233,13 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
         )}
 
         {wizardState.step === 3 && (
-          <div className="space-y-6 py-4">
+          <div className="space-y-6 py-4 px-4">
             <Card>
-              <CardContent className="p-6 space-y-4">
+              <CardContent className="p-4 sm:p-6 space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1 flex-1">
-                    <Label className="text-muted-foreground text-sm">Project Name</Label>
-                    <p className="font-semibold text-lg">{wizardState.projectName}</p>
+                    <Label className="text-muted-foreground text-xs sm:text-sm">Project Name</Label>
+                    <p className="font-semibold text-base sm:text-lg">{wizardState.projectName}</p>
                   </div>
                   <Button
                     variant="ghost"
@@ -252,12 +252,12 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
 
                 <div className="flex items-start justify-between pt-4 border-t">
                   <div className="space-y-1 flex-1">
-                    <Label className="text-muted-foreground text-sm">Project Type</Label>
+                    <Label className="text-muted-foreground text-xs sm:text-sm">Project Type</Label>
                     <div className="flex items-center gap-2">
                       {selectedType && (
                         <>
-                          <selectedType.icon className="h-5 w-5 text-primary" />
-                          <p className="font-semibold">{selectedType.label}</p>
+                          <selectedType.icon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                          <p className="font-semibold text-sm sm:text-base">{selectedType.label}</p>
                         </>
                       )}
                     </div>
@@ -274,8 +274,8 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                 {wizardState.description && (
                   <div className="flex items-start justify-between pt-4 border-t">
                     <div className="space-y-1 flex-1">
-                      <Label className="text-muted-foreground text-sm">Description</Label>
-                      <p className="text-sm">{wizardState.description}</p>
+                      <Label className="text-muted-foreground text-xs sm:text-sm">Description</Label>
+                      <p className="text-xs sm:text-sm">{wizardState.description}</p>
                     </div>
                     <Button
                       variant="ghost"
@@ -360,27 +360,116 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
         )}
 
         {wizardState.step === 7 && (
-          <div className="text-center py-12">
-            <h2 className="text-2xl font-semibold mb-4">All Set!</h2>
-            <p className="text-muted-foreground">
-              You've completed all the steps. Your project is ready to go!
-            </p>
-            <Button onClick={() => navigate(`/projects/${wizardState.projectId}`)}>
-              Go to Project
-            </Button>
+          <div className="space-y-6 py-6 sm:py-8 px-4">
+            <div className="text-center space-y-4">
+              <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-green-500/10 rounded-full flex items-center justify-center animate-scale-in">
+                <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 text-green-500" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-lg sm:text-xl font-semibold">You're All Set!</h3>
+                <p className="text-sm sm:text-base text-muted-foreground">
+                  Your project is ready. You can now generate your mail merge documents.
+                </p>
+              </div>
+            </div>
+            
+            <Card>
+              <CardContent className="p-4 sm:p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm sm:text-base">{wizardState.projectName}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground">
+                      {selectedType?.label} project
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-4 border-t">
+                  <div className="text-center">
+                    <p className="text-xl sm:text-2xl font-bold text-primary">
+                      {wizardState.parsedData?.rowCount || 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Records</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xl sm:text-2xl font-bold text-primary">
+                      {wizardState.dataColumns?.length || 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Fields</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xl sm:text-2xl font-bold text-primary">
+                      {wizardState.templateFields?.length || 0}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Mappings</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-4 sm:p-6 space-y-3">
+                <h4 className="font-semibold flex items-center gap-2 text-sm sm:text-base">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  What's Next?
+                </h4>
+                <ul className="space-y-2 text-xs sm:text-sm">
+                  <li className="flex items-start gap-2">
+                    <ArrowRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span>Generate your first batch of PDFs</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <ArrowRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span>Download individually or as a bulk ZIP file</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <ArrowRight className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <span>Update your data or template anytime</span>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                size="lg"
+                className="flex-1"
+                onClick={() => {
+                  handleClose();
+                  navigate(`/projects/${wizardState.projectId}`);
+                }}
+              >
+                Go to Project
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1 sm:flex-initial"
+                onClick={() => {
+                  handleClose();
+                  navigate('/projects');
+                }}
+              >
+                View All Projects
+              </Button>
+            </div>
           </div>
         )}
         
         {wizardState.step < 7 && (
-          <div className="flex justify-between gap-4 pt-6 border-t">
-            <Button variant="outline" onClick={handleBack} disabled={wizardState.step === 0 || wizardState.step === 4}>
+          <div className="flex flex-col sm:flex-row justify-between gap-3 sm:gap-4 pt-6 border-t">
+            <Button variant="outline" onClick={handleBack} disabled={wizardState.step === 0 || wizardState.step === 4} className="w-full sm:w-auto">
               <ArrowLeft className="mr-2 h-4 w-4" />Back
             </Button>
-            <div className="flex gap-2">
-              {wizardState.step < 4 && <Button variant="outline" onClick={handleClose}>Cancel</Button>}
-              {wizardState.step === 4 && wizardState.dataSourceId && <Button onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))}>Continue to Template<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-              {wizardState.step < 3 && <Button onClick={handleNext} disabled={!canProceed()}>Next<ArrowRight className="ml-2 h-4 w-4" /></Button>}
-              {wizardState.step === 3 && <Button onClick={handleSubmit} disabled={submitting}>{submitting ? "Creating..." : "Create & Continue"}</Button>}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-2">
+              {wizardState.step < 4 && <Button variant="outline" onClick={handleClose} className="w-full sm:w-auto">Cancel</Button>}
+              {wizardState.step === 4 && wizardState.dataSourceId && <Button onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))} className="w-full sm:w-auto">Continue to Template<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+              {wizardState.step < 3 && <Button onClick={handleNext} disabled={!canProceed()} className="w-full sm:w-auto">Next<ArrowRight className="ml-2 h-4 w-4" /></Button>}
+              {wizardState.step === 3 && <Button onClick={handleSubmit} disabled={submitting} className="w-full sm:w-auto">{submitting ? "Creating..." : "Create & Continue"}</Button>}
             </div>
           </div>
         )}

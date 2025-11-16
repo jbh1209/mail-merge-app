@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { DeleteAccountDialog } from "./DeleteAccountDialog";
+import { Separator } from "@/components/ui/separator";
 
 export function ProfileSettings() {
   const [loading, setLoading] = useState(false);
@@ -92,6 +94,18 @@ export function ProfileSettings() {
           Save Changes
         </Button>
       </form>
+
+      <Separator className="my-8" />
+
+      <div className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold text-destructive">Danger Zone</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Permanently delete your account and all associated data
+          </p>
+        </div>
+        <DeleteAccountDialog />
+      </div>
     </div>
   );
 }

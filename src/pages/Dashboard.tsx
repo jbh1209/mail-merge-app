@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Plus, FolderKanban, FileText } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { TrialStatusBanner } from "@/components/TrialStatusBanner";
+import { QuotaWarningModal } from "@/components/QuotaWarningModal";
+import { QuotaExceededBanner } from "@/components/QuotaExceededBanner";
 
 export default function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -68,6 +71,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <QuotaWarningModal workspaceId={profile?.workspace_id} />
+      
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -80,6 +85,9 @@ export default function Dashboard() {
           </Link>
         </Button>
       </div>
+
+      <TrialStatusBanner workspaceId={profile?.workspace_id} />
+      <QuotaExceededBanner workspaceId={profile?.workspace_id} />
 
       <div className="grid gap-6 md:grid-cols-3">
         <Card>

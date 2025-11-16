@@ -34,7 +34,7 @@ export default function Auth() {
 
         if (error) throw error;
         toast.success("Account created! Please check your email to verify.");
-        navigate("/");
+        navigate("/dashboard");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -43,7 +43,7 @@ export default function Auth() {
 
         if (error) throw error;
         toast.success("Signed in successfully!");
-        navigate("/");
+        navigate("/dashboard");
       }
     } catch (error: any) {
       toast.error(error.message);

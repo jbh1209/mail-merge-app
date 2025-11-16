@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, CreditCard, Tag, CheckCircle2, ArrowRight, ArrowLeft, Sparkles, Edit, LayoutGrid, BadgeCheck } from "lucide-react";
+import { FileText, CreditCard, Tag, CheckCircle2, ArrowRight, ArrowLeft, Sparkles, Edit, LayoutGrid, BadgeCheck, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -58,6 +58,35 @@ const WIZARD_STEPS = [
   { id: 6, title: "Map Fields", description: "Connect your data" },
   { id: 7, title: "All Set!", description: "Ready to merge" }
 ];
+
+// Helper function to extract template fields from a LabelSize template
+const extractTemplateFields = (template: LabelSize): string[] => {
+  const commonFields: Record<string, string[]> = {
+    'address': ['name', 'address_line_1', 'address_line_2', 'city', 'state', 'zip'],
+    'shipping': ['recipient_name', 'company', 'address', 'city', 'state', 'zip', 'country'],
+    'mailing': ['first_name', 'last_name', 'address', 'city', 'state', 'zip'],
+    'product': ['product_name', 'sku', 'price', 'barcode'],
+    'file-folder': ['name', 'category', 'date'],
+    'name-badge': ['name', 'title', 'company'],
+    'default': ['field_1', 'field_2', 'field_3', 'field_4']
+  };
+  
+  const category = template.category?.toLowerCase() || 'default';
+  
+  if (template.useCase?.toLowerCase().includes('address')) {
+    return commonFields['address'];
+  } else if (template.useCase?.toLowerCase().includes('shipping')) {
+    return commonFields['shipping'];
+  } else if (template.useCase?.toLowerCase().includes('product')) {
+    return commonFields['product'];
+  } else if (category.includes('file') || category.includes('folder')) {
+    return commonFields['file-folder'];
+  } else if (category.includes('badge') || category.includes('name')) {
+    return commonFields['name-badge'];
+  }
+  
+  return commonFields['default'];
+};
 
 export default function ProjectCreationWizard({ open, onOpenChange, userId, workspaceId }: ProjectCreationWizardProps) {
   const { toast } = useToast();
@@ -295,14 +324,39 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
           <DataUpload
             projectId={wizardState.projectId}
             workspaceId={workspaceId as string}
-            onUploadComplete={(result) => {
-              setWizardState(prev => ({
-                ...prev,
-                step: 5,
-                dataSourceId: result.filePath,
-                dataColumns: result.columns,
-                parsedData: result.preview,
-              }));
+            onUploadComplete={async (result) => {
+              try {
+                const { data: dataSource, error } = await supabase
+                  .from("data_sources")
+                  .insert([{
+                    project_id: wizardState.projectId,
+                    workspace_id: workspaceId,
+                    source_type: result.fileName.endsWith('.csv') ? 'csv' : 'excel',
+                    file_url: result.filePath,
+                    row_count: result.rowCount,
+                    parsed_fields: {
+                      columns: result.columns,
+                      preview: result.preview
+                    }
+                  }])
+                  .select()
+                  .single();
+                
+                if (error) throw error;
+                
+                setWizardState(prev => ({
+                  ...prev,
+                  step: 5,
+                  dataSourceId: dataSource.id,
+                  dataColumns: result.columns,
+                  parsedData: result,
+                }));
+                
+                toast({ title: "Data uploaded and saved!" });
+              } catch (error) {
+                console.error("Error saving data source:", error);
+                toast({ title: "Failed to save data source", variant: "destructive" });
+              }
             }}
           />
         )}
@@ -317,13 +371,45 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               <TabsContent value="library" className="space-y-4 mt-4">
                 <TemplateLibrary
                   selectedId={wizardState.templateId}
-                  onSelect={(template: LabelSize) => {
-                    setWizardState(prev => ({
-                      ...prev,
-                      templateId: template.id,
-                      templateFields: [], // Clear existing fields
-                      step: 6, // Move to field mapping
-                    }));
+                  onSelect={async (template: LabelSize) => {
+                    try {
+                      const templateFields = extractTemplateFields(template);
+                      
+                      const { data: savedTemplate, error } = await supabase
+                        .from("templates")
+                        .insert([{
+                          project_id: wizardState.projectId,
+                          workspace_id: workspaceId,
+                          name: template.name,
+                          template_type: 'built_in_library',
+                          width_mm: template.width_mm,
+                          height_mm: template.height_mm,
+                          design_config: {
+                            baseTemplate: template.id,
+                            averyCode: template.averyCode,
+                            labelsPerSheet: template.labelsPerSheet,
+                            category: template.category,
+                            description: template.description
+                          },
+                          is_public: false
+                        }])
+                        .select()
+                        .single();
+                      
+                      if (error) throw error;
+                      
+                      setWizardState(prev => ({
+                        ...prev,
+                        templateId: savedTemplate.id,
+                        templateFields: templateFields,
+                        step: 6,
+                      }));
+                      
+                      toast({ title: "Template selected and saved!" });
+                    } catch (error) {
+                      console.error("Error saving template:", error);
+                      toast({ title: "Failed to save template", variant: "destructive" });
+                    }
                   }}
                 />
               </TabsContent>
@@ -331,11 +417,14 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                 <TemplateUpload
                   projectId={wizardState.projectId}
                   workspaceId={workspaceId as string}
-                  onUploadComplete={() => {
-                    // Refresh templates after upload
-                    // You might need to fetch the new template ID and set it in wizardState
-                    // For simplicity, let's just move to the next step
-                    setWizardState(prev => ({ ...prev, step: 6 }));
+                  onUploadComplete={(uploadedTemplate) => {
+                    setWizardState(prev => ({
+                      ...prev,
+                      templateId: uploadedTemplate.id,
+                      templateFields: uploadedTemplate.fields || ['field_1', 'field_2', 'field_3'],
+                      step: 6
+                    }));
+                    toast({ title: "Template uploaded!" });
                   }}
                 />
               </TabsContent>
@@ -343,20 +432,38 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
           </div>
         )}
 
-        {wizardState.step === 6 && wizardState.projectId && wizardState.dataSourceId && wizardState.templateId && (
+        {wizardState.step === 6 && 
+         wizardState.projectId && 
+         wizardState.dataSourceId && 
+         wizardState.templateId && 
+         wizardState.templateFields.length > 0 ? (
           <FieldMappingWizard
             projectId={wizardState.projectId}
             dataSourceId={wizardState.dataSourceId}
             templateId={wizardState.templateId}
             dataColumns={wizardState.dataColumns}
-            templateFields={["field1", "field2", "field3"]} // Replace with actual template fields
-            sampleData={wizardState.parsedData}
+            templateFields={wizardState.templateFields}
+            sampleData={wizardState.parsedData?.preview || []}
             subscriptionFeatures={subscriptionFeatures}
             onComplete={() => {
               setWizardState(prev => ({ ...prev, fieldMappingsComplete: true, step: 7 }));
             }}
             onCancel={() => setWizardState(prev => ({ ...prev, step: 5 }))}
           />
+        ) : wizardState.step === 6 && (
+          <div className="text-center py-8">
+            <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              Missing required data. Please go back and complete previous steps.
+            </p>
+            <Button 
+              variant="outline" 
+              onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))}
+              className="mt-4"
+            >
+              Go Back
+            </Button>
+          </div>
         )}
 
         {wizardState.step === 7 && (

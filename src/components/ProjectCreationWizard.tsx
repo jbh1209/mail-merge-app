@@ -184,16 +184,16 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               {WIZARD_STEPS.slice(0, -1).map((stepConfig, idx) => (
                 <div key={idx} className="flex items-center flex-1">
                   <div className={cn("flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full text-xs font-semibold transition-all",
-                    wizardState.step === idx ? "bg-primary text-primary-foreground scale-110" : wizardState.step > idx ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground")}>
-                    {wizardState.step > idx ? <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4" /> : <span className="hidden sm:inline">{idx + 1}</span>}
+                    wizardState.step === stepConfig.id ? "bg-primary text-primary-foreground scale-110" : wizardState.step > stepConfig.id ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground")}>
+                    {wizardState.step > stepConfig.id ? <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4" /> : <span className="hidden sm:inline">{idx + 1}</span>}
                   </div>
-                  {idx < WIZARD_STEPS.length - 2 && <div className={cn("flex-1 h-0.5 sm:h-1 mx-1 sm:mx-2 rounded-full transition-colors", wizardState.step > idx ? "bg-primary" : "bg-muted")} />}
+                  {idx < WIZARD_STEPS.length - 2 && <div className={cn("flex-1 h-0.5 sm:h-1 mx-1 sm:mx-2 rounded-full transition-colors", wizardState.step > stepConfig.id ? "bg-primary" : "bg-muted")} />}
                 </div>
               ))}
             </div>
             <div className="text-center">
-              <p className="text-xs sm:text-sm font-medium">{WIZARD_STEPS[wizardState.step].title}</p>
-              <p className="text-xs text-muted-foreground">Step {wizardState.step + 1} of {WIZARD_STEPS.length - 1}</p>
+              <p className="text-xs sm:text-sm font-medium">{WIZARD_STEPS.find(s => s.id === wizardState.step)?.title || 'Current Step'}</p>
+              <p className="text-xs text-muted-foreground">Step {WIZARD_STEPS.findIndex(s => s.id === wizardState.step) + 1} of {WIZARD_STEPS.length - 1}</p>
             </div>
           </div>
         )}

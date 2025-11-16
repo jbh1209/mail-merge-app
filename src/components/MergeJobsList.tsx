@@ -1,9 +1,13 @@
-import { Download, FileText, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Download, FileText, Clock, CheckCircle, XCircle, Loader2, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { format } from "date-fns";
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface MergeJob {
   id: string;
@@ -24,6 +28,59 @@ interface MergeJobsListProps {
 }
 
 export function MergeJobsList({ jobs }: MergeJobsListProps) {
+  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [downloadingBulk, setDownloadingBulk] = useState(false);
+  const { toast } = useToast();
+
+  const completedJobs = jobs.filter(j => j.status === 'complete' && j.output_url);
+  const canBulkDownload = selectedJobs.size > 1;
+
+  const toggleJobSelection = (jobId: string) => {
+    const newSelection = new Set(selectedJobs);
+    if (newSelection.has(jobId)) {
+      newSelection.delete(jobId);
+    } else {
+      newSelection.add(jobId);
+    }
+    setSelectedJobs(newSelection);
+  };
+
+  const handleBulkDownload = async () => {
+    setDownloadingBulk(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('download-bulk-pdfs', {
+        body: { jobIds: Array.from(selectedJobs) }
+      });
+
+      if (error) throw error;
+
+      // Create blob from response and trigger download
+      const blob = new Blob([data], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `pdfs_${Date.now()}.zip`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download started",
+        description: `Downloading ${selectedJobs.size} PDFs as ZIP`
+      });
+
+      setSelectedJobs(new Set());
+    } catch (error) {
+      console.error('Bulk download error:', error);
+      toast({
+        title: "Download failed",
+        description: "Failed to create ZIP file",
+        variant: "destructive"
+      });
+    } finally {
+      setDownloadingBulk(false);
+    }
+  };
+
   if (jobs.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -73,6 +130,36 @@ export function MergeJobsList({ jobs }: MergeJobsListProps) {
 
   return (
     <div className="space-y-3">
+      {completedJobs.length > 1 && (
+        <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+          <div className="text-sm">
+            {selectedJobs.size > 0 ? (
+              <span className="font-medium">{selectedJobs.size} PDFs selected</span>
+            ) : (
+              <span className="text-muted-foreground">Select multiple PDFs to download as ZIP</span>
+            )}
+          </div>
+          <Button
+            onClick={handleBulkDownload}
+            disabled={!canBulkDownload || downloadingBulk}
+            size="sm"
+            variant="secondary"
+          >
+            {downloadingBulk ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Creating ZIP...
+              </>
+            ) : (
+              <>
+                <Package className="h-4 w-4 mr-2" />
+                Download {selectedJobs.size} as ZIP
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+
       {jobs.map((job) => {
         const progress = job.total_pages > 0 
           ? (job.processed_pages / job.total_pages) * 100 
@@ -80,7 +167,15 @@ export function MergeJobsList({ jobs }: MergeJobsListProps) {
 
         return (
           <Card key={job.id} className="p-4">
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-3">
+              {job.status === 'complete' && job.output_url && (
+                <Checkbox
+                  checked={selectedJobs.has(job.id)}
+                  onCheckedChange={() => toggleJobSelection(job.id)}
+                  className="mt-1"
+                />
+              )}
+              
               <div className="flex items-start gap-3 flex-1">
                 {getStatusIcon(job.status)}
                 <div className="flex-1 min-w-0">

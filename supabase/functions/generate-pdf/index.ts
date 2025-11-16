@@ -349,13 +349,17 @@ serve(async (req) => {
       .from('generated-pdfs')
       .getPublicUrl(uploadData.path);
 
-    // Create generated output record
+    // Create generated output record with 30-day expiration
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+
     await supabase.from('generated_outputs').insert({
       merge_job_id: mergeJobId,
       workspace_id: job.workspace_id,
       file_url: publicUrl,
       file_size_bytes: pdfBytes.length,
-      page_count: pdfDoc.getPageCount()
+      page_count: pdfDoc.getPageCount(),
+      expires_at: expiresAt.toISOString()
     });
 
     // Update job status to complete
@@ -368,6 +372,35 @@ serve(async (req) => {
         processing_completed_at: new Date().toISOString()
       })
       .eq('id', mergeJobId);
+
+    // Log usage
+    const billingCycleMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('pages_used_this_month, owner_id')
+      .eq('id', job.workspace_id)
+      .single();
+
+    if (workspace) {
+      // Create usage log entry
+      await supabase
+        .from('usage_logs')
+        .insert({
+          workspace_id: job.workspace_id,
+          user_id: workspace.owner_id,
+          merge_job_id: mergeJobId,
+          pages_generated: processedRecords,
+          billing_cycle_month: billingCycleMonth
+        });
+
+      // Update workspace usage counter
+      await supabase
+        .from('workspaces')
+        .update({
+          pages_used_this_month: workspace.pages_used_this_month + processedRecords
+        })
+        .eq('id', job.workspace_id);
+    }
 
     console.log('Job completed successfully');
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { Home, FolderKanban, Plus, LogOut, User, Settings, Shield } from "lucide-react";
+import { Home, FolderKanban, Plus, LogOut, User, Settings, Shield, Mail } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminRole } from "@/hooks/useAdminRole";
@@ -139,8 +139,17 @@ export default function AppLayout() {
       <div className="min-h-screen flex w-full">
         <AppSidebar />
         <div className="flex-1 flex flex-col">
-          <header className="h-16 border-b flex items-center justify-between px-6">
-            <SidebarTrigger />
+          <header className="h-16 border-b bg-card shadow-sm flex items-center justify-between px-6">
+            <div className="flex items-center gap-3">
+              <SidebarTrigger />
+              <button 
+                onClick={() => navigate("/dashboard")}
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              >
+                <Mail className="h-5 w-5 text-primary" />
+                <span className="hidden md:block text-lg font-semibold">Mail Merge</span>
+              </button>
+            </div>
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

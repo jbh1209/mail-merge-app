@@ -73,7 +73,7 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    const prompt = `You are a data cleaning assistant. Analyze this data and provide structured recommendations.
+    const prompt = `You are a data cleaning assistant specializing in detecting parsing errors and data quality issues. Analyze this data carefully for structural problems.
 
 Data has ${rowCount} total rows. Here are the first ${preview.length} rows for analysis:
 
@@ -82,7 +82,36 @@ Columns: ${columns.join(', ')}
 Sample data:
 ${JSON.stringify(preview, null, 2)}
 
-Provide a JSON response with the following structure:
+CRITICAL ANALYSIS REQUIREMENTS:
+
+1. **PARSING ARTIFACT DETECTION** - Look for signs that data was incorrectly split:
+   - Values that look like fragments (e.g., "123 Main" in one column, "Street" in next)
+   - Numeric-only values in text columns that should be part of addresses
+   - Street names without numbers or vice versa
+   - Column values that appear to be the second half of the previous column
+
+2. **COLUMN MISALIGNMENT** - Validate data types match columns:
+   - Check if "address" columns contain actual complete addresses (should have street numbers, street names, and ideally city/postal)
+   - Check if numeric columns contain only numbers
+   - Check if date columns contain valid dates
+   - Check if email/phone columns contain valid formats
+
+3. **COMMA-RELATED PARSING ERRORS** - Specifically check:
+   - Addresses that should contain commas but were split across multiple columns
+   - Business names with commas incorrectly split
+   - Any field that looks like it was cut off mid-value
+
+4. **CROSS-COLUMN VALIDATION**:
+   - If there's a "store_name" and "address", verify the address is complete
+   - Check for patterns like: column has "Street" but previous column has number - likely merged
+   - Look for values that make no sense in their column context
+
+5. **DATA COMPLETENESS**:
+   - Missing values
+   - Unusually short values in columns that should have longer text
+   - Duplicate patterns that suggest parsing errors
+
+Provide a JSON response with this structure:
 {
   "columnMappings": [
     {
@@ -92,15 +121,19 @@ Provide a JSON response with the following structure:
       "confidence": 0.95
     }
   ],
-  "qualityIssues": ["List of data quality issues found"],
-  "suggestions": ["List of improvement suggestions"]
+  "qualityIssues": [
+    "CRITICAL: Address column contains fragments - data appears incorrectly split (found '123 Main' without street type)",
+    "WARNING: Column 5 contains street names that should be part of addresses",
+    "ERROR: 15 rows have misaligned data across columns"
+  ],
+  "suggestions": [
+    "Re-upload the source file - current data shows parsing errors",
+    "If using CSV, ensure addresses with commas are properly quoted",
+    "Consider using Excel format to avoid comma-related parsing issues"
+  ]
 }
 
-Focus on:
-1. Clean, descriptive column names in snake_case
-2. Accurate data type detection
-3. Identifying missing values, formatting issues, duplicates
-4. Practical suggestions for data improvement`;
+Be VERY critical and flag any suspicious patterns. If data looks incorrectly split, say so explicitly with examples.`;
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',

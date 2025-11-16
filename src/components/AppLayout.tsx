@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { Home, FolderKanban, Plus, LogOut, User, Settings } from "lucide-react";
+import { Home, FolderKanban, Plus, LogOut, User, Settings, Shield } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { supabase } from "@/integrations/supabase/client";
+import { useAdminRole } from "@/hooks/useAdminRole";
 import {
   Sidebar,
   SidebarContent,
@@ -35,8 +36,19 @@ const navItems = [
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
+const adminNavItems = [
+  { title: "Admin Dashboard", url: "/admin", icon: Shield },
+  { title: "Subscription Tiers", url: "/admin/subscription-tiers", icon: Shield },
+  { title: "Users", url: "/admin/users", icon: Shield },
+  { title: "Workspaces", url: "/admin/workspaces", icon: Shield },
+  { title: "Projects", url: "/admin/projects", icon: Shield },
+  { title: "Jobs", url: "/admin/jobs", icon: Shield },
+  { title: "Analytics", url: "/admin/analytics", icon: Shield },
+];
+
 function AppSidebar() {
   const { open } = useSidebar();
+  const { isAdmin } = useAdminRole();
 
   return (
     <Sidebar collapsible="icon">
@@ -67,6 +79,31 @@ function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNavItems.map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton asChild>
+                      <NavLink 
+                        to={item.url} 
+                        end={item.url === "/admin"}
+                        className="hover:bg-muted/50"
+                        activeClassName="bg-muted text-primary font-medium"
+                      >
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );

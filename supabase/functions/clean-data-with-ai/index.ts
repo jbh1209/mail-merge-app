@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +13,58 @@ serve(async (req) => {
 
   try {
     const { columns, preview, rowCount } = await req.json();
+    
+    // Get auth header to check subscription
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Check subscription tier
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Get user's workspace and subscription
+    const { data: profile } = await supabaseClient
+      .from('profiles')
+      .select('workspace_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile?.workspace_id) {
+      return new Response(
+        JSON.stringify({ error: 'No workspace found' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { data: workspace } = await supabaseClient
+      .from('workspaces')
+      .select('subscription_tier')
+      .eq('id', profile.workspace_id)
+      .single();
+
+    // Check if user has access to AI cleaning (not starter tier)
+    if (workspace?.subscription_tier === 'starter') {
+      return new Response(
+        JSON.stringify({ error: 'AI data cleaning requires Pro or Business plan' }),
+        { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     console.log('Cleaning data with AI:', { columnCount: columns.length, rowCount });
 

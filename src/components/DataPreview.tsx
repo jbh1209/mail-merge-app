@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { Check, Loader2, AlertCircle, Sparkles } from "lucide-react";
+import { Check, Loader2, AlertCircle, Sparkles, TrendingUp, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { SubscriptionFeatures } from "@/hooks/useSubscription";
+import { useNavigate } from "react-router-dom";
 
 interface ColumnMapping {
   original: string;
@@ -24,6 +26,7 @@ interface DataPreviewProps {
   preview: Record<string, any>[];
   filePath: string;
   fileName: string;
+  subscriptionFeatures?: SubscriptionFeatures;
   onComplete: () => void;
 }
 
@@ -36,20 +39,42 @@ export function DataPreview({
   preview,
   filePath,
   fileName,
+  subscriptionFeatures,
   onComplete,
 }: DataPreviewProps) {
-  const [analyzing, setAnalyzing] = useState(true);
+  const navigate = useNavigate();
+  const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([]);
   const [qualityIssues, setQualityIssues] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [editedColumns, setEditedColumns] = useState<Record<string, string>>({});
 
+  const canUseAI = subscriptionFeatures?.canUseAICleaning ?? false;
+
   useEffect(() => {
-    analyzeData();
-  }, []);
+    if (canUseAI) {
+      analyzeData();
+    } else {
+      // Free tier: use original columns without AI
+      const fallbackMappings = columns.map(col => ({
+        original: col,
+        suggested: col,
+        dataType: 'text',
+        confidence: 1.0,
+      }));
+      setColumnMappings(fallbackMappings);
+      
+      const fallbackEdits: Record<string, string> = {};
+      columns.forEach(col => {
+        fallbackEdits[col] = col;
+      });
+      setEditedColumns(fallbackEdits);
+    }
+  }, [canUseAI]);
 
   const analyzeData = async () => {
+    setAnalyzing(true);
     try {
       const { data, error } = await supabase.functions.invoke('clean-data-with-ai', {
         body: { columns, preview, rowCount }

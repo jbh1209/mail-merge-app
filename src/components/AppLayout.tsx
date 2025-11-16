@@ -127,8 +127,7 @@ export default function AppLayout() {
 
   return (
     <SidebarProvider>
-      <AppSidebar />
-      <div className="flex-1 flex flex-col min-h-screen w-full">
+      <div className="flex flex-col min-h-screen w-full">
         <AppHeader 
           isAuthenticated={true}
           profile={profile}
@@ -136,9 +135,12 @@ export default function AppLayout() {
           showSidebarTrigger={true}
         />
         
-        <main className="flex-1 p-6">
-          <Outlet />
-        </main>
+        <div className="flex flex-1">
+          <AppSidebar />
+          <main className="flex-1 p-6">
+            <Outlet />
+          </main>
+        </div>
         
         <AppFooter />
       </div>

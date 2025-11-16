@@ -13,6 +13,8 @@ import { DataPreview } from "@/components/DataPreview";
 import { DataSourcesList } from "@/components/DataSourcesList";
 import { TemplateWizard } from "@/components/TemplateWizard";
 import { FieldMappingWizard } from "@/components/FieldMappingWizard";
+import { MergeJobRunner } from "@/components/MergeJobRunner";
+import { MergeJobsList } from "@/components/MergeJobsList";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -108,6 +110,23 @@ export default function ProjectDetail() {
           *,
           data_source:data_sources(id, file_url, row_count),
           template:templates(id, name)
+        `)
+        .eq("project_id", id!)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!id,
+  });
+
+  const { data: mergeJobs } = useQuery({
+    queryKey: ["merge-jobs", id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("merge_jobs")
+        .select(`
+          *,
+          template:templates(name),
+          data_source:data_sources(row_count)
         `)
         .eq("project_id", id!)
         .order("created_at", { ascending: false });
@@ -355,17 +374,26 @@ export default function ProjectDetail() {
         <TabsContent value="jobs" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Merge Jobs</CardTitle>
-              <CardDescription>View your PDF generation history</CardDescription>
+              <CardTitle>PDF Generation</CardTitle>
+              <CardDescription>Generate and download your merged documents</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <Play className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">No merge jobs yet</p>
-                <Button disabled>
-                  <Play className="mr-2 h-4 w-4" />
-                  Generate PDFs (Coming Soon)
-                </Button>
+            <CardContent className="space-y-6">
+              {workspace && (
+                <MergeJobRunner
+                  projectId={id!}
+                  workspaceId={workspace}
+                  dataSources={dataSources || []}
+                  templates={templates || []}
+                  fieldMappings={fieldMappings || []}
+                  onJobCreated={() => {
+                    queryClient.invalidateQueries({ queryKey: ["merge-jobs", id] });
+                  }}
+                />
+              )}
+              
+              <div>
+                <h3 className="font-semibold mb-3">Generation History</h3>
+                <MergeJobsList jobs={mergeJobs || []} />
               </div>
             </CardContent>
           </Card>

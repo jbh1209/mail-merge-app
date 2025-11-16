@@ -105,18 +105,25 @@ export function DataReviewStep({
       toast.success("AI analysis complete!");
     } catch (error: any) {
       console.error('Analysis error:', error);
-      // Provide specific, actionable messages for common AI errors
+      // Parse and display specific error codes from backend
       const msg = String(error?.message || '');
       const status = (error?.status ?? error?.context?.response?.status ?? error?.cause?.status) as number | undefined;
+      let errorCode = null;
+      try {
+        if (error?.message) {
+          const parsed = JSON.parse(error.message);
+          errorCode = parsed?.code;
+        }
+      } catch {}
 
       const lower = msg.toLowerCase();
 
-      if ((status === 402 || msg.includes('402')) && (msg.includes('PLAN_REQUIRED') || lower.includes('requires pro'))) {
-        toast.error("AI data cleaning requires Pro or Business plan. Upgrade in Settings → Plans, then retry.");
-      } else if (status === 402 || msg.includes('402')) {
-        toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage, then try again.");
-      } else if (status === 429 || msg.includes('429')) {
-        toast.error("You're being rate limited. Please wait a minute and try again.");
+      if (errorCode === 'PLAN_REQUIRED' || ((status === 402 || msg.includes('402')) && (msg.includes('PLAN_REQUIRED') || lower.includes('requires pro')))) {
+        toast.error("AI data cleaning requires Pro or Business plan. Upgrade in Settings → Plans.");
+      } else if (errorCode === 'AI_CREDITS_EXHAUSTED' || (status === 402 || msg.includes('402'))) {
+        toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
+      } else if (errorCode === 'RATE_LIMITED' || status === 429 || msg.includes('429')) {
+        toast.error("Rate limit exceeded. Please wait a minute and try again.");
       } else if (status === 401 || status === 403 || lower.includes('unauthorized')) {
         toast.error("Authentication required. Please sign in again and retry.");
       } else {
@@ -135,7 +142,7 @@ export function DataReviewStep({
   };
 
   const calculateQualityScore = () => {
-    if (!analysis) return 100;
+    if (!analysis) return null;
     const issueCount = analysis.qualityIssues.length;
     const maxIssues = 10;
     return Math.max(0, Math.round(100 - (issueCount / maxIssues) * 100));
@@ -218,10 +225,21 @@ export function DataReviewStep({
                   <p className="text-sm text-muted-foreground">Quality Issues</p>
                 </div>
                 <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
-                  <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                    {calculateQualityScore()}%
-                  </p>
-                  <p className="text-sm text-muted-foreground">Quality Score</p>
+                  {calculateQualityScore() !== null ? (
+                    <>
+                      <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
+                        {calculateQualityScore()}%
+                      </p>
+                      <p className="text-sm text-muted-foreground">Quality Score</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-3xl font-bold text-muted-foreground">
+                        N/A
+                      </p>
+                      <p className="text-sm text-muted-foreground">Quality Score</p>
+                    </>
+                  )}
                 </div>
               </div>
             </CardContent>

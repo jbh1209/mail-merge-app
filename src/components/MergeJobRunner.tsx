@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Rocket, Loader2, AlertCircle } from "lucide-react";
+import { Rocket, Loader2, AlertCircle, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
 interface MergeJobRunnerProps {
   projectId: string;
@@ -30,6 +31,7 @@ export function MergeJobRunner({
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [generating, setGenerating] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Check quota
   const { data: workspace } = useQuery({
@@ -221,11 +223,26 @@ export function MergeJobRunner({
         )}
 
         {wouldExceedQuota && workspace && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              This would generate {totalPages} pages, but you only have {remaining} remaining in your quota. 
-              Used: {workspace.pages_used_this_month} / {workspace.pages_quota}
+          <Alert className="border-destructive bg-destructive/10">
+            <AlertCircle className="h-4 w-4 text-destructive" />
+            <AlertTitle>Quota Exceeded</AlertTitle>
+            <AlertDescription className="space-y-3">
+              <p>
+                This would generate {totalPages} pages, but you only have {remaining} pages remaining in your quota.
+              </p>
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-sm">
+                  Current usage: {workspace.pages_used_this_month} / {workspace.pages_quota} pages
+                </span>
+                <Button
+                  size="sm"
+                  onClick={() => navigate("/settings?tab=billing")}
+                  variant="default"
+                >
+                  <TrendingUp className="mr-2 h-4 w-4" />
+                  Upgrade Plan
+                </Button>
+              </div>
             </AlertDescription>
           </Alert>
         )}

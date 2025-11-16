@@ -62,13 +62,23 @@ Deno.serve(async (req) => {
           .single();
 
         // Update workspace subscription
+        const updateData: any = {
+          subscription_tier: tier?.tier_name || 'starter',
+          subscription_status: subscription.status === 'active' ? 'active' : subscription.status,
+          pages_quota: tier?.pages_per_month || 100,
+        };
+        
+        // Set trial end date if subscription has a trial period
+        if (subscription.trial_end) {
+          updateData.trial_end_date = new Date(subscription.trial_end * 1000).toISOString();
+        } else if (subscription.status === 'active') {
+          // Clear trial if subscription is now active without trial
+          updateData.trial_end_date = null;
+        }
+        
         await supabase
           .from('workspaces')
-          .update({
-            subscription_tier: tier?.tier_name || 'starter',
-            subscription_status: subscription.status === 'active' ? 'active' : subscription.status,
-            pages_quota: tier?.pages_per_month || 100,
-          })
+          .update(updateData)
           .eq('id', workspace.id);
 
         // Upsert stripe subscription record

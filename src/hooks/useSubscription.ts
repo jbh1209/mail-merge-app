@@ -14,6 +14,9 @@ export interface SubscriptionFeatures {
   canUseTeamCollaboration: boolean;
   canUseWhiteLabel: boolean;
   hasAdvancedAI: boolean;
+  isOnTrial: boolean;
+  trialEndsAt: string | null;
+  daysLeftInTrial: number | null;
 }
 
 export function useSubscription(workspaceId: string | undefined) {
@@ -24,25 +27,34 @@ export function useSubscription(workspaceId: string | undefined) {
 
       const { data: workspace, error } = await supabase
         .from("workspaces")
-        .select("subscription_tier, subscription_status, pages_quota, pages_used_this_month")
+        .select("subscription_tier, subscription_status, pages_quota, pages_used_this_month, trial_end_date")
         .eq("id", workspaceId)
         .single();
 
       if (error) throw error;
 
       const tier = workspace.subscription_tier as SubscriptionTier;
+      const trialEndDate = workspace.trial_end_date ? new Date(workspace.trial_end_date) : null;
+      const now = new Date();
+      const isOnTrial = trialEndDate ? trialEndDate > now && workspace.subscription_status === 'trialing' : false;
+      const daysLeftInTrial = trialEndDate && isOnTrial 
+        ? Math.ceil((trialEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
       
       const features: SubscriptionFeatures = {
         tier,
         pagesQuota: workspace.pages_quota,
         pagesUsed: workspace.pages_used_this_month,
-        canUseGoogleSheets: tier !== "starter",
-        canUseAICleaning: tier !== "starter",
-        canUseCustomTemplates: tier === "business" || tier === "pro",
-        canUseAPI: tier === "business" || tier === "pro",
-        canUseTeamCollaboration: tier === "business" || tier === "pro",
-        canUseWhiteLabel: tier === "business" || tier === "pro",
-        hasAdvancedAI: tier === "business" || tier === "pro",
+        canUseGoogleSheets: tier !== "starter" || isOnTrial,
+        canUseAICleaning: tier !== "starter" || isOnTrial,
+        canUseCustomTemplates: (tier === "business" || tier === "pro") || isOnTrial,
+        canUseAPI: (tier === "business" || tier === "pro") || isOnTrial,
+        canUseTeamCollaboration: (tier === "business" || tier === "pro") || isOnTrial,
+        canUseWhiteLabel: (tier === "business" || tier === "pro") || isOnTrial,
+        hasAdvancedAI: (tier === "business" || tier === "pro") || isOnTrial,
+        isOnTrial,
+        trialEndsAt: trialEndDate?.toISOString() || null,
+        daysLeftInTrial,
       };
 
       return {

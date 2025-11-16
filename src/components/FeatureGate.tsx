@@ -21,6 +21,9 @@ export function FeatureGate({ workspaceId, feature, children, fallback }: Featur
   }
 
   const hasAccess = subscription?.features?.[feature];
+  const isOnTrial = subscription?.features?.isOnTrial;
+  const daysLeftInTrial = subscription?.features?.daysLeftInTrial;
+  const isTrialExpiringSoon = daysLeftInTrial !== null && daysLeftInTrial <= 3;
 
   if (!hasAccess) {
     return (
@@ -29,7 +32,11 @@ export function FeatureGate({ workspaceId, feature, children, fallback }: Featur
           <Lock className="h-4 w-4" />
           <AlertTitle>Premium Feature</AlertTitle>
           <AlertDescription className="flex items-center justify-between">
-            <span>Upgrade your plan to access this feature</span>
+            <span>
+              {isOnTrial && isTrialExpiringSoon
+                ? `Trial ending in ${daysLeftInTrial} ${daysLeftInTrial === 1 ? 'day' : 'days'}. Upgrade to keep access.`
+                : "Upgrade your plan to access this feature"}
+            </span>
             <Button
               size="sm"
               onClick={() => navigate("/settings?tab=billing")}

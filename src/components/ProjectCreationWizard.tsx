@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { DataUpload } from "./DataUpload";
+import { DataReviewStep } from "./wizard/DataReviewStep";
 import { TemplateLibrary } from "./TemplateLibrary";
 import { TemplateUpload } from "./TemplateUpload";
 import { FieldMappingWizard } from "./FieldMappingWizard";
@@ -43,6 +44,8 @@ interface WizardState {
   dataSourceId: string | null;
   dataColumns: string[];
   parsedData: any;
+  dataReviewComplete: boolean;
+  aiAnalysisResult: any;
   templateId: string | null;
   templateFields: string[];
   fieldMappingsComplete: boolean;
@@ -54,6 +57,7 @@ const WIZARD_STEPS = [
   { id: 2, title: "Project Details", description: "Name your project" },
   { id: 3, title: "Review", description: "Confirm details" },
   { id: 4, title: "Upload Data", description: "Add your spreadsheet" },
+  { id: 4.5, title: "Review Data", description: "Validate & clean" },
   { id: 5, title: "Choose Template", description: "Select your design" },
   { id: 6, title: "Map Fields", description: "Connect your data" },
   { id: 7, title: "All Set!", description: "Ready to merge" }
@@ -104,6 +108,8 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
     dataSourceId: null,
     dataColumns: [],
     parsedData: null,
+    dataReviewComplete: false,
+    aiAnalysisResult: null,
     templateId: null,
     templateFields: [],
     fieldMappingsComplete: false,
@@ -112,7 +118,21 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
   const handleNext = () => setWizardState(prev => ({ ...prev, step: prev.step + 1 }));
   const handleBack = () => setWizardState(prev => ({ ...prev, step: prev.step - 1 }));
   const handleClose = () => {
-    setWizardState({ step: 0, projectType: null, projectName: "", description: "", projectId: null, dataSourceId: null, dataColumns: [], parsedData: null, templateId: null, templateFields: [], fieldMappingsComplete: false });
+    setWizardState({ 
+      step: 0, 
+      projectType: null, 
+      projectName: "", 
+      description: "", 
+      projectId: null, 
+      dataSourceId: null, 
+      dataColumns: [], 
+      parsedData: null,
+      dataReviewComplete: false,
+      aiAnalysisResult: null,
+      templateId: null, 
+      templateFields: [], 
+      fieldMappingsComplete: false 
+    });
     onOpenChange(false);
   };
 
@@ -346,7 +366,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                 
                 setWizardState(prev => ({
                   ...prev,
-                  step: 5,
+                  step: 4.5,
                   dataSourceId: dataSource.id,
                   dataColumns: result.columns,
                   parsedData: result,
@@ -358,6 +378,29 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                 toast({ title: "Failed to save data source", variant: "destructive" });
               }
             }}
+          />
+        )}
+
+        {wizardState.step === 4.5 && wizardState.projectId && wizardState.dataSourceId && wizardState.parsedData && (
+          <DataReviewStep
+            projectId={wizardState.projectId}
+            workspaceId={workspaceId!}
+            dataSourceId={wizardState.dataSourceId}
+            parsedData={wizardState.parsedData}
+            subscriptionFeatures={{
+              canUseAICleaning: subscriptionFeatures?.canUseAICleaning || false,
+              hasAdvancedAI: subscriptionFeatures?.hasAdvancedAI || false,
+            }}
+            onComplete={(updatedData) => {
+              setWizardState(prev => ({
+                ...prev,
+                step: 5,
+                dataReviewComplete: true,
+                dataColumns: updatedData.columns || prev.dataColumns,
+                aiAnalysisResult: updatedData.analysis,
+              }));
+            }}
+            onBack={() => setWizardState(prev => ({ ...prev, step: 4 }))}
           />
         )}
 

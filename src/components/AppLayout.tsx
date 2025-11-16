@@ -127,22 +127,22 @@ export default function AppLayout() {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col">
-          <AppHeader 
-            isAuthenticated={true}
-            profile={profile}
-            onSignOut={handleSignOut}
-            showSidebarTrigger={true}
-          />
-          
+      <div className="min-h-screen flex flex-col w-full">
+        <AppHeader 
+          isAuthenticated={true}
+          profile={profile}
+          onSignOut={handleSignOut}
+          showSidebarTrigger={true}
+        />
+        
+        <div className="flex flex-1">
+          <AppSidebar />
           <main className="flex-1 p-6">
             <Outlet />
           </main>
-          
-          <AppFooter />
         </div>
+        
+        <AppFooter />
       </div>
     </SidebarProvider>
   );

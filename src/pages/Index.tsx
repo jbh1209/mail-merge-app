@@ -5,6 +5,8 @@ import { Check, Zap, Shield, Download, Upload, Wand2, ArrowRight, PlayCircle, Sp
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import heroMergeVisual from "@/assets/hero-merge-visual.png";
+import { AppHeader } from "@/components/AppHeader";
+import { AppFooter } from "@/components/AppFooter";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -152,25 +154,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/20">
-      {/* Navigation */}
-      <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-8">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Mail Merge
-            </h1>
-            <div className="hidden md:flex space-x-6">
-              <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
-              <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
-              <a href="#use-cases" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Use Cases</a>
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" onClick={() => navigate('/auth')}>Log In</Button>
-            <Button onClick={() => navigate('/auth')}>Sign Up</Button>
-          </div>
-        </div>
-      </nav>
+      <AppHeader isAuthenticated={false} />
 
       {/* Hero Section */}
       <section className="relative px-6 md:px-12 py-12 lg:py-16 xl:py-24 lgshort-py-10 overflow-hidden bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 min-h-[560px] xl:min-h-[90vh]">
@@ -403,48 +387,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t bg-muted/30">
-        <div className="container mx-auto px-4 py-12">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div>
-              <h3 className="text-lg font-bold mb-4 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                Mail Merge
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Transform your data into professional documents with AI-powered mail merge.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-4">Product</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#features" className="hover:text-foreground transition-colors">Features</a></li>
-                <li><a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a></li>
-                <li><a href="#use-cases" className="hover:text-foreground transition-colors">Use Cases</a></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-4">Company</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground transition-colors">About</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Blog</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Contact</a></li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-4">Legal</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground transition-colors">Privacy</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Terms</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors">Security</a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t mt-8 pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; 2024 Mail Merge. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
+      <AppFooter />
     </div>
   );
 };

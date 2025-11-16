@@ -12,7 +12,9 @@ import { DataUpload } from "@/components/DataUpload";
 import { DataPreview } from "@/components/DataPreview";
 import { DataSourcesList } from "@/components/DataSourcesList";
 import { TemplateWizard } from "@/components/TemplateWizard";
+import { FieldMappingWizard } from "@/components/FieldMappingWizard";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +25,9 @@ export default function ProjectDetail() {
   const [uploadStep, setUploadStep] = useState<'upload' | 'preview'>('upload');
   const [parsedData, setParsedData] = useState<any>(null);
   const [templateWizardOpen, setTemplateWizardOpen] = useState(false);
+  const [fieldMappingOpen, setFieldMappingOpen] = useState(false);
+  const [selectedDataSource, setSelectedDataSource] = useState<any>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -94,6 +99,23 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
 
+  const { data: fieldMappings } = useQuery({
+    queryKey: ["field-mappings", id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("field_mappings")
+        .select(`
+          *,
+          data_source:data_sources(id, file_url, row_count),
+          template:templates(id, name)
+        `)
+        .eq("project_id", id!)
+        .order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!id,
+  });
+
   const { data: workspace } = useQuery({
     queryKey: ["workspace"],
     queryFn: async () => {
@@ -112,6 +134,16 @@ export default function ProjectDetail() {
 
   const handleTemplateComplete = () => {
     queryClient.invalidateQueries({ queryKey: ["templates", id] });
+  };
+
+  const handleStartMapping = (dataSource: any) => {
+    if (!templates || templates.length === 0) {
+      toast.error("Please create a template first before mapping fields");
+      return;
+    }
+    setSelectedDataSource(dataSource);
+    setSelectedTemplate(templates[0]);
+    setFieldMappingOpen(true);
   };
 
   if (isLoading) {
@@ -162,6 +194,7 @@ export default function ProjectDetail() {
         <TabsList>
           <TabsTrigger value="data">Data Sources</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="mappings">Field Mappings</TabsTrigger>
           <TabsTrigger value="jobs">Merge Jobs</TabsTrigger>
         </TabsList>
 
@@ -181,6 +214,7 @@ export default function ProjectDetail() {
               <DataSourcesList 
                 dataSources={dataSources || []} 
                 onDelete={handleDeleteDataSource}
+                onMapFields={handleStartMapping}
               />
             </CardContent>
           </Card>
@@ -231,6 +265,86 @@ export default function ProjectDetail() {
                   <Button onClick={() => setTemplateWizardOpen(true)}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add Your First Template
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="mappings" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Field Mappings</CardTitle>
+                <CardDescription>Connect data columns to template fields</CardDescription>
+              </div>
+              <Button 
+                onClick={() => {
+                  if (!dataSources || dataSources.length === 0) {
+                    toast.error("Please upload data first");
+                    return;
+                  }
+                  if (!templates || templates.length === 0) {
+                    toast.error("Please create a template first");
+                    return;
+                  }
+                  handleStartMapping(dataSources[0]);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Mapping
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {fieldMappings && fieldMappings.length > 0 ? (
+                <div className="space-y-3">
+                  {fieldMappings.map((mapping: any) => (
+                    <div key={mapping.id} className="p-3 rounded-lg border">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium">{mapping.template?.name || 'Unknown Template'}</p>
+                          <div className="flex gap-2 mt-1 text-sm text-muted-foreground">
+                            <span>{Object.keys(mapping.mappings || {}).length} fields mapped</span>
+                            {mapping.ai_confidence_score && (
+                              <>
+                                <span>•</span>
+                                <span>{mapping.ai_confidence_score}% AI confidence</span>
+                              </>
+                            )}
+                            <span>•</span>
+                            <span>{format(new Date(mapping.created_at), 'MMM d, yyyy')}</span>
+                          </div>
+                          {mapping.user_confirmed && (
+                            <Badge variant="default" className="mt-2 text-xs">Confirmed</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground mb-2">No field mappings yet</p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Create a mapping to connect your data to templates
+                  </p>
+                  <Button 
+                    onClick={() => {
+                      if (!dataSources || dataSources.length === 0) {
+                        toast.error("Please upload data first");
+                        return;
+                      }
+                      if (!templates || templates.length === 0) {
+                        toast.error("Please create a template first");
+                        return;
+                      }
+                      handleStartMapping(dataSources[0]);
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create Your First Mapping
                   </Button>
                 </div>
               )}
@@ -306,6 +420,40 @@ export default function ProjectDetail() {
           onComplete={handleTemplateComplete}
         />
       )}
+
+      <Dialog open={fieldMappingOpen} onOpenChange={setFieldMappingOpen}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Map Data Fields to Template</DialogTitle>
+            <DialogDescription>
+              Connect your data columns to template fields for automated document generation
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedDataSource && selectedTemplate && workspace && (
+            <FieldMappingWizard
+              projectId={id!}
+              dataSourceId={selectedDataSource.id}
+              templateId={selectedTemplate.id}
+              dataColumns={
+                selectedDataSource.parsed_fields?.columns?.map((c: any) => c.cleaned || c.original) || 
+                Object.keys(selectedDataSource.parsed_fields?.preview?.[0] || {})
+              }
+              templateFields={[
+                'name', 'address', 'email', 'phone', 'date', 
+                'product', 'quantity', 'price', 'total', 'description'
+              ]}
+              sampleData={selectedDataSource.parsed_fields?.preview || []}
+              onComplete={() => {
+                setFieldMappingOpen(false);
+                queryClient.invalidateQueries({ queryKey: ["field-mappings", id] });
+                toast.success("Field mapping saved successfully");
+              }}
+              onCancel={() => setFieldMappingOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -148,6 +148,10 @@ export function DataReviewStep({
     return Math.max(0, Math.round(100 - (issueCount / maxIssues) * 100));
   };
 
+  const unnamedColumns = parsedData.columns.filter(col => 
+    col.startsWith('Unnamed_Column_')
+  );
+
   const handleAcceptAndContinue = () => {
     setDataValidated(true);
     
@@ -202,6 +206,17 @@ export function DataReviewStep({
             )}
           </TabsTrigger>
         </TabsList>
+
+        {unnamedColumns.length > 0 && (
+          <Alert className="mt-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Unnamed Columns Detected</AlertTitle>
+            <AlertDescription>
+              Your file had {unnamedColumns.length} unnamed column{unnamedColumns.length > 1 ? 's' : ''}. 
+              They've been renamed to 'Unnamed_Column_X'. Consider updating your source file with proper column names.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <TabsContent value="overview" className="space-y-4 mt-6">
           <Card>

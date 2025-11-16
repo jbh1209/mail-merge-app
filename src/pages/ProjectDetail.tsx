@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DataUpload } from "@/components/DataUpload";
 import { DataPreview } from "@/components/DataPreview";
 import { DataSourcesList } from "@/components/DataSourcesList";
+import { TemplateWizard } from "@/components/TemplateWizard";
 import { toast } from "sonner";
 
 export default function ProjectDetail() {
@@ -21,6 +22,7 @@ export default function ProjectDetail() {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadStep, setUploadStep] = useState<'upload' | 'preview'>('upload');
   const [parsedData, setParsedData] = useState<any>(null);
+  const [templateWizardOpen, setTemplateWizardOpen] = useState(false);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -91,6 +93,26 @@ export default function ProjectDetail() {
     },
     enabled: !!id,
   });
+
+  const { data: workspace } = useQuery({
+    queryKey: ["workspace"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+      
+      const { data } = await supabase
+        .from("profiles")
+        .select("workspace_id")
+        .eq("id", user.id)
+        .single();
+      
+      return data?.workspace_id;
+    },
+  });
+
+  const handleTemplateComplete = () => {
+    queryClient.invalidateQueries({ queryKey: ["templates", id] });
+  };
 
   if (isLoading) {
     return (
@@ -166,9 +188,15 @@ export default function ProjectDetail() {
 
         <TabsContent value="templates" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>Templates</CardTitle>
-              <CardDescription>Design and manage your templates</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Templates</CardTitle>
+                <CardDescription>Design and manage your templates</CardDescription>
+              </div>
+              <Button onClick={() => setTemplateWizardOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Template
+              </Button>
             </CardHeader>
             <CardContent>
               {templates && templates.length > 0 ? (
@@ -176,11 +204,18 @@ export default function ProjectDetail() {
                   {templates.map((template) => (
                     <div key={template.id} className="p-3 rounded-lg border">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="flex-1">
                           <p className="font-medium">{template.name}</p>
-                          <p className="text-sm text-muted-foreground capitalize">
-                            {template.template_type.replace("_", " ")}
-                          </p>
+                          <div className="flex gap-2 mt-1">
+                            <p className="text-sm text-muted-foreground capitalize">
+                              {template.template_type.replace("_", " ")}
+                            </p>
+                            {template.width_mm && template.height_mm && (
+                              <Badge variant="outline" className="text-xs font-mono">
+                                {template.width_mm}×{template.height_mm}mm
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                         <Badge variant="secondary">
                           {new Date(template.created_at).toLocaleDateString()}
@@ -193,9 +228,9 @@ export default function ProjectDetail() {
                 <div className="text-center py-8">
                   <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground mb-4">No templates yet</p>
-                  <Button disabled>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Create Template (Coming Soon)
+                  <Button onClick={() => setTemplateWizardOpen(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Your First Template
                   </Button>
                 </div>
               )}
@@ -224,29 +259,31 @@ export default function ProjectDetail() {
       </Tabs>
 
       <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {uploadStep === 'upload' ? 'Upload Data File' : 'Review & Save Data'}
+              {uploadStep === 'upload' ? 'Upload Data File' : 'Preview Data'}
             </DialogTitle>
             <DialogDescription>
               {uploadStep === 'upload' 
-                ? 'Upload a CSV or Excel file to import data into your project' 
-                : 'Review the parsed data and column mappings before saving'}
+                ? 'Upload your CSV or Excel file to import data'
+                : 'Review your data before saving'}
             </DialogDescription>
           </DialogHeader>
           
           {uploadStep === 'upload' ? (
-            <DataUpload
-              projectId={id!}
-              workspaceId={project?.workspace_id!}
-              onUploadComplete={handleUploadComplete}
-            />
+            workspace && (
+              <DataUpload
+                projectId={id!}
+                workspaceId={workspace}
+                onUploadComplete={handleUploadComplete}
+              />
+            )
           ) : (
-            parsedData && (
+            workspace && parsedData && (
               <DataPreview
                 projectId={id!}
-                workspaceId={project?.workspace_id!}
+                workspaceId={workspace}
                 columns={parsedData.columns}
                 rows={parsedData.rows}
                 rowCount={parsedData.rowCount}
@@ -259,6 +296,16 @@ export default function ProjectDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      {workspace && (
+        <TemplateWizard
+          open={templateWizardOpen}
+          onOpenChange={setTemplateWizardOpen}
+          projectId={id!}
+          workspaceId={workspace}
+          onComplete={handleTemplateComplete}
+        />
+      )}
     </div>
   );
 }

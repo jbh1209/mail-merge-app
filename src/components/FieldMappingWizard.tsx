@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
-import { Wand2, Check, AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import { Wand2, Check, AlertCircle, ArrowRight, Loader2, Lock, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MappingPreview } from "./MappingPreview";
+import { SubscriptionFeatures } from "@/hooks/useSubscription";
+import { useNavigate } from "react-router-dom";
 
 interface FieldMapping {
   templateField: string;
@@ -23,6 +25,7 @@ interface FieldMappingWizardProps {
   dataColumns: string[];
   templateFields: string[];
   sampleData: Record<string, any>[];
+  subscriptionFeatures?: SubscriptionFeatures;
   onComplete: () => void;
   onCancel: () => void;
 }
@@ -34,15 +37,19 @@ export function FieldMappingWizard({
   dataColumns,
   templateFields,
   sampleData,
+  subscriptionFeatures,
   onComplete,
   onCancel
 }: FieldMappingWizardProps) {
+  const navigate = useNavigate();
   const [mappings, setMappings] = useState<FieldMapping[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [overallConfidence, setOverallConfidence] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
+
+  const hasAdvancedAI = subscriptionFeatures?.hasAdvancedAI ?? false;
 
   useEffect(() => {
     // Initialize with empty mappings

@@ -15,6 +15,7 @@ import { TemplateWizard } from "@/components/TemplateWizard";
 import { FieldMappingWizard } from "@/components/FieldMappingWizard";
 import { MergeJobRunner } from "@/components/MergeJobRunner";
 import { MergeJobsList } from "@/components/MergeJobsList";
+import { useSubscription } from "@/hooks/useSubscription";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -150,6 +151,8 @@ export default function ProjectDetail() {
       return data?.workspace_id;
     },
   });
+
+  const { data: subscription } = useSubscription(workspace);
 
   const handleTemplateComplete = () => {
     queryClient.invalidateQueries({ queryKey: ["templates", id] });
@@ -432,6 +435,7 @@ export default function ProjectDetail() {
                 preview={parsedData.preview}
                 filePath={parsedData.filePath}
                 fileName={parsedData.fileName}
+                subscriptionFeatures={subscription?.features}
                 onComplete={handlePreviewComplete}
               />
             )
@@ -472,6 +476,7 @@ export default function ProjectDetail() {
                 'product', 'quantity', 'price', 'total', 'description'
               ]}
               sampleData={selectedDataSource.parsed_fields?.preview || []}
+              subscriptionFeatures={subscription?.features}
               onComplete={() => {
                 setFieldMappingOpen(false);
                 queryClient.invalidateQueries({ queryKey: ["field-mappings", id] });

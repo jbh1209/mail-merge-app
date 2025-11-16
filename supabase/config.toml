@@ -1,7 +1,10 @@
 project_id = "jtojmvquqdkvibsraydq"
 
 [functions.parse-data-file]
-verify_jwt = true
+verify_jwt = false
 
 [functions.clean-data-with-ai]
-verify_jwt = true
+verify_jwt = false
+
+[functions.suggest-field-mappings]
+verify_jwt = false

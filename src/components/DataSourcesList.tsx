@@ -27,9 +27,10 @@ interface DataSource {
 interface DataSourcesListProps {
   dataSources: DataSource[];
   onDelete: (id: string) => void;
+  onMapFields?: (dataSource: DataSource) => void;
 }
 
-export function DataSourcesList({ dataSources, onDelete }: DataSourcesListProps) {
+export function DataSourcesList({ dataSources, onDelete, onMapFields }: DataSourcesListProps) {
   if (dataSources.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -75,12 +76,22 @@ export function DataSourcesList({ dataSources, onDelete }: DataSourcesListProps)
                 </div>
               </div>
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="text-destructive">
-                    <Trash2 className="h-4 w-4" />
+              <div className="flex gap-2">
+                {onMapFields && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => onMapFields(source)}
+                  >
+                    Map Fields
                   </Button>
-                </AlertDialogTrigger>
+                )}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete data source?</AlertDialogTitle>
@@ -99,6 +110,7 @@ export function DataSourcesList({ dataSources, onDelete }: DataSourcesListProps)
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              </div>
             </div>
           </Card>
         );

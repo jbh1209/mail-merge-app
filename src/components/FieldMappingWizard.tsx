@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Wand2, Check, AlertCircle, ArrowRight, Loader2, Lock, TrendingUp } from "lucide-react";
+import { Wand2, Check, AlertCircle, ArrowRight, Loader2, Lock, TrendingUp, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -10,6 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { MappingPreview } from "./MappingPreview";
 import { SubscriptionFeatures } from "@/hooks/useSubscription";
 import { useNavigate } from "react-router-dom";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ScopedAIChat } from "./ScopedAIChat";
 
 interface FieldMapping {
   templateField: string;
@@ -176,9 +178,35 @@ export function FieldMappingWizard({
             AI confidence: <strong>{overallConfidence}%</strong> - Review suggestions and adjust as needed
           </AlertDescription>
         </Alert>
-      )}
+          )}
 
-      <Card>
+          {subscriptionFeatures?.hasAdvancedAI && (
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button variant="outline" className="w-full gap-2">
+                  <HelpCircle className="h-4 w-4" />
+                  Need help with mapping?
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-4">
+                <ScopedAIChat
+                  persona="data-assistant"
+                  context={{
+                    dataColumns,
+                    templateFields,
+                    currentMappings: mappings.reduce((acc, m) => {
+                      if (m.dataColumn) acc[m.templateField] = m.dataColumn;
+                      return acc;
+                    }, {} as Record<string, string>),
+                    sampleData
+                  }}
+                  maxHeight="h-[400px]"
+                />
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
+          <Card>
         <CardHeader>
           <CardTitle className="text-base">Field Mappings</CardTitle>
           <CardDescription>

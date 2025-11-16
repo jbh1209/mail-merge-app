@@ -9,5 +9,8 @@ verify_jwt = false
 [functions.suggest-field-mappings]
 verify_jwt = false
 
+[functions.scoped-ai-assistant]
+verify_jwt = false
+
 [functions.generate-pdf]
 verify_jwt = false

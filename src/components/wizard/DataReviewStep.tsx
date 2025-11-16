@@ -17,13 +17,11 @@ import {
   Sparkles,
   TrendingUp,
   MessageSquare,
-  Send,
   RefreshCw,
-  User,
-  Bot,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ScopedAIChat } from "@/components/ScopedAIChat";
 
 interface DataReviewStepProps {
   projectId: string;
@@ -75,9 +73,6 @@ export function DataReviewStep({
   const [activeTab, setActiveTab] = useState<'overview' | 'preview' | 'quality' | 'assistant'>('overview');
   const [analyzing, setAnalyzing] = useState(true);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [isChatLoading, setIsChatLoading] = useState(false);
   const [editedColumns, setEditedColumns] = useState<Record<string, string>>({});
   const [dataValidated, setDataValidated] = useState(false);
 
@@ -112,50 +107,6 @@ export function DataReviewStep({
       toast.error("AI analysis failed. You can still proceed manually.");
     } finally {
       setAnalyzing(false);
-    }
-  };
-
-  const sendChatMessage = async (message: string) => {
-    if (!message.trim() || !subscriptionFeatures.hasAdvancedAI) return;
-
-    const userMessage: ChatMessage = {
-      role: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
-
-    setChatMessages(prev => [...prev, userMessage]);
-    setChatInput('');
-    setIsChatLoading(true);
-
-    try {
-      const { data, error } = await supabase.functions.invoke('data-assistant-chat', {
-        body: {
-          message,
-          chatHistory: chatMessages,
-          dataContext: {
-            fileName,
-            rowCount,
-            columns,
-            qualityIssues: analysis?.qualityIssues || [],
-          },
-        },
-      });
-
-      if (error) throw error;
-
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: data.message,
-        timestamp: new Date(),
-      };
-
-      setChatMessages(prev => [...prev, assistantMessage]);
-    } catch (error: any) {
-      console.error('Chat error:', error);
-      toast.error("Failed to get AI response");
-    } finally {
-      setIsChatLoading(false);
     }
   };
 
@@ -437,105 +388,16 @@ export function DataReviewStep({
               </AlertDescription>
             </Alert>
           ) : (
-            <>
-              <Alert>
-                <Sparkles className="h-4 w-4" />
-                <AlertTitle>Data Import Assistant</AlertTitle>
-                <AlertDescription>
-                  Ask me anything about your data quality, column formatting, missing values, 
-                  or data cleaning best practices.
-                </AlertDescription>
-              </Alert>
-
-              <ScrollArea className="h-[400px] border rounded-lg p-4">
-                <div className="space-y-4">
-                  {chatMessages.length === 0 && (
-                    <div className="text-center py-8">
-                      <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Ask me questions about your data quality and formatting
-                      </p>
-                      
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground">
-                          Suggested Questions:
-                        </p>
-                        {[
-                          "What are the main quality issues with my data?",
-                          "How should I handle the missing values?",
-                          "Are there any duplicate records?",
-                          "What's the best way to format these column names?"
-                        ].map((q, idx) => (
-                          <Button
-                            key={idx}
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs w-full justify-start"
-                            onClick={() => sendChatMessage(q)}
-                          >
-                            {q}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {chatMessages.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={cn(
-                        "flex gap-3 p-3 rounded-lg",
-                        msg.role === 'user' 
-                          ? "bg-primary/10 ml-8" 
-                          : "bg-muted mr-8"
-                      )}
-                    >
-                      <div className="shrink-0 w-8 h-8 rounded-full bg-background border flex items-center justify-center">
-                        {msg.role === 'user' ? (
-                          <User className="h-4 w-4" />
-                        ) : (
-                          <Bot className="h-4 w-4" />
-                        )}
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <p className="text-sm font-semibold">
-                          {msg.role === 'user' ? 'You' : 'Data Assistant'}
-                        </p>
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {isChatLoading && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Assistant is thinking...
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Ask about your data..."
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendChatMessage(chatInput);
-                    }
-                  }}
-                  disabled={isChatLoading}
-                />
-                <Button
-                  onClick={() => sendChatMessage(chatInput)}
-                  disabled={!chatInput.trim() || isChatLoading}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </>
+            <ScopedAIChat
+              persona="data-assistant"
+              context={{
+                fileName: parsedData.fileName,
+                rowCount: parsedData.rowCount,
+                columns: parsedData.columns,
+                qualityIssues: analysis?.qualityIssues || []
+              }}
+              maxHeight="h-[450px]"
+            />
           )}
         </TabsContent>
       </Tabs>

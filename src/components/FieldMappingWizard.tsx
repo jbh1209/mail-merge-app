@@ -1,23 +1,19 @@
 import { useState, useEffect } from "react";
-import { Wand2, Check, AlertCircle, ArrowRight, Loader2, Lock, TrendingUp, HelpCircle } from "lucide-react";
+import { Wand2, Check, Loader2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MappingPreview } from "./MappingPreview";
 import { SubscriptionFeatures } from "@/hooks/useSubscription";
-import { useNavigate } from "react-router-dom";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ScopedAIChat } from "./ScopedAIChat";
 
 interface FieldMapping {
   templateField: string;
   dataColumn: string | null;
   confidence?: number;
-  reasoning?: string;
 }
 
 interface FieldMappingWizardProps {
@@ -43,285 +39,103 @@ export function FieldMappingWizard({
   onComplete,
   onCancel
 }: FieldMappingWizardProps) {
-  const navigate = useNavigate();
   const [mappings, setMappings] = useState<FieldMapping[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [overallConfidence, setOverallConfidence] = useState(0);
-  const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
 
-  const hasAdvancedAI = subscriptionFeatures?.hasAdvancedAI ?? false;
-
   useEffect(() => {
-    // Filter out __EMPTY and empty columns from usable columns
-    const usableColumns = dataColumns.filter(c => 
-      c && c.trim() !== "" && !/^__EMPTY/i.test(c)
-    );
+    const usableColumns = dataColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
+    const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
     
-    // Auto-map fields intelligently
     const autoMappings = templateFields.map(templateField => {
-      // Normalize for comparison
-      const normalizeForMatch = (str: string) => 
-        str.toLowerCase().replace(/[^a-z0-9]/g, '');
-      
-      const normalizedTemplate = normalizeForMatch(templateField);
-      
-      // Try exact match first (case/space insensitive)
-      let match = usableColumns.find(col => 
-        normalizeForMatch(col) === normalizedTemplate
-      );
-      
-      // If no exact match, try fuzzy matching using simple token overlap
-      if (!match) {
-        const templateTokens = normalizedTemplate.split('').filter(c => c);
-        let bestMatch = null;
-        let bestScore = 0;
-        
-        usableColumns.forEach(col => {
-          const colNormalized = normalizeForMatch(col);
-          const colTokens = colNormalized.split('').filter(c => c);
-          
-          // Calculate simple similarity (shared characters / total unique characters)
-          const shared = templateTokens.filter(t => colTokens.includes(t)).length;
-          const total = Math.max(templateTokens.length, colTokens.length);
-          const score = total > 0 ? shared / total : 0;
-          
-          if (score >= 0.7 && score > bestScore) {
-            bestScore = score;
-            bestMatch = col;
-          }
-        });
-        
-        match = bestMatch;
-      }
-      
+      const match = usableColumns.find(col => normalize(col) === normalize(templateField));
       return {
         templateField,
         dataColumn: match || null,
-        confidence: match ? 90 : undefined
+        confidence: match ? 95 : undefined
       };
     });
     
     setMappings(autoMappings);
     
     const autoMappedCount = autoMappings.filter(m => m.dataColumn).length;
+    console.debug('[FieldMappingWizard] Auto-mapped:', autoMappedCount, 'of', templateFields.length);
+    
     if (autoMappedCount > 0) {
       toast({
         title: "Auto-mapped fields",
-        description: `Auto-mapped ${autoMappedCount} of ${templateFields.length} fields. Adjust if needed.`,
+        description: `Matched ${autoMappedCount} of ${templateFields.length} fields`,
       });
     }
-    
-    // Don't auto-trigger AI suggestions - let user click button if they want more help
   }, [templateFields, dataColumns]);
 
-  const handleAISuggest = async () => {
-    setAiLoading(true);
-    try {
-      // Filter out __EMPTY columns before sending to AI
-      const usableColumns = dataColumns.filter(c => 
-        c && c.trim() !== "" && !/^__EMPTY/i.test(c)
-      );
-      
-      const { data, error } = await supabase.functions.invoke('suggest-field-mappings', {
-        body: {
-          dataColumns: usableColumns,
-          templateFields,
-          sampleData: sampleData.slice(0, 3)
-        }
-      });
-
-      if (error) throw error;
-
-      // Merge AI suggestions with existing mappings (don't overwrite user selections)
-      setMappings(prev => prev.map(m => {
-        const aiSuggestion = data.mappings.find((x: any) => x.templateField === m.templateField);
-        // Only apply AI suggestion if field is currently unmapped
-        if (!m.dataColumn && aiSuggestion?.dataColumn) {
-          return { 
-            ...m, 
-            dataColumn: aiSuggestion.dataColumn, 
-            confidence: aiSuggestion.confidence, 
-            reasoning: aiSuggestion.reasoning 
-          };
-        }
-        return m;
-      }));
-      setOverallConfidence(data.overallConfidence);
-      
-      toast({
-        title: "AI suggestions ready",
-        description: `Filled remaining unmapped fields with ${data.overallConfidence}% confidence`,
-      });
-    } catch (error: any) {
-      console.error('AI suggestion error:', error);
-      toast({
-        title: "AI suggestion failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const handleMappingChange = (templateField: string, dataColumn: string | null) => {
-    setMappings(prev => prev.map(m => 
-      m.templateField === templateField 
-        ? { ...m, dataColumn, confidence: undefined, reasoning: undefined }
-        : m
-    ));
+  const handleMappingChange = (templateField: string, dataColumn: string) => {
+    setMappings(prev =>
+      prev.map(m =>
+        m.templateField === templateField ? { ...m, dataColumn, confidence: 100 } : m
+      )
+    );
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const mappingsObject = mappings.reduce((acc, m) => {
-        if (m.dataColumn) {
-          acc[m.templateField] = m.dataColumn;
-        }
+      const mappingsData = mappings.reduce((acc, m) => {
+        if (m.dataColumn) acc[m.templateField] = m.dataColumn;
         return acc;
       }, {} as Record<string, string>);
 
-      const { error } = await supabase.from('field_mappings').insert({
-        project_id: projectId,
-        data_source_id: dataSourceId,
-        template_id: templateId,
-        mappings: mappingsObject,
-        ai_confidence_score: overallConfidence,
-        user_confirmed: true
-      });
+      const { error } = await supabase
+        .from('field_mappings')
+        .insert({
+          project_id: projectId,
+          data_source_id: dataSourceId,
+          template_id: templateId,
+          mappings: mappingsData,
+          user_confirmed: true,
+        });
 
       if (error) throw error;
 
-      toast({
-        title: "Field mapping saved",
-        description: "Your field mappings have been saved successfully",
-      });
-
+      toast({ title: "Mappings saved!" });
       onComplete();
     } catch (error: any) {
-      console.error('Save error:', error);
-      toast({
-        title: "Failed to save mappings",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Save failed", description: error.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
   };
 
+  const canSave = mappings.every(m => m.dataColumn !== null);
   const mappedCount = mappings.filter(m => m.dataColumn).length;
-  const isComplete = mappedCount === templateFields.length;
+  const usableColumns = dataColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Map Data Columns to Template Fields</h3>
-          <p className="text-sm text-muted-foreground">
-            Connect your data columns to the template fields
-          </p>
-        </div>
-        <Button
-          onClick={handleAISuggest}
-          disabled={aiLoading}
-          variant="outline"
-        >
-          {aiLoading ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Analyzing...
-            </>
-          ) : (
-            <>
-              <Wand2 className="h-4 w-4 mr-2" />
-              AI Suggest Mappings
-            </>
-          )}
-        </Button>
-      </div>
-
-      {overallConfidence > 0 && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            AI confidence: <strong>{overallConfidence}%</strong> - Review suggestions and adjust as needed
-          </AlertDescription>
-        </Alert>
-          )}
-
-          {subscriptionFeatures?.hasAdvancedAI && (
-            <Collapsible>
-              <CollapsibleTrigger asChild>
-                <Button variant="outline" className="w-full gap-2">
-                  <HelpCircle className="h-4 w-4" />
-                  Need help with mapping?
-                </Button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-4">
-                <ScopedAIChat
-                  persona="data-assistant"
-                  context={{
-                    dataColumns,
-                    templateFields,
-                    currentMappings: mappings.reduce((acc, m) => {
-                      if (m.dataColumn) acc[m.templateField] = m.dataColumn;
-                      return acc;
-                    }, {} as Record<string, string>),
-                    sampleData
-                  }}
-                  maxHeight="h-[400px]"
-                />
-              </CollapsibleContent>
-            </Collapsible>
-          )}
-
-          <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Field Mappings</CardTitle>
-          <CardDescription>
-            {mappedCount} of {templateFields.length} fields mapped
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <Card className="w-full max-w-5xl mx-auto">
+      <CardHeader>
+        <CardTitle>Map Your Data Fields</CardTitle>
+        <CardDescription>Auto-mapped {mappedCount} of {templateFields.length} fields</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
           {mappings.map((mapping) => (
-            <div key={mapping.templateField} className="flex items-center gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-sm">{mapping.templateField}</span>
-                  {mapping.confidence && (
-                    <Badge variant="secondary" className="text-xs">
-                      {mapping.confidence}% match
-                    </Badge>
-                  )}
-                </div>
-                {mapping.reasoning && (
-                  <p className="text-xs text-muted-foreground">{mapping.reasoning}</p>
-                )}
+            <div key={mapping.templateField} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
+              <div className="space-y-1">
+                <Badge variant="outline">Template Field</Badge>
+                <p className="font-semibold">{mapping.templateField}</p>
               </div>
-
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-
-              <div className="flex-1">
+              <div className="space-y-2">
+                <Label>Maps to:</Label>
                 <Select
-                  value={mapping.dataColumn || "none"}
-                  onValueChange={(value) => 
-                    handleMappingChange(mapping.templateField, value === "none" ? null : value)
-                  }
+                  value={mapping.dataColumn || ""}
+                  onValueChange={(value) => handleMappingChange(mapping.templateField, value)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select data column" />
+                    <SelectValue placeholder="Select column..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">
-                      <span className="text-muted-foreground">No mapping</span>
-                    </SelectItem>
-                    {dataColumns.filter(col => 
-                      col && col.trim() !== '' && !/^__EMPTY/i.test(col)
-                    ).map(col => (
+                    {usableColumns.map((col) => (
                       <SelectItem key={col} value={col}>{col}</SelectItem>
                     ))}
                   </SelectContent>
@@ -329,58 +143,15 @@ export function FieldMappingWizard({
               </div>
             </div>
           ))}
-        </CardContent>
-      </Card>
+        </div>
 
-      {mappedCount > 0 && (
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setShowPreview(!showPreview)}
-          >
-            {showPreview ? "Hide Preview" : "Show Preview"}
+        <div className="flex justify-between pt-4 border-t">
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button onClick={handleSave} disabled={!canSave || saving}>
+            {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : <><Check className="mr-2 h-4 w-4" />Save & Continue</>}
           </Button>
         </div>
-      )}
-
-      {showPreview && mappedCount > 0 && (
-        <MappingPreview
-          mappings={mappings.reduce((acc, m) => {
-            if (m.dataColumn) acc[m.templateField] = m.dataColumn;
-            return acc;
-          }, {} as Record<string, string>)}
-          sampleData={sampleData.slice(0, 5)}
-        />
-      )}
-
-      <div className="flex justify-between pt-4">
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button 
-            variant="outline"
-            onClick={onComplete}
-          >
-            Skip to Design
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-        <Button onClick={handleSave} disabled={saving || mappedCount === 0}>
-          {saving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Check className="h-4 w-4 mr-2" />
-              Save & Continue to Design
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

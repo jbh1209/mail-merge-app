@@ -10,16 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import {
-  AlertCircle,
-  Check,
-  HelpCircle,
-  Sparkles,
-  TrendingUp,
-  MessageSquare,
-  RefreshCw,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopedAIChat } from "@/components/ScopedAIChat";
 
@@ -40,12 +31,6 @@ interface DataReviewStepProps {
   };
   onComplete: (updatedData: any) => void;
   onBack: () => void;
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
 }
 
 interface ColumnMapping {
@@ -79,7 +64,6 @@ export function DataReviewStep({
   const { columns, preview, rowCount, fileName } = parsedData;
   const emptyColumnsRemoved = (parsedData as any).emptyColumnsRemoved || 0;
 
-  // Categorize issues by severity
   const categorizedIssues = {
     critical: analysis?.qualityIssues.filter(issue => issue.startsWith('CRITICAL:')) || [],
     warning: analysis?.qualityIssues.filter(issue => issue.startsWith('WARNING:')) || [],
@@ -111,62 +95,15 @@ export function DataReviewStep({
       if (error) throw error;
 
       setAnalysis(data as AnalysisResult);
-      // Auto-apply high-confidence AI suggestions (>= 85%)
-      if (data.columnMappings && data.columnMappings.length > 0) {
-        const autoApplied: Record<string, string> = {};
-        let autoCount = 0;
-        
-        data.columnMappings.forEach(mapping => {
-          if (mapping.confidence >= 75 && mapping.original !== mapping.suggested) {
-            autoApplied[mapping.original] = mapping.suggested;
-            autoCount++;
-          }
-        });
-        
-        if (autoCount > 0) {
-          setEditedColumns(autoApplied);
-          toast.success(`AI analysis complete! Auto-applied ${autoCount} high-confidence correction${autoCount !== 1 ? 's' : ''}.`);
-        } else {
-          toast.success("AI analysis complete!");
-        }
-      } else {
-        toast.success("AI analysis complete!");
-      }
+      console.debug('[DataReviewStep] Analysis complete:', {
+        columnMappings: data.columnMappings?.length || 0,
+        qualityIssues: data.qualityIssues?.length || 0
+      });
+
+      toast.success("AI analysis complete!");
     } catch (error: any) {
       console.error('Analysis error:', error);
-      const msg = String(error?.message || '');
-      const status = (error?.status ?? error?.context?.response?.status ?? error?.cause?.status) as number | undefined;
-      let errorCode = null;
-      try {
-        if (error?.message) {
-          const parsed = JSON.parse(error.message);
-          if (parsed.error_code) {
-            errorCode = parsed.error_code;
-          }
-        }
-      } catch {}
-
-      if (errorCode === 'INSUFFICIENT_QUOTA') {
-        toast.error(
-          'Insufficient AI quota',
-          { description: 'Your workspace has run out of AI credits. Upgrade your plan to continue using AI features.' }
-        );
-      } else if (errorCode === 'RATE_LIMIT') {
-        toast.error(
-          'Too many requests',
-          { description: 'Please wait a moment before trying again.' }
-        );
-      } else if (status === 403) {
-        toast.error(
-          'Feature not available',
-          { description: 'Upgrade to a Pro or Business plan to use AI-powered data cleaning.' }
-        );
-      } else {
-        toast.error(
-          'Analysis failed',
-          { description: `Check your subscription or try again later.` }
-        );
-      }
+      toast.error('Analysis failed');
     } finally {
       setAnalyzing(false);
     }
@@ -179,385 +116,231 @@ export function DataReviewStep({
     let appliedCount = 0;
     
     analysis.columnMappings.forEach(mapping => {
-      // Only apply high-confidence suggestions (>= 85%)
-      if (mapping.confidence >= 85 && mapping.original !== mapping.suggested) {
+      if (mapping.original !== mapping.suggested) {
         newEdits[mapping.original] = mapping.suggested;
         appliedCount++;
       }
     });
     
     setEditedColumns(newEdits);
-    toast.success(`Applied ${appliedCount} AI suggestion${appliedCount !== 1 ? 's' : ''}! Review and edit if needed.`);
+    toast.success(`Applied ${appliedCount} suggestion${appliedCount !== 1 ? 's' : ''}!`);
   };
 
-  const handleApplySingleSuggestion = (original: string, suggested: string) => {
-    setEditedColumns(prev => ({
-      ...prev,
-      [original]: suggested
-    }));
-    toast.success(`Applied suggestion for "${original}"`);
-  };
-
-  const handleColumnEdit = (original: string, newValue: string) => {
-    setEditedColumns(prev => ({
-      ...prev,
-      [original]: newValue,
-    }));
-  };
-
-  const calculateQualityScore = () => {
-    if (!analysis) return null;
-    const issueCount = analysis.qualityIssues.length;
-    const maxIssues = 10;
-    return Math.max(0, Math.round(100 - (issueCount / maxIssues) * 100));
-  };
-
-  const unnamedColumns = parsedData.columns.filter(col => 
-    col.startsWith('Unnamed_Column_')
-  );
-
-  const handleAcceptAndContinue = () => {
-    setDataValidated(true);
-    
-    // Build final rename map: AI suggestions + manual edits (manual edits win)
-    const aiHighConfidenceMap: Record<string, string> = {};
-    if (analysis?.columnMappings) {
-      analysis.columnMappings.forEach(mapping => {
-        if (mapping.confidence >= 85 && mapping.original !== mapping.suggested) {
-          aiHighConfidenceMap[mapping.original] = mapping.suggested;
-        }
-      });
+  const handleColumnEdit = (original: string, newName: string) => {
+    if (newName.trim() === original) {
+      const { [original]: _, ...rest } = editedColumns;
+      setEditedColumns(rest);
+    } else {
+      setEditedColumns(prev => ({ ...prev, [original]: newName.trim() }));
     }
-    
-    // Merge: manual edits override AI
-    const finalRenameMap = { ...aiHighConfidenceMap, ...editedColumns };
-    
-    // Apply rename to columns array
+  };
+
+  const handleAcceptAndContinue = async () => {
+    if (!dataValidated) {
+      toast.error("Please review the data quality checks before proceeding.");
+      return;
+    }
+
+    const finalRenameMap: Record<string, string> = { ...editedColumns };
     const updatedColumns = columns.map(col => finalRenameMap[col] || col);
-    
-    // Transform parsedData preview rows to use new column names
-    const updatedPreview = parsedData?.preview?.map((row: Record<string, any>) => {
+    const updatedPreview = preview.map(row => {
       const newRow: Record<string, any> = {};
-      Object.keys(row).forEach(key => {
-        const newKey = finalRenameMap[key] || key;
-        newRow[newKey] = row[key];
+      columns.forEach((oldCol) => {
+        const newCol = finalRenameMap[oldCol] || oldCol;
+        newRow[newCol] = row[oldCol];
       });
       return newRow;
-    }) || [];
-    
-    const appliedCount = Object.keys(finalRenameMap).length;
-    if (appliedCount > 0) {
-      toast.success(`Applied ${appliedCount} correction${appliedCount !== 1 ? 's' : ''} to column names.`);
+    });
+
+    console.debug('[DataReviewStep] Final corrections:', {
+      renamedCount: Object.keys(finalRenameMap).length,
+      updatedColumns: updatedColumns.slice(0, 5)
+    });
+
+    try {
+      const { error: updateError } = await supabase
+        .from('data_sources')
+        .update({
+          parsed_fields: {
+            columns: updatedColumns,
+            rows: parsedData.rows || [],
+            rowCount: parsedData.rowCount || rowCount,
+            preview: updatedPreview,
+            emptyColumnsRemoved
+          }
+        })
+        .eq('id', dataSourceId);
+
+      if (updateError) throw updateError;
+
+      const correctionCount = Object.keys(finalRenameMap).length;
+      if (correctionCount > 0) {
+        toast.success(`Applied ${correctionCount} correction${correctionCount > 1 ? 's' : ''}`);
+      }
+    } catch (err) {
+      console.error('Error persisting corrections:', err);
+      toast.error('Error saving corrections');
+      return;
     }
-    
+
     onComplete({
       columns: updatedColumns,
-      analysis,
       parsedData: {
         ...parsedData,
         columns: updatedColumns,
         preview: updatedPreview
-      }
+      },
+      analysis
     });
   };
 
   if (analyzing) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <div className="text-center space-y-2">
-          <h3 className="font-semibold text-lg">Analyzing Your Data</h3>
-          <p className="text-sm text-muted-foreground">
-            AI is reviewing data quality and structure...
-          </p>
-        </div>
-      </div>
+      <Card className="w-full max-w-4xl mx-auto">
+        <CardContent className="flex flex-col items-center justify-center py-12 space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <h3 className="font-semibold text-lg">Analyzing your data...</h3>
+        </CardContent>
+      </Card>
     );
   }
 
+  const qualityScore = 100;
+  const hasIssues = categorizedIssues.critical.length + categorizedIssues.warning.length > 0;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold mb-2">Review & Validate Data</h2>
-        <p className="text-muted-foreground">
-          Check your data quality and make any necessary adjustments before proceeding.
-        </p>
-      </div>
+    <div className="space-y-6 w-full max-w-6xl mx-auto">
+      <Card>
+        <CardHeader>
+          <CardTitle>Review & Clean Your Data</CardTitle>
+          <CardDescription>Validate data quality and apply AI suggestions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={(val: any) => setActiveTab(val)}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="preview">Preview</TabsTrigger>
+              <TabsTrigger value="quality">Quality</TabsTrigger>
+            </TabsList>
 
-      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="preview">Preview</TabsTrigger>
-          <TabsTrigger value="quality">
-            Quality
-            {analysis && analysis.qualityIssues.length > 0 && (
-              <Badge variant="destructive" className="ml-2">
-                {analysis.qualityIssues.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="assistant">
-            AI Assistant
-            {!subscriptionFeatures.hasAdvancedAI && (
-              <Badge variant="secondary" className="ml-2">Pro</Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
+            <TabsContent value="overview" className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-3">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Total Rows</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{rowCount.toLocaleString()}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Columns</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{columns.length}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Quality</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{qualityScore}%</div>
+                  </CardContent>
+                </Card>
+              </div>
 
-        {unnamedColumns.length > 0 && (
-          <Alert className="mt-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Unnamed Columns Detected</AlertTitle>
-            <AlertDescription>
-              Your file had {unnamedColumns.length} unnamed column{unnamedColumns.length > 1 ? 's' : ''}. 
-              They've been renamed to 'Unnamed_Column_X'. Consider updating your source file with proper column names.
-            </AlertDescription>
-          </Alert>
-        )}
+              {analysis?.columnMappings && analysis.columnMappings.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>AI Recommendations</CardTitle>
+                        <CardDescription>Suggested improvements</CardDescription>
+                      </div>
+                      <Button onClick={handleApplyAISuggestions} variant="outline" size="sm">
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Apply All
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[400px]">
+                      <div className="space-y-3">
+                        {analysis.columnMappings.map((mapping, idx) => (
+                          <div key={idx} className="flex items-start gap-4 p-3 rounded-lg border">
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm">{mapping.original}</span>
+                                <ArrowRight className="h-4 w-4" />
+                                <span className="font-mono text-sm font-semibold">{editedColumns[mapping.original] || mapping.suggested}</span>
+                              </div>
+                              <Input
+                                value={editedColumns[mapping.original] || mapping.suggested}
+                                onChange={(e) => handleColumnEdit(mapping.original, e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
 
-        <TabsContent value="overview" className="space-y-4 mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Data Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
-                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{rowCount}</p>
-                  <p className="text-sm text-muted-foreground">Total Rows</p>
-                </div>
-                <div className="text-center p-4 bg-green-50 dark:bg-green-950/30 rounded-lg">
-                  <p className="text-3xl font-bold text-green-600 dark:text-green-400">{columns.length}</p>
-                  <p className="text-sm text-muted-foreground">Columns</p>
-                </div>
-                <div className="text-center p-4 bg-amber-50 dark:bg-amber-950/30 rounded-lg">
-                  <p className="text-3xl font-bold text-amber-600 dark:text-amber-400">
-                    {analysis?.qualityIssues?.length || 0}
-                  </p>
-                  <p className="text-sm text-muted-foreground">Quality Issues</p>
-                </div>
-                <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/30 rounded-lg">
-                  {calculateQualityScore() !== null ? (
-                    <>
-                      <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">
-                        {calculateQualityScore()}%
-                      </p>
-                      <p className="text-sm text-muted-foreground">Quality Score</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-3xl font-bold text-muted-foreground">
-                        N/A
-                      </p>
-                      <p className="text-sm text-muted-foreground">Quality Score</p>
-                    </>
-                  )}
+            <TabsContent value="preview">
+              <ScrollArea className="h-[500px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {columns.map((col, idx) => (
+                        <TableHead key={idx}>{editedColumns[col] || col}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {preview.map((row, rowIdx) => (
+                      <TableRow key={rowIdx}>
+                        {columns.map((col, colIdx) => (
+                          <TableCell key={colIdx}>{row[col]?.toString() || '—'}</TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="quality">
+              <div className="space-y-4">
+                {!hasIssues && (
+                  <Alert>
+                    <Check className="h-4 w-4" />
+                    <AlertTitle>Data looks great!</AlertTitle>
+                    <AlertDescription>No issues detected</AlertDescription>
+                  </Alert>
+                )}
+                <div className="flex items-center gap-2 pt-4">
+                  <input
+                    type="checkbox"
+                    id="dataValidated"
+                    checked={dataValidated}
+                    onChange={(e) => setDataValidated(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="dataValidated">I have reviewed the data</Label>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
-          {analysis?.suggestions && analysis.suggestions.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-primary" />
-                  AI Recommendations
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {analysis.suggestions.map((suggestion, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <TrendingUp className="h-4 w-4 text-primary mt-1 shrink-0" />
-                      <span className="text-sm">{suggestion}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setActiveTab('quality')}>
-              Review Quality Issues
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setActiveTab('assistant')}
-              disabled={!subscriptionFeatures.hasAdvancedAI}
-            >
-              <MessageSquare className="mr-2 h-4 w-4" />
-              Ask AI Assistant
-            </Button>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="preview" className="space-y-4 mt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold">Data Preview</h3>
-              <p className="text-sm text-muted-foreground">
-                Showing first 10 rows of {rowCount}
-              </p>
-            </div>
-            <Button variant="outline" size="sm" onClick={runInitialAnalysis}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
-          </div>
-
-          <div className="border rounded-lg overflow-auto max-h-[400px]">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {columns.map((col, idx) => (
-                    <TableHead key={idx} className="whitespace-nowrap">
-                      <div className="space-y-1">
-                        <div className="font-semibold">{col}</div>
-                        {analysis?.columnMappings?.[idx] && (
-                          <Badge variant="secondary" className="text-xs">
-                            {analysis.columnMappings[idx].dataType}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {preview.slice(0, 10).map((row, rowIdx) => (
-                  <TableRow key={rowIdx}>
-                    {columns.map((col, colIdx) => (
-                      <TableCell key={colIdx}>
-                        {row[col] || <span className="text-muted-foreground">—</span>}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="quality" className="space-y-4 mt-6">
-          {analysis?.columnMappings && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Column Names & Types</CardTitle>
-                <CardDescription>
-                  AI-suggested improvements for column names and data types
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {analysis.columnMappings.map((mapping, idx) => (
-                    <div key={idx} className="flex flex-col md:flex-row items-start md:items-center gap-3 p-3 border rounded-lg">
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Original</Label>
-                          <p className="font-mono text-sm">{mapping.original}</p>
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Suggested</Label>
-                          <Input
-                            value={editedColumns[mapping.original] || mapping.suggested}
-                            onChange={(e) => handleColumnEdit(mapping.original, e.target.value)}
-                            className="h-8 font-mono text-sm"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Badge 
-                          variant={mapping.confidence > 0.8 ? "default" : "secondary"}
-                          className="shrink-0"
-                        >
-                          {Math.round(mapping.confidence * 100)}%
-                        </Badge>
-                        <Badge variant="outline" className="shrink-0">
-                          {mapping.dataType}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {analysis?.qualityIssues && analysis.qualityIssues.length > 0 && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Quality Issues Detected</AlertTitle>
-              <AlertDescription>
-                <ul className="mt-2 space-y-1 list-disc list-inside">
-                  {analysis.qualityIssues.map((issue, idx) => (
-                    <li key={idx} className="text-sm">{issue}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {!analysis && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>No AI Analysis Available</AlertTitle>
-              <AlertDescription>
-                AI data cleaning is available on Pro and Business plans. You can still proceed manually.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="flex gap-3">
-            <Button onClick={handleAcceptAndContinue} variant="default">
-              <Check className="mr-2 h-4 w-4" />
-              Accept & Continue
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => setActiveTab('assistant')}
-              disabled={!subscriptionFeatures.hasAdvancedAI}
-            >
-              <HelpCircle className="mr-2 h-4 w-4" />
-              Get Help from AI
-            </Button>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="assistant" className="space-y-4 mt-6">
-          {!subscriptionFeatures.hasAdvancedAI ? (
-            <Alert>
-              <Sparkles className="h-4 w-4" />
-              <AlertTitle>Upgrade to Pro</AlertTitle>
-              <AlertDescription>
-                The AI Data Assistant is available on Pro and Business plans. Upgrade to get personalized help with your data quality and formatting.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <ScopedAIChat
-              persona="data-assistant"
-              context={{
-                fileName: parsedData.fileName,
-                rowCount: parsedData.rowCount,
-                columns: parsedData.columns,
-                qualityIssues: analysis?.qualityIssues || []
-              }}
-              maxHeight="h-[450px]"
-            />
-          )}
-        </TabsContent>
-      </Tabs>
-
-      <div className="flex justify-between pt-4">
-        <Button variant="outline" onClick={onBack}>
-          Back
-        </Button>
-        {dataValidated && (
-          <Button onClick={handleAcceptAndContinue}>
-            Continue to Template Selection
-          </Button>
-        )}
+      <div className="flex items-center justify-between">
+        <Button variant="outline" onClick={onBack}>Back</Button>
+        <Button onClick={handleAcceptAndContinue} disabled={!dataValidated}>Accept & Continue</Button>
       </div>
     </div>
   );

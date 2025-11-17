@@ -54,6 +54,11 @@ export function FieldMappingWizard({
   const hasAdvancedAI = subscriptionFeatures?.hasAdvancedAI ?? false;
 
   useEffect(() => {
+    // Filter out __EMPTY and empty columns from usable columns
+    const usableColumns = dataColumns.filter(c => 
+      c && c.trim() !== "" && !/^__EMPTY/i.test(c)
+    );
+    
     // Auto-map fields intelligently
     const autoMappings = templateFields.map(templateField => {
       // Normalize for comparison
@@ -63,7 +68,7 @@ export function FieldMappingWizard({
       const normalizedTemplate = normalizeForMatch(templateField);
       
       // Try exact match first (case/space insensitive)
-      let match = dataColumns.find(col => 
+      let match = usableColumns.find(col => 
         normalizeForMatch(col) === normalizedTemplate
       );
       
@@ -73,7 +78,7 @@ export function FieldMappingWizard({
         let bestMatch = null;
         let bestScore = 0;
         
-        dataColumns.forEach(col => {
+        usableColumns.forEach(col => {
           const colNormalized = normalizeForMatch(col);
           const colTokens = colNormalized.split('').filter(c => c);
           
@@ -104,26 +109,24 @@ export function FieldMappingWizard({
     if (autoMappedCount > 0) {
       toast({
         title: "Auto-mapped fields",
-        description: `${autoMappedCount} of ${templateFields.length} fields mapped automatically. Review and adjust as needed.`,
+        description: `Auto-mapped ${autoMappedCount} of ${templateFields.length} fields. Adjust if needed.`,
       });
     }
     
-    // If advanced AI is available and there are unmapped fields, suggest AI mapping
-    const unmappedCount = autoMappings.filter(m => !m.dataColumn).length;
-    if (hasAdvancedAI && unmappedCount > 0 && unmappedCount < templateFields.length) {
-      // Auto-trigger AI suggestions for remaining unmapped fields
-      setTimeout(() => {
-        handleAISuggest();
-      }, 1000);
-    }
+    // Don't auto-trigger AI suggestions - let user click button if they want more help
   }, [templateFields, dataColumns]);
 
   const handleAISuggest = async () => {
     setAiLoading(true);
     try {
+      // Filter out __EMPTY columns before sending to AI
+      const usableColumns = dataColumns.filter(c => 
+        c && c.trim() !== "" && !/^__EMPTY/i.test(c)
+      );
+      
       const { data, error } = await supabase.functions.invoke('suggest-field-mappings', {
         body: {
-          dataColumns,
+          dataColumns: usableColumns,
           templateFields,
           sampleData: sampleData.slice(0, 3)
         }
@@ -131,12 +134,25 @@ export function FieldMappingWizard({
 
       if (error) throw error;
 
-      setMappings(data.mappings);
+      // Merge AI suggestions with existing mappings (don't overwrite user selections)
+      setMappings(prev => prev.map(m => {
+        const aiSuggestion = data.mappings.find((x: any) => x.templateField === m.templateField);
+        // Only apply AI suggestion if field is currently unmapped
+        if (!m.dataColumn && aiSuggestion?.dataColumn) {
+          return { 
+            ...m, 
+            dataColumn: aiSuggestion.dataColumn, 
+            confidence: aiSuggestion.confidence, 
+            reasoning: aiSuggestion.reasoning 
+          };
+        }
+        return m;
+      }));
       setOverallConfidence(data.overallConfidence);
       
       toast({
         title: "AI suggestions ready",
-        description: `${data.mappings.length} field mappings suggested with ${data.overallConfidence}% confidence`,
+        description: `Filled remaining unmapped fields with ${data.overallConfidence}% confidence`,
       });
     } catch (error: any) {
       console.error('AI suggestion error:', error);
@@ -303,7 +319,9 @@ export function FieldMappingWizard({
                     <SelectItem value="none">
                       <span className="text-muted-foreground">No mapping</span>
                     </SelectItem>
-                    {dataColumns.filter(col => col && col.trim() !== '').map(col => (
+                    {dataColumns.filter(col => 
+                      col && col.trim() !== '' && !/^__EMPTY/i.test(col)
+                    ).map(col => (
                       <SelectItem key={col} value={col}>{col}</SelectItem>
                     ))}
                   </SelectContent>

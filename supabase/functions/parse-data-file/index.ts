@@ -65,7 +65,6 @@ serve(async (req) => {
 
     let columns: string[] = [];
     let rows: Record<string, any>[] = [];
-    let emptyColumnsRemoved = 0;
 
     if (file_type === 'csv') {
       console.log('📄 Parsing CSV file...');
@@ -169,11 +168,48 @@ serve(async (req) => {
       throw new Error(`Unsupported file type: ${file_type}`);
     }
 
+    // Remove empty columns and handle __EMPTY columns
+    const originalColumns = [...columns];
+    const isEmptyValue = (v: any) => v == null || v === undefined || (typeof v === 'string' && v.trim() === '');
+    const hasData = (col: string) => rows.some(r => !isEmptyValue(r[col]));
+    const renamed: Record<string, string> = {};
+    
+    columns = columns.reduce<string[]>((acc, col, idx) => {
+      const excelEmpty = /^__EMPTY/i.test(col);
+      if (!hasData(col)) {
+        console.log(`🗑️ Removing empty column: ${col}`);
+        return acc; // drop empty column
+      }
+      if (excelEmpty) {
+        const newName = `Unnamed_Column_${idx + 1}`;
+        console.log(`🔄 Renaming ${col} -> ${newName}`);
+        renamed[col] = newName;
+        acc.push(newName);
+      } else {
+        acc.push(col);
+      }
+      return acc;
+    }, []);
+    
+    // Reconstruct rows with only kept columns
+    rows = rows.map(row => {
+      const out: Record<string, any> = {};
+      columns.forEach(col => {
+        const original = Object.keys(renamed).find(k => renamed[k] === col) || col;
+        out[col] = row[original] ?? null;
+      });
+      return out;
+    });
+    
+    const emptyColumnsRemoved = originalColumns.length - columns.length;
+    console.log(`📊 Removed ${emptyColumnsRemoved} empty columns. Final: ${columns.length} columns`);
+
     const result = {
       columns,
       rows,
       rowCount: rows.length,
       preview: rows.slice(0, 10), // First 10 rows for preview
+      emptyColumnsRemoved,
     };
 
     console.log('Parse successful:', { rowCount: result.rowCount, columnCount: columns.length });

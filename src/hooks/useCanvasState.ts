@@ -135,6 +135,26 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     }
   }, [history, historyIndex]);
 
+  const toggleFieldLabels = useCallback((fieldId?: string) => {
+    setFields(prev => {
+      const newFields = prev.map(f => {
+        if (fieldId) {
+          // Toggle specific field
+          return f.id === fieldId ? { ...f, showLabel: !f.showLabel } : f;
+        } else {
+          // Toggle all fields
+          return { ...f, showLabel: !f.showLabel };
+        }
+      });
+      saveToHistory(newFields);
+      return newFields;
+    });
+  }, [saveToHistory]);
+
+  const updateFieldType = useCallback((fieldId: string, fieldType: FieldConfig['fieldType'], typeConfig?: any) => {
+    updateField(fieldId, { fieldType, typeConfig });
+  }, [updateField]);
+
   const autoLayout = useCallback(() => {
     const newFields = autoLayoutFields(
       fields.map(f => f.templateField),
@@ -161,6 +181,8 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     moveField,
     resizeField,
     updateFieldStyle,
+    toggleFieldLabels,
+    updateFieldType,
     updateSettings,
     autoLayout,
     deleteField,

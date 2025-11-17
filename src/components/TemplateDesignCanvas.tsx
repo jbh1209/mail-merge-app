@@ -40,6 +40,8 @@ export function TemplateDesignCanvas({
     updateSettings,
     autoLayout,
     deleteField,
+    toggleFieldLabels,
+    updateFieldType,
     undo,
     redo,
     canUndo,
@@ -98,23 +100,34 @@ export function TemplateDesignCanvas({
       {/* Compact toolbar */}
       <div className="flex-shrink-0 border-b bg-muted/30">
         <CanvasToolbar
-          selectedField={selectedField}
-          scale={settings.scale}
+          zoom={settings.scale}
+          onZoomIn={() => updateSettings({ scale: Math.min(5, settings.scale + 0.5) })}
+          onZoomOut={() => updateSettings({ scale: Math.max(1, settings.scale - 0.5) })}
           showGrid={settings.showGrid}
-          snapToGrid={settings.snapToGrid}
-          onScaleChange={(scale) => updateSettings({ scale })}
           onToggleGrid={() => updateSettings({ showGrid: !settings.showGrid })}
+          snapToGrid={settings.snapToGrid}
           onToggleSnap={() => updateSettings({ snapToGrid: !settings.snapToGrid })}
+          canUndo={canUndo}
+          canRedo={canRedo}
           onUndo={undo}
           onRedo={redo}
           onAutoLayout={autoLayout}
-          onStyleChange={(style) => {
+          selectedField={selectedField}
+          onUpdateFieldStyle={(updates) => {
             if (selectedFieldId) {
-              updateFieldStyle(selectedFieldId, style);
+              updateFieldStyle(selectedFieldId, updates);
             }
           }}
-          canUndo={canUndo}
-          canRedo={canRedo}
+          onToggleLabel={() => {
+            if (selectedFieldId) {
+              toggleFieldLabels(selectedFieldId);
+            }
+          }}
+          onUpdateFieldType={(fieldType, typeConfig) => {
+            if (selectedFieldId) {
+              updateFieldType(selectedFieldId, fieldType, typeConfig);
+            }
+          }}
         />
       </div>
 

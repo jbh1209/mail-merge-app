@@ -279,9 +279,18 @@ export function FieldMappingWizard({
       )}
 
       <div className="flex justify-between pt-4">
-        <Button variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={onComplete}
+          >
+            Skip to Design
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
         <Button onClick={handleSave} disabled={saving || mappedCount === 0}>
           {saving ? (
             <>
@@ -291,7 +300,8 @@ export function FieldMappingWizard({
           ) : (
             <>
               <Check className="h-4 w-4 mr-2" />
-              Save Mapping {!isComplete && `(${mappedCount}/${templateFields.length})`}
+              Save & Continue to Design
+              <ArrowRight className="ml-2 h-4 w-4" />
             </>
           )}
         </Button>

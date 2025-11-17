@@ -106,6 +106,75 @@ export function FieldElement({
 
   const displayText = sampleData?.[field.templateField] || generateSampleText(field.templateField);
 
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelect();
+  };
+
+  // Render field content based on type
+  const renderFieldContent = () => {
+    switch (field.fieldType) {
+      case 'barcode':
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-1">
+            <div className="flex gap-[1px] h-1/2 items-center">
+              {Array.from({ length: 20 }).map((_, i) => (
+                <div key={i} className="bg-black h-full" style={{ width: i % 3 === 0 ? '3px' : '2px' }} />
+              ))}
+            </div>
+            <span className="text-[8px] font-mono">{displayText}</span>
+          </div>
+        );
+      
+      case 'qrcode':
+        return (
+          <div className="flex items-center justify-center h-full">
+            <div className="grid grid-cols-8 grid-rows-8 gap-[1px] aspect-square h-4/5">
+              {Array.from({ length: 64 }).map((_, i) => (
+                <div key={i} className={`${Math.random() > 0.5 ? 'bg-black' : 'bg-white'} border border-gray-200`} />
+              ))}
+            </div>
+          </div>
+        );
+      
+      case 'sequence':
+        return (
+          <div className="flex items-center h-full px-2">
+            <span className="font-mono font-semibold">
+              {field.typeConfig?.sequencePrefix || '#'}
+              {String(field.typeConfig?.sequenceStart || 1).padStart(field.typeConfig?.sequencePadding || 3, '0')}
+            </span>
+          </div>
+        );
+      
+      default: // text
+        return (
+          <div className="flex items-center h-full px-2">
+            {field.showLabel && field.labelStyle?.position === 'inline' && (
+              <span 
+                className="mr-2 text-muted-foreground uppercase font-medium"
+                style={{ 
+                  fontSize: `${(field.labelStyle.fontSize / 72) * 96}px`,
+                  color: field.labelStyle.color 
+                }}
+              >
+                {field.templateField}:
+              </span>
+            )}
+            <span style={{ 
+              fontSize: `${(field.style.fontSize / 72) * 96}px`,
+              fontFamily: field.style.fontFamily,
+              fontWeight: field.style.fontWeight,
+              fontStyle: field.style.fontStyle,
+              color: field.style.color
+            }}>
+              {displayText}
+            </span>
+          </div>
+        );
+    }
+  };
+
   return (
     <div
       className={`absolute cursor-move select-none transition-shadow ${
@@ -117,40 +186,53 @@ export function FieldElement({
         width: `${mmToPx(field.size.width, scale)}px`,
         height: `${mmToPx(field.size.height, scale)}px`,
         backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        border: '1px solid hsl(var(--border))',
-        borderRadius: '2px'
+        border: '1px solid #e5e7eb',
+        borderRadius: '4px',
+        overflow: 'hidden'
       }}
       onMouseDown={handleMouseDown}
+      onClick={handleClick}
     >
-      {/* Field Label */}
-      <div className="absolute -top-5 left-0 text-xs text-muted-foreground bg-background px-1 rounded-t border border-b-0 border-border">
-        {field.templateField}
-      </div>
+      {/* Label above field if enabled */}
+      {field.showLabel && field.labelStyle?.position === 'above' && (
+        <div 
+          className="text-muted-foreground px-1 py-0.5 bg-background/80 border-b uppercase font-medium truncate"
+          style={{ 
+            fontSize: `${(field.labelStyle.fontSize / 72) * 96}px`,
+            color: field.labelStyle.color 
+          }}
+        >
+          {field.templateField}
+        </div>
+      )}
 
-      {/* Field Content */}
-      <div
-        className="w-full h-full overflow-hidden flex items-center px-1"
+      {/* Field content */}
+      <div 
+        className="overflow-hidden"
         style={{
-          fontSize: `${field.style.fontSize * scale * 0.5}px`,
-          fontFamily: field.style.fontFamily,
-          fontWeight: field.style.fontWeight,
-          fontStyle: field.style.fontStyle,
-          textAlign: field.style.textAlign,
-          color: field.style.color,
-          alignItems: field.style.verticalAlign === 'top' ? 'flex-start' : 
-                     field.style.verticalAlign === 'bottom' ? 'flex-end' : 'center'
+          height: field.showLabel && field.labelStyle?.position === 'above' ? 'calc(100% - 20px)' : '100%',
+          textAlign: field.style.textAlign
         }}
       >
-        <span className="truncate">{displayText}</span>
+        {renderFieldContent()}
       </div>
 
-      {/* Action Buttons */}
+      {/* Action buttons and type badge when selected */}
       {isSelected && (
-        <div className="absolute top-1 right-1 flex gap-1">
+        <>
+          {/* Field type badge */}
+          {field.fieldType !== 'text' && (
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-accent text-accent-foreground text-[10px] font-medium rounded-full shadow-lg">
+              {field.fieldType === 'barcode' && 'Barcode'}
+              {field.fieldType === 'qrcode' && 'QR Code'}
+              {field.fieldType === 'sequence' && 'Sequence'}
+            </div>
+          )}
+          
           <Button
-            size="sm"
             variant="destructive"
-            className="h-5 w-5 p-0"
+            size="icon"
+            className="absolute -top-3 -right-3 h-6 w-6 p-0 rounded-full shadow-lg"
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
@@ -158,18 +240,17 @@ export function FieldElement({
           >
             <X className="h-3 w-3" />
           </Button>
-          <div className="cursor-grab">
-            <GripVertical className="h-3 w-3 text-muted-foreground" />
-          </div>
-        </div>
-      )}
 
-      {/* Resize Handle */}
-      {isSelected && (
-        <div
-          className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize bg-primary rounded-tl"
-          onMouseDown={handleResizeMouseDown}
-        />
+          <div className="absolute -top-3 -left-3 h-6 w-6 p-0 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center cursor-grab">
+            <GripVertical className="h-3 w-3" />
+          </div>
+
+          {/* Resize handle */}
+          <div
+            className="absolute -bottom-2 -right-2 h-4 w-4 bg-primary rounded-full cursor-se-resize shadow-lg border-2 border-background"
+            onMouseDown={handleResizeMouseDown}
+          />
+        </>
       )}
     </div>
   );

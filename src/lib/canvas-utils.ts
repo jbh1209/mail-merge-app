@@ -10,6 +10,8 @@ export interface Size {
   height: number;
 }
 
+export type FieldType = 'text' | 'barcode' | 'qrcode' | 'sequence';
+
 export interface FieldConfig {
   id: string;
   templateField: string;
@@ -26,6 +28,23 @@ export interface FieldConfig {
   };
   maxLines?: number;
   overflow: 'truncate' | 'wrap' | 'shrink';
+  showLabel?: boolean;
+  labelStyle?: {
+    fontSize: number;
+    color: string;
+    position: 'above' | 'inline';
+  };
+  fieldType: FieldType;
+  typeConfig?: {
+    // For barcode
+    barcodeFormat?: 'CODE128' | 'CODE39' | 'EAN13' | 'UPC';
+    // For QR code
+    qrErrorCorrection?: 'L' | 'M' | 'Q' | 'H';
+    // For sequence
+    sequenceStart?: number;
+    sequencePrefix?: string;
+    sequencePadding?: number;
+  };
 }
 
 /**
@@ -90,7 +109,7 @@ export const constrainToBounds = (
 export const calculateOptimalFontSize = (
   text: string,
   bounds: Size,
-  maxFontSize: number = 12
+  maxFontSize: number = 18
 ): number => {
   // Rough estimation: 1pt ≈ 0.35mm width per character
   const charWidth = 0.35;
@@ -100,7 +119,7 @@ export const calculateOptimalFontSize = (
     return maxFontSize;
   }
   
-  return Math.max(6, Math.floor((bounds.width / text.length) / charWidth));
+  return Math.max(8, Math.floor((bounds.width / text.length) / charWidth));
 };
 
 /**
@@ -110,39 +129,103 @@ export const calculateOptimalFontSize = (
  * @param padding - Padding in mm
  * @returns Array of field configurations
  */
+/**
+ * Detect field type from field name
+ */
+const detectFieldType = (fieldName: string): FieldType => {
+  const lower = fieldName.toLowerCase();
+  if (lower.includes('barcode') || lower.includes('sku') || lower.includes('upc')) return 'barcode';
+  if (lower.includes('qr') || lower.includes('url') || lower.includes('link')) return 'qrcode';
+  if (lower.includes('number') || lower.includes('sequence') || lower.includes('#')) return 'sequence';
+  return 'text';
+};
+
+/**
+ * Intelligent field height based on field name
+ */
+const getSmartFieldHeight = (fieldName: string, baseHeight: number): number => {
+  const lower = fieldName.toLowerCase();
+  
+  // Address fields need more space
+  if (lower.includes('address') || lower.includes('street')) return Math.max(baseHeight * 1.5, 15);
+  
+  // ID/code fields can be shorter
+  if (lower.includes('id') || lower.includes('code') || lower.includes('sku')) return Math.max(baseHeight * 0.7, 6);
+  
+  // QR codes and barcodes need square/rectangular space
+  if (lower.includes('barcode')) return Math.max(baseHeight * 0.8, 10);
+  if (lower.includes('qr')) return Math.max(baseHeight, 12);
+  
+  return baseHeight;
+};
+
 export const autoLayoutFields = (
   fieldNames: string[],
   templateSize: Size,
   padding: number = 2
 ): FieldConfig[] => {
   const usableHeight = templateSize.height - (padding * 2);
-  const fieldHeight = Math.min(
-    Math.floor(usableHeight / fieldNames.length) - 1,
-    8
-  );
+  const usableWidth = templateSize.width - (padding * 2);
   
-  return fieldNames.map((name, index) => ({
-    id: `field-${index}`,
-    templateField: name,
-    position: {
-      x: padding,
-      y: padding + (index * (fieldHeight + 1))
-    },
-    size: {
-      width: templateSize.width - (padding * 2),
-      height: fieldHeight
-    },
-    style: {
-      fontSize: Math.min(10, fieldHeight * 1.2),
-      fontFamily: 'Arial',
-      fontWeight: 'normal',
-      fontStyle: 'normal',
-      textAlign: 'left',
-      color: '#000000',
-      verticalAlign: 'middle'
-    },
-    overflow: 'truncate'
-  }));
+  // Determine if we should use two-column layout for wide templates
+  const useTwoColumns = templateSize.width > 100 && fieldNames.length > 4;
+  const columnWidth = useTwoColumns ? (usableWidth - 2) / 2 : usableWidth;
+  
+  let currentY = padding;
+  const fields: FieldConfig[] = [];
+  
+  fieldNames.forEach((name, index) => {
+    const column = useTwoColumns && index >= Math.ceil(fieldNames.length / 2) ? 1 : 0;
+    const baseFieldHeight = Math.min(
+      Math.floor(usableHeight / (useTwoColumns ? Math.ceil(fieldNames.length / 2) : fieldNames.length)) - 1,
+      12
+    );
+    
+    const fieldHeight = getSmartFieldHeight(name, baseFieldHeight);
+    const fieldType = detectFieldType(name);
+    
+    // Reset Y for second column
+    if (column === 1 && index === Math.ceil(fieldNames.length / 2)) {
+      currentY = padding;
+    }
+    
+    const fontSize = Math.min(18, Math.max(12, fieldHeight * 1.3));
+    
+    fields.push({
+      id: `field-${index}`,
+      templateField: name,
+      position: {
+        x: padding + (column * (columnWidth + 2)),
+        y: currentY
+      },
+      size: {
+        width: columnWidth,
+        height: fieldHeight
+      },
+      style: {
+        fontSize,
+        fontFamily: 'Arial',
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        textAlign: 'left',
+        color: '#000000',
+        verticalAlign: 'middle'
+      },
+      overflow: 'truncate',
+      showLabel: false,
+      labelStyle: {
+        fontSize: Math.round(fontSize * 0.65),
+        color: '#666666',
+        position: 'above'
+      },
+      fieldType,
+      typeConfig: fieldType === 'sequence' ? { sequenceStart: 1, sequencePadding: 3 } : undefined
+    });
+    
+    currentY += fieldHeight + 1;
+  });
+  
+  return fields;
 };
 
 /**

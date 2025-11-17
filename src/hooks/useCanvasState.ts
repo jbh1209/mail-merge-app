@@ -1,0 +1,154 @@
+import { useState, useCallback } from 'react';
+import { FieldConfig, autoLayoutFields, constrainToBounds, snapToGrid } from '@/lib/canvas-utils';
+
+interface Size {
+  width: number;
+  height: number;
+}
+
+export interface CanvasSettings {
+  scale: number;
+  showGrid: boolean;
+  snapToGrid: boolean;
+  gridSize: number; // mm
+  backgroundColor: string;
+}
+
+interface UseCanvasStateProps {
+  templateSize: Size;
+  initialFields: string[];
+}
+
+export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStateProps) => {
+  const [fields, setFields] = useState<FieldConfig[]>(() => 
+    autoLayoutFields(initialFields, templateSize)
+  );
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<CanvasSettings>({
+    scale: 3,
+    showGrid: true,
+    snapToGrid: true,
+    gridSize: 1,
+    backgroundColor: '#ffffff'
+  });
+  const [history, setHistory] = useState<FieldConfig[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  const saveToHistory = useCallback((newFields: FieldConfig[]) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(JSON.parse(JSON.stringify(newFields)));
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+  }, [history, historyIndex]);
+
+  const updateField = useCallback((fieldId: string, updates: Partial<FieldConfig>) => {
+    setFields(prev => {
+      const newFields = prev.map(f => 
+        f.id === fieldId ? { ...f, ...updates } : f
+      );
+      saveToHistory(newFields);
+      return newFields;
+    });
+  }, [saveToHistory]);
+
+  const moveField = useCallback((fieldId: string, newPosition: { x: number; y: number }) => {
+    setFields(prev => {
+      const field = prev.find(f => f.id === fieldId);
+      if (!field) return prev;
+
+      let position = newPosition;
+      
+      // Snap to grid if enabled
+      if (settings.snapToGrid) {
+        position = {
+          x: snapToGrid(position.x, settings.gridSize, settings.scale),
+          y: snapToGrid(position.y, settings.gridSize, settings.scale)
+        };
+      }
+
+      // Constrain to bounds
+      position = constrainToBounds(position, field.size, templateSize);
+
+      const newFields = prev.map(f => 
+        f.id === fieldId ? { ...f, position } : f
+      );
+      return newFields;
+    });
+  }, [settings, templateSize]);
+
+  const resizeField = useCallback((fieldId: string, newSize: { width: number; height: number }) => {
+    setFields(prev => {
+      const newFields = prev.map(f => {
+        if (f.id === fieldId) {
+          // Constrain size
+          const size = {
+            width: Math.max(10, Math.min(newSize.width, templateSize.width - f.position.x)),
+            height: Math.max(5, Math.min(newSize.height, templateSize.height - f.position.y))
+          };
+          return { ...f, size };
+        }
+        return f;
+      });
+      return newFields;
+    });
+  }, [templateSize]);
+
+  const updateFieldStyle = useCallback((fieldId: string, styleUpdates: Partial<FieldConfig['style']>) => {
+    updateField(fieldId, {
+      style: {
+        ...fields.find(f => f.id === fieldId)?.style!,
+        ...styleUpdates
+      }
+    });
+  }, [fields, updateField]);
+
+  const undo = useCallback(() => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setFields(history[historyIndex - 1]);
+    }
+  }, [history, historyIndex]);
+
+  const redo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+      setFields(history[historyIndex + 1]);
+    }
+  }, [history, historyIndex]);
+
+  const autoLayout = useCallback(() => {
+    const newFields = autoLayoutFields(
+      fields.map(f => f.templateField),
+      templateSize
+    );
+    setFields(newFields);
+    saveToHistory(newFields);
+  }, [fields, templateSize, saveToHistory]);
+
+  const updateSettings = useCallback((newSettings: Partial<CanvasSettings>) => {
+    setSettings(prev => ({ ...prev, ...newSettings }));
+  }, []);
+
+  const finalizeFieldPositions = useCallback(() => {
+    // Save final positions to history
+    saveToHistory(fields);
+  }, [fields, saveToHistory]);
+
+  return {
+    fields,
+    selectedFieldId,
+    settings,
+    setSelectedFieldId,
+    updateField,
+    moveField,
+    resizeField,
+    updateFieldStyle,
+    updateSettings,
+    autoLayout,
+    undo,
+    redo,
+    canUndo: historyIndex > 0,
+    canRedo: historyIndex < history.length - 1,
+    finalizeFieldPositions
+  };
+};

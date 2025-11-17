@@ -43,10 +43,40 @@ export function FieldMappingWizard({
   const [aiLoading, setAiLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+  
+  const [columnsFromDb, setColumnsFromDb] = useState<string[] | null>(null);
+  const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Load authoritative parsed_fields columns from backend
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('data_sources')
+          .select('parsed_fields')
+          .eq('id', dataSourceId)
+          .maybeSingle();
+        if (error) {
+          console.warn('[FieldMappingWizard] Failed to load parsed_fields:', error.message);
+          return;
+        }
+        const cols = (data?.parsed_fields as any)?.columns as string[] | undefined;
+        if (!cancelled && cols?.length) {
+          setColumnsFromDb(cols.map(sanitize));
+        }
+      } catch (e) {
+        console.warn('[FieldMappingWizard] Error loading columns:', e);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [dataSourceId]);
 
   useEffect(() => {
-    const usableColumns = dataColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
-    
+    const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
+    const usableColumns = sourceColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
+    console.debug('[FieldMappingWizard] Using columns:', usableColumns.slice(0, 5));
     // Normalize with typo handling
     const normalizeHard = (s: string) => {
       const lower = s.toLowerCase();
@@ -150,7 +180,7 @@ export function FieldMappingWizard({
         description: `Matched ${autoMappedCount} of ${templateFields.length} fields`,
       });
     }
-  }, [templateFields, dataColumns, toast]);
+  }, [templateFields, dataColumns, columnsFromDb, toast]);
 
   const handleMappingChange = (templateField: string, dataColumn: string) => {
     setMappings(prev =>
@@ -191,7 +221,8 @@ export function FieldMappingWizard({
 
   const canSave = mappings.every(m => m.dataColumn !== null);
   const mappedCount = mappings.filter(m => m.dataColumn).length;
-  const usableColumns = dataColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
+  const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
+  const usableColumns = sourceColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
 
   return (
     <Card className="w-full max-w-5xl mx-auto">

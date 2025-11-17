@@ -61,6 +61,7 @@ export function DataReviewStep({
   const [editedColumns, setEditedColumns] = useState<Record<string, string>>({});
   const [dataValidated, setDataValidated] = useState(false);
 
+  const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
   const { columns, preview, rowCount, fileName } = parsedData;
   const emptyColumnsRemoved = (parsedData as any).emptyColumnsRemoved || 0;
 
@@ -142,11 +143,11 @@ export function DataReviewStep({
     }
 
     const finalRenameMap: Record<string, string> = { ...editedColumns };
-    const updatedColumns = columns.map(col => finalRenameMap[col] || col);
+    const updatedColumns = columns.map(col => sanitize(finalRenameMap[col] || col));
     const updatedPreview = preview.map(row => {
       const newRow: Record<string, any> = {};
       columns.forEach((oldCol) => {
-        const newCol = finalRenameMap[oldCol] || oldCol;
+        const newCol = sanitize(finalRenameMap[oldCol] || oldCol);
         newRow[newCol] = row[oldCol];
       });
       return newRow;

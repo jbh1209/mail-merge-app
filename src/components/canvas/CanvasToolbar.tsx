@@ -50,85 +50,90 @@ export function CanvasToolbar({
   canRedo
 }: CanvasToolbarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-4 p-4 bg-muted/30 border-b">
+    <div className="flex flex-wrap items-center gap-2 px-2 py-1.5">
       {/* Zoom Controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
+          className="h-7 w-7 p-0"
           onClick={() => onScaleChange(Math.max(1, scale - 0.5))}
         >
-          <ZoomOut className="h-4 w-4" />
+          <ZoomOut className="h-3.5 w-3.5" />
         </Button>
-        <span className="text-sm font-medium w-12 text-center">{Math.round(scale * 100)}%</span>
+        <span className="text-xs font-medium w-10 text-center">{Math.round(scale * 100)}%</span>
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
+          className="h-7 w-7 p-0"
           onClick={() => onScaleChange(Math.min(5, scale + 0.5))}
         >
-          <ZoomIn className="h-4 w-4" />
+          <ZoomIn className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      <Separator orientation="vertical" className="h-6" />
+      <Separator orientation="vertical" className="h-5" />
 
       {/* Grid Controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <Button
           size="sm"
-          variant={showGrid ? "default" : "outline"}
+          variant={showGrid ? "default" : "ghost"}
+          className="h-7 w-7 p-0"
           onClick={onToggleGrid}
         >
-          <Grid3x3 className="h-4 w-4" />
+          <Grid3x3 className="h-3.5 w-3.5" />
         </Button>
-        <div className="flex items-center gap-2">
-          <Switch checked={snapToGrid} onCheckedChange={onToggleSnap} />
-          <Label className="text-sm">Snap</Label>
+        <div className="flex items-center gap-1.5">
+          <Switch checked={snapToGrid} onCheckedChange={onToggleSnap} className="scale-75" />
+          <Label className="text-xs">Snap</Label>
         </div>
       </div>
 
-      <Separator orientation="vertical" className="h-6" />
+      <Separator orientation="vertical" className="h-5" />
 
       {/* History Controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
+          className="h-7 w-7 p-0"
           onClick={onUndo}
           disabled={!canUndo}
         >
-          <Undo2 className="h-4 w-4" />
+          <Undo2 className="h-3.5 w-3.5" />
         </Button>
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
+          className="h-7 w-7 p-0"
           onClick={onRedo}
           disabled={!canRedo}
         >
-          <Redo2 className="h-4 w-4" />
+          <Redo2 className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      <Separator orientation="vertical" className="h-6" />
+      <Separator orientation="vertical" className="h-5" />
 
       {/* Auto Layout */}
-      <Button size="sm" variant="outline" onClick={onAutoLayout}>
-        <Wand2 className="h-4 w-4 mr-2" />
-        Auto Layout
+      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onAutoLayout}>
+        <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+        <span className="text-xs">Auto</span>
       </Button>
 
       {/* Field Styling - Only show when field is selected */}
       {selectedField && (
         <>
-          <Separator orientation="vertical" className="h-6" />
+          <Separator orientation="vertical" className="h-5" />
           
-          <div className="flex items-center gap-2">
-            <Label className="text-sm">Font:</Label>
+          <div className="flex items-center gap-1.5">
+            <Label className="text-xs">Font:</Label>
             <Select
               value={selectedField.style.fontSize.toString()}
               onValueChange={(value) => onStyleChange({ fontSize: parseInt(value) })}
             >
-              <SelectTrigger className="w-20 h-8">
+              <SelectTrigger className="w-16 h-7 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -139,38 +144,42 @@ export function CanvasToolbar({
             </Select>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5">
             <Button
               size="sm"
-              variant={selectedField.style.textAlign === 'left' ? 'default' : 'outline'}
+              variant={selectedField.style.textAlign === 'left' ? 'default' : 'ghost'}
+              className="h-7 w-7 p-0"
               onClick={() => onStyleChange({ textAlign: 'left' })}
             >
-              <AlignLeft className="h-4 w-4" />
+              <AlignLeft className="h-3.5 w-3.5" />
             </Button>
             <Button
               size="sm"
-              variant={selectedField.style.textAlign === 'center' ? 'default' : 'outline'}
+              variant={selectedField.style.textAlign === 'center' ? 'default' : 'ghost'}
+              className="h-7 w-7 p-0"
               onClick={() => onStyleChange({ textAlign: 'center' })}
             >
-              <AlignCenter className="h-4 w-4" />
+              <AlignCenter className="h-3.5 w-3.5" />
             </Button>
             <Button
               size="sm"
-              variant={selectedField.style.textAlign === 'right' ? 'default' : 'outline'}
+              variant={selectedField.style.textAlign === 'right' ? 'default' : 'ghost'}
+              className="h-7 w-7 p-0"
               onClick={() => onStyleChange({ textAlign: 'right' })}
             >
-              <AlignRight className="h-4 w-4" />
+              <AlignRight className="h-3.5 w-3.5" />
             </Button>
           </div>
 
           <Button
             size="sm"
-            variant={selectedField.style.fontWeight === 'bold' ? 'default' : 'outline'}
+            variant={selectedField.style.fontWeight === 'bold' ? 'default' : 'ghost'}
+            className="h-7 w-7 p-0"
             onClick={() => onStyleChange({ 
               fontWeight: selectedField.style.fontWeight === 'bold' ? 'normal' : 'bold' 
             })}
           >
-            <Type className="h-4 w-4 font-bold" />
+            <Type className="h-3.5 w-3.5 font-bold" />
           </Button>
         </>
       )}

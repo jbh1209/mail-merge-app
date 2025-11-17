@@ -15,6 +15,7 @@ interface TemplateDesignCanvasProps {
   sampleData?: Record<string, any>[];
   onSave: (designConfig: any) => void;
   onCancel: () => void;
+  stepInfo?: { current: number; total: number };
 }
 
 export function TemplateDesignCanvas({
@@ -23,7 +24,8 @@ export function TemplateDesignCanvas({
   fieldNames,
   sampleData,
   onSave,
-  onCancel
+  onCancel,
+  stepInfo
 }: TemplateDesignCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -70,45 +72,63 @@ export function TemplateDesignCanvas({
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Info Alert */}
-      <Alert className="mb-4">
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          Drag fields to position them, resize using the corner handle, and use the toolbar to style your template. 
-          Click "Auto Layout" for automatic field positioning.
-        </AlertDescription>
-      </Alert>
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Compact header with step indicator and help */}
+      <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 border-b bg-background">
+        <div className="flex items-center gap-3">
+          {stepInfo && (
+            <span className="text-xs text-muted-foreground font-medium">
+              Step {stepInfo.current} of {stepInfo.total}
+            </span>
+          )}
+          <span className="text-sm font-semibold">Design Layout</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={() => {
+            import('sonner').then(m => m.toast.info('Drag fields to position them, resize using handles, and use toolbar to style.'));
+          }}
+        >
+          <Info className="h-4 w-4" />
+        </Button>
+      </div>
 
-      {/* Toolbar */}
-      <CanvasToolbar
-        selectedField={selectedField}
-        scale={settings.scale}
-        showGrid={settings.showGrid}
-        snapToGrid={settings.snapToGrid}
-        onScaleChange={(scale) => updateSettings({ scale })}
-        onToggleGrid={() => updateSettings({ showGrid: !settings.showGrid })}
-        onToggleSnap={() => updateSettings({ snapToGrid: !settings.snapToGrid })}
-        onUndo={undo}
-        onRedo={redo}
-        onAutoLayout={autoLayout}
-        onStyleChange={(style) => {
-          if (selectedFieldId) {
-            updateFieldStyle(selectedFieldId, style);
-          }
-        }}
-        canUndo={canUndo}
-        canRedo={canRedo}
-      />
+      {/* Compact toolbar */}
+      <div className="flex-shrink-0 border-b bg-muted/30">
+        <CanvasToolbar
+          selectedField={selectedField}
+          scale={settings.scale}
+          showGrid={settings.showGrid}
+          snapToGrid={settings.snapToGrid}
+          onScaleChange={(scale) => updateSettings({ scale })}
+          onToggleGrid={() => updateSettings({ showGrid: !settings.showGrid })}
+          onToggleSnap={() => updateSettings({ snapToGrid: !settings.snapToGrid })}
+          onUndo={undo}
+          onRedo={redo}
+          onAutoLayout={autoLayout}
+          onStyleChange={(style) => {
+            if (selectedFieldId) {
+              updateFieldStyle(selectedFieldId, style);
+            }
+          }}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
+      </div>
 
-      {/* Canvas */}
-      <div className="flex-1 overflow-auto bg-muted/20 p-8 max-h-[600px]">
-        <div className="flex justify-center">
+      {/* Main canvas area - takes all available space */}
+      <div className="flex-1 overflow-auto bg-muted/20 p-2 min-h-0">
+        <div className="flex items-center justify-center h-full">
           <Card className="shadow-xl">
-            <div className="p-4">
-              <div className="text-sm text-muted-foreground mb-2 text-center">
-                {templateName} ({templateSize.width}mm × {templateSize.height}mm)
+            <div className="p-2">
+              {/* Compact template info */}
+              <div className="text-xs text-muted-foreground mb-1 text-center">
+                {templateName} ({templateSize.width} × {templateSize.height}mm)
               </div>
+              
+              {/* The actual canvas */}
               <div
                 ref={canvasRef}
                 className="relative border-2 border-border shadow-inner"
@@ -149,12 +169,12 @@ export function TemplateDesignCanvas({
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center justify-between p-4 border-t bg-background">
-        <Button variant="outline" onClick={onCancel}>
+      {/* Compact action buttons - fixed at bottom */}
+      <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 border-t bg-background">
+        <Button variant="outline" size="sm" onClick={onCancel}>
           Back
         </Button>
-        <Button onClick={handleSave}>
+        <Button size="sm" onClick={handleSave}>
           <CheckCircle2 className="h-4 w-4 mr-2" />
           Save Design
         </Button>

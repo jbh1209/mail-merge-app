@@ -54,12 +54,69 @@ export function FieldMappingWizard({
   const hasAdvancedAI = subscriptionFeatures?.hasAdvancedAI ?? false;
 
   useEffect(() => {
-    // Initialize with empty mappings
-    setMappings(templateFields.map(field => ({
-      templateField: field,
-      dataColumn: null
-    })));
-  }, [templateFields]);
+    // Auto-map fields intelligently
+    const autoMappings = templateFields.map(templateField => {
+      // Normalize for comparison
+      const normalizeForMatch = (str: string) => 
+        str.toLowerCase().replace(/[^a-z0-9]/g, '');
+      
+      const normalizedTemplate = normalizeForMatch(templateField);
+      
+      // Try exact match first (case/space insensitive)
+      let match = dataColumns.find(col => 
+        normalizeForMatch(col) === normalizedTemplate
+      );
+      
+      // If no exact match, try fuzzy matching using simple token overlap
+      if (!match) {
+        const templateTokens = normalizedTemplate.split('').filter(c => c);
+        let bestMatch = null;
+        let bestScore = 0;
+        
+        dataColumns.forEach(col => {
+          const colNormalized = normalizeForMatch(col);
+          const colTokens = colNormalized.split('').filter(c => c);
+          
+          // Calculate simple similarity (shared characters / total unique characters)
+          const shared = templateTokens.filter(t => colTokens.includes(t)).length;
+          const total = Math.max(templateTokens.length, colTokens.length);
+          const score = total > 0 ? shared / total : 0;
+          
+          if (score >= 0.7 && score > bestScore) {
+            bestScore = score;
+            bestMatch = col;
+          }
+        });
+        
+        match = bestMatch;
+      }
+      
+      return {
+        templateField,
+        dataColumn: match || null,
+        confidence: match ? 90 : undefined
+      };
+    });
+    
+    setMappings(autoMappings);
+    
+    const autoMappedCount = autoMappings.filter(m => m.dataColumn).length;
+    if (autoMappedCount > 0) {
+      toast({
+        title: "Auto-mapped fields",
+        description: `${autoMappedCount} of ${templateFields.length} fields mapped automatically. Review and adjust as needed.`,
+      });
+    }
+    
+    // If advanced AI is available and there are unmapped fields, suggest AI mapping
+    const unmappedCount = autoMappings.filter(m => !m.dataColumn).length;
+    if (hasAdvancedAI && unmappedCount > 0 && unmappedCount < templateFields.length) {
+      // Auto-trigger AI suggestions for remaining unmapped fields
+      setTimeout(() => {
+        handleAISuggest();
+      }, 1000);
+    }
+  }, [templateFields, dataColumns]);
 
   const handleAISuggest = async () => {
     setAiLoading(true);

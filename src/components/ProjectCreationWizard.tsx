@@ -408,6 +408,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                 step: 5,
                 dataReviewComplete: true,
                 dataColumns: updatedData.columns || prev.dataColumns,
+                parsedData: updatedData.parsedData || prev.parsedData, // Use transformed data with corrected column names
                 aiAnalysisResult: updatedData.analysis,
               }));
             }}

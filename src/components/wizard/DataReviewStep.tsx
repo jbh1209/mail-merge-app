@@ -111,7 +111,27 @@ export function DataReviewStep({
       if (error) throw error;
 
       setAnalysis(data as AnalysisResult);
-      toast.success("AI analysis complete!");
+      // Auto-apply high-confidence AI suggestions (>= 85%)
+      if (data.columnMappings && data.columnMappings.length > 0) {
+        const autoApplied: Record<string, string> = {};
+        let autoCount = 0;
+        
+        data.columnMappings.forEach(mapping => {
+          if (mapping.confidence >= 85 && mapping.original !== mapping.suggested) {
+            autoApplied[mapping.original] = mapping.suggested;
+            autoCount++;
+          }
+        });
+        
+        if (autoCount > 0) {
+          setEditedColumns(autoApplied);
+          toast.success(`AI analysis complete! Auto-applied ${autoCount} high-confidence correction${autoCount !== 1 ? 's' : ''}.`);
+        } else {
+          toast.success("AI analysis complete!");
+        }
+      } else {
+        toast.success("AI analysis complete!");
+      }
     } catch (error: any) {
       console.error('Analysis error:', error);
       const msg = String(error?.message || '');
@@ -199,12 +219,45 @@ export function DataReviewStep({
   const handleAcceptAndContinue = () => {
     setDataValidated(true);
     
-    // Apply column edits if any
-    const updatedColumns = columns.map(col => editedColumns[col] || col);
+    // Build final rename map: AI suggestions + manual edits (manual edits win)
+    const aiHighConfidenceMap: Record<string, string> = {};
+    if (analysis?.columnMappings) {
+      analysis.columnMappings.forEach(mapping => {
+        if (mapping.confidence >= 85 && mapping.original !== mapping.suggested) {
+          aiHighConfidenceMap[mapping.original] = mapping.suggested;
+        }
+      });
+    }
+    
+    // Merge: manual edits override AI
+    const finalRenameMap = { ...aiHighConfidenceMap, ...editedColumns };
+    
+    // Apply rename to columns array
+    const updatedColumns = columns.map(col => finalRenameMap[col] || col);
+    
+    // Transform parsedData preview rows to use new column names
+    const updatedPreview = parsedData?.preview?.map((row: Record<string, any>) => {
+      const newRow: Record<string, any> = {};
+      Object.keys(row).forEach(key => {
+        const newKey = finalRenameMap[key] || key;
+        newRow[newKey] = row[key];
+      });
+      return newRow;
+    }) || [];
+    
+    const appliedCount = Object.keys(finalRenameMap).length;
+    if (appliedCount > 0) {
+      toast.success(`Applied ${appliedCount} correction${appliedCount !== 1 ? 's' : ''} to column names.`);
+    }
     
     onComplete({
       columns: updatedColumns,
       analysis,
+      parsedData: {
+        ...parsedData,
+        columns: updatedColumns,
+        preview: updatedPreview
+      }
     });
   };
 

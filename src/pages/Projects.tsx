@@ -57,16 +57,28 @@ export default function Projects() {
   });
 
   const handleDelete = async (projectId: string) => {
-    const { error } = await supabase
-      .from("projects")
-      .delete()
-      .eq("id", projectId);
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-project', {
+        body: { projectId }
+      });
 
-    if (error) {
-      toast.error("Failed to delete project");
-    } else {
+      if (error) {
+        console.error('Delete project error:', error);
+        toast.error("Failed to delete project");
+        return;
+      }
+
+      if (data?.error) {
+        console.error('Delete project error:', data.error);
+        toast.error(data.error);
+        return;
+      }
+
       toast.success("Project deleted successfully");
       refetch();
+    } catch (error) {
+      console.error('Unexpected error:', error);
+      toast.error("An unexpected error occurred");
     }
   };
 

@@ -163,7 +163,7 @@ export function DataReviewStep({
         .update({
           parsed_fields: {
             columns: updatedColumns,
-            rows: parsedData.rows || [],
+            rows: (parsedData as any).rows || [],
             rowCount: parsedData.rowCount || rowCount,
             preview: updatedPreview,
             emptyColumnsRemoved

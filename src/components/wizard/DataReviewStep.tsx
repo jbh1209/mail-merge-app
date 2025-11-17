@@ -114,33 +114,68 @@ export function DataReviewStep({
       toast.success("AI analysis complete!");
     } catch (error: any) {
       console.error('Analysis error:', error);
-      // Parse and display specific error codes from backend
       const msg = String(error?.message || '');
       const status = (error?.status ?? error?.context?.response?.status ?? error?.cause?.status) as number | undefined;
       let errorCode = null;
       try {
         if (error?.message) {
           const parsed = JSON.parse(error.message);
-          errorCode = parsed?.code;
+          if (parsed.error_code) {
+            errorCode = parsed.error_code;
+          }
         }
       } catch {}
 
-      const lower = msg.toLowerCase();
-
-      if (errorCode === 'PLAN_REQUIRED' || ((status === 402 || msg.includes('402')) && (msg.includes('PLAN_REQUIRED') || lower.includes('requires pro')))) {
-        toast.error("AI data cleaning requires Pro or Business plan. Upgrade in Settings → Plans.");
-      } else if (errorCode === 'AI_CREDITS_EXHAUSTED' || (status === 402 || msg.includes('402'))) {
-        toast.error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
-      } else if (errorCode === 'RATE_LIMITED' || status === 429 || msg.includes('429')) {
-        toast.error("Rate limit exceeded. Please wait a minute and try again.");
-      } else if (status === 401 || status === 403 || lower.includes('unauthorized')) {
-        toast.error("Authentication required. Please sign in again and retry.");
+      if (errorCode === 'INSUFFICIENT_QUOTA') {
+        toast.error(
+          'Insufficient AI quota',
+          { description: 'Your workspace has run out of AI credits. Upgrade your plan to continue using AI features.' }
+        );
+      } else if (errorCode === 'RATE_LIMIT') {
+        toast.error(
+          'Too many requests',
+          { description: 'Please wait a moment before trying again.' }
+        );
+      } else if (status === 403) {
+        toast.error(
+          'Feature not available',
+          { description: 'Upgrade to a Pro or Business plan to use AI-powered data cleaning.' }
+        );
       } else {
-        toast.error("AI analysis failed. You can still proceed manually.");
+        toast.error(
+          'Analysis failed',
+          { description: `Check your subscription or try again later.` }
+        );
       }
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const handleApplyAISuggestions = () => {
+    if (!analysis?.columnMappings) return;
+    
+    const newEdits = { ...editedColumns };
+    let appliedCount = 0;
+    
+    analysis.columnMappings.forEach(mapping => {
+      // Only apply high-confidence suggestions (>= 85%)
+      if (mapping.confidence >= 85 && mapping.original !== mapping.suggested) {
+        newEdits[mapping.original] = mapping.suggested;
+        appliedCount++;
+      }
+    });
+    
+    setEditedColumns(newEdits);
+    toast.success(`Applied ${appliedCount} AI suggestion${appliedCount !== 1 ? 's' : ''}! Review and edit if needed.`);
+  };
+
+  const handleApplySingleSuggestion = (original: string, suggested: string) => {
+    setEditedColumns(prev => ({
+      ...prev,
+      [original]: suggested
+    }));
+    toast.success(`Applied suggestion for "${original}"`);
   };
 
   const handleColumnEdit = (original: string, newValue: string) => {

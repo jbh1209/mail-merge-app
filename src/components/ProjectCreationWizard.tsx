@@ -540,17 +540,18 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
           </div>
         )}
 
-        {/* Step 6.5: Canvas Design */}
+        {/* Step 6.5: Canvas Design - Maximized View */}
         {wizardState.step === 6.5 && 
          wizardState.templateSize && 
          wizardState.templateFields.length > 0 && 
          wizardState.templateId ? (
-          <div className="space-y-4 max-h-[90vh] overflow-hidden">
+          <div className="flex flex-col h-full -mt-6">
             <TemplateDesignCanvas
               templateSize={wizardState.templateSize}
               templateName={wizardState.templateName}
               fieldNames={wizardState.templateFields}
               sampleData={wizardState.parsedData?.preview || []}
+              stepInfo={{ current: 9, total: 9 }}
               onSave={async (designConfig) => {
               try {
                 // Update template with design config

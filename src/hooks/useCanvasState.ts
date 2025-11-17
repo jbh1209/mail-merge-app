@@ -24,8 +24,15 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     autoLayoutFields(initialFields, templateSize)
   );
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  // Calculate smart default scale based on template size
+  const calculateDefaultScale = () => {
+    if (templateSize.width <= 100) return 2.5;
+    if (templateSize.width <= 150) return 2;
+    return 1.5;
+  };
+
   const [settings, setSettings] = useState<CanvasSettings>({
-    scale: 3,
+    scale: calculateDefaultScale(),
     showGrid: true,
     snapToGrid: true,
     gridSize: 1,
@@ -102,6 +109,18 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     });
   }, [fields, updateField]);
 
+  const deleteField = useCallback((fieldId: string) => {
+    setFields(prev => {
+      const newFields = prev.filter(f => f.id !== fieldId);
+      saveToHistory(newFields);
+      return newFields;
+    });
+    // Clear selection if deleted field was selected
+    if (selectedFieldId === fieldId) {
+      setSelectedFieldId(null);
+    }
+  }, [saveToHistory, selectedFieldId]);
+
   const undo = useCallback(() => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
@@ -139,12 +158,12 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     selectedFieldId,
     settings,
     setSelectedFieldId,
-    updateField,
     moveField,
     resizeField,
     updateFieldStyle,
     updateSettings,
     autoLayout,
+    deleteField,
     undo,
     redo,
     canUndo: historyIndex > 0,

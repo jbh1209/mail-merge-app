@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { FieldConfig, mmToPx, pxToMm, generateSampleText } from '@/lib/canvas-utils';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface FieldElementProps {
   field: FieldConfig;
@@ -11,6 +12,7 @@ interface FieldElementProps {
   onMove: (position: { x: number; y: number }) => void;
   onResize: (size: { width: number; height: number }) => void;
   onMoveEnd: () => void;
+  onDelete: () => void;
 }
 
 export function FieldElement({
@@ -21,7 +23,8 @@ export function FieldElement({
   onSelect,
   onMove,
   onResize,
-  onMoveEnd
+  onMoveEnd,
+  onDelete
 }: FieldElementProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -141,10 +144,23 @@ export function FieldElement({
         <span className="truncate">{displayText}</span>
       </div>
 
-      {/* Drag Handle */}
+      {/* Action Buttons */}
       {isSelected && (
-        <div className="absolute top-1 right-1 cursor-grab">
-          <GripVertical className="h-3 w-3 text-muted-foreground" />
+        <div className="absolute top-1 right-1 flex gap-1">
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-5 w-5 p-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+          <div className="cursor-grab">
+            <GripVertical className="h-3 w-3 text-muted-foreground" />
+          </div>
         </div>
       )}
 

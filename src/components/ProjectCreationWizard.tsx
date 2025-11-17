@@ -544,12 +544,13 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
          wizardState.templateSize && 
          wizardState.templateFields.length > 0 && 
          wizardState.templateId ? (
-          <TemplateDesignCanvas
-            templateSize={wizardState.templateSize}
-            templateName={wizardState.templateName}
-            fieldNames={wizardState.templateFields}
-            sampleData={wizardState.parsedData?.preview || []}
-            onSave={async (designConfig) => {
+          <div className="space-y-4 max-h-[90vh] overflow-hidden">
+            <TemplateDesignCanvas
+              templateSize={wizardState.templateSize}
+              templateName={wizardState.templateName}
+              fieldNames={wizardState.templateFields}
+              sampleData={wizardState.parsedData?.preview || []}
+              onSave={async (designConfig) => {
               try {
                 // Update template with design config
                 const { error } = await supabase
@@ -578,7 +579,8 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
             }}
             onCancel={() => setWizardState(prev => ({ ...prev, step: 6 }))}
           />
-        ) : wizardState.step === 6.5 && (
+          </div>
+        ) : wizardState.step === 6.5 ? (
           <div className="text-center py-8">
             <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">
@@ -592,7 +594,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               Go Back
             </Button>
           </div>
-        )}
+        ) : null}
 
         {wizardState.step === 7 && (
           <div className="space-y-6 py-6 sm:py-8 px-4">

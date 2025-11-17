@@ -37,6 +37,7 @@ export function TemplateDesignCanvas({
     updateFieldStyle,
     updateSettings,
     autoLayout,
+    deleteField,
     undo,
     redo,
     canUndo,
@@ -101,7 +102,7 @@ export function TemplateDesignCanvas({
       />
 
       {/* Canvas */}
-      <div className="flex-1 overflow-auto bg-muted/20 p-8">
+      <div className="flex-1 overflow-auto bg-muted/20 p-8 max-h-[600px]">
         <div className="flex justify-center">
           <Card className="shadow-xl">
             <div className="p-4">
@@ -135,7 +136,11 @@ export function TemplateDesignCanvas({
                     onSelect={() => setSelectedFieldId(field.id)}
                     onMove={(position) => moveField(field.id, position)}
                     onResize={(size) => resizeField(field.id, size)}
-                    onMoveEnd={() => {}}
+                    onMoveEnd={finalizeFieldPositions}
+                    onDelete={() => {
+                      deleteField(field.id);
+                      import('sonner').then(m => m.toast.success(`Field "${field.templateField}" removed. Click undo to restore.`));
+                    }}
                   />
                 ))}
               </div>

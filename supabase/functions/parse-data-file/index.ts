@@ -65,6 +65,7 @@ serve(async (req) => {
 
     let columns: string[] = [];
     let rows: Record<string, any>[] = [];
+    let emptyColumnsRemoved = 0;
 
     if (file_type === 'csv') {
       console.log('📄 Parsing CSV file...');

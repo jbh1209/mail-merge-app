@@ -77,6 +77,14 @@ export function DataReviewStep({
   const [dataValidated, setDataValidated] = useState(false);
 
   const { columns, preview, rowCount, fileName } = parsedData;
+  const emptyColumnsRemoved = (parsedData as any).emptyColumnsRemoved || 0;
+
+  // Categorize issues by severity
+  const categorizedIssues = {
+    critical: analysis?.qualityIssues.filter(issue => issue.startsWith('CRITICAL:')) || [],
+    warning: analysis?.qualityIssues.filter(issue => issue.startsWith('WARNING:')) || [],
+    info: analysis?.qualityIssues.filter(issue => issue.startsWith('INFO:')) || []
+  };
 
   useEffect(() => {
     runInitialAnalysis();
@@ -96,6 +104,7 @@ export function DataReviewStep({
           preview: preview.slice(0, 10),
           rowCount,
           workspaceId,
+          emptyColumnsRemoved: (parsedData as any).emptyColumnsRemoved || 0,
         },
       });
 

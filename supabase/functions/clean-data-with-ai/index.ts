@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { columns, preview, rowCount, workspaceId } = await req.json();
+    const { columns, preview, rowCount, workspaceId, emptyColumnsRemoved } = await req.json();
     
     // Get auth header to check subscription
     const authHeader = req.headers.get('authorization');
@@ -125,67 +125,63 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    const prompt = `You are a data cleaning assistant specializing in detecting parsing errors and data quality issues. Analyze this data carefully for structural problems.
+    // Construct AI prompt for data analysis with pre-filtering context
+    let autoFilterInfo = '';
+    if (emptyColumnsRemoved && emptyColumnsRemoved > 0) {
+      autoFilterInfo = `\n\nNote: ${emptyColumnsRemoved} entirely empty column(s) were automatically filtered out before this analysis.`;
+    }
 
-Data has ${rowCount} total rows. Here are the first ${preview.length} rows for analysis:
+    const prompt = `You are a data quality analyst helping a non-technical user prepare data for a mail merge. Analyze this dataset and focus ONLY on actionable issues that require user attention.${autoFilterInfo}
 
-Columns: ${columns.join(', ')}
+Dataset Overview:
+- Total Rows: ${rowCount}
+- Columns: ${columns.join(', ')}
 
-Sample data:
+Sample Data (first ${preview.length} rows):
 ${JSON.stringify(preview, null, 2)}
 
-CRITICAL ANALYSIS REQUIREMENTS:
+IMPORTANT GUIDELINES:
+- Focus on DATA INTEGRITY issues that could affect mail merge output
+- Don't report issues we've already auto-handled (like empty columns)
+- Prioritize issues by severity: CRITICAL (must fix), WARNING (review recommended), INFO (FYI only)
+- Be concise and user-friendly in your descriptions
 
-1. **PARSING ARTIFACT DETECTION** - Look for signs that data was incorrectly split:
-   - Values that look like fragments (e.g., "123 Main" in one column, "Street" in next)
-   - Numeric-only values in text columns that should be part of addresses
-   - Street names without numbers or vice versa
-   - Column values that appear to be the second half of the previous column
+Look for:
+1. Column naming issues that make data hard to understand
+2. Data type mismatches that could cause merge errors (e.g., numbers stored as text)
+3. Missing critical values in key fields
+4. Inconsistent formatting (mixed date formats, inconsistent capitalization)
+5. Duplicate or very similar column names
 
-2. **COLUMN MISALIGNMENT** - Validate data types match columns:
-   - Check if "address" columns contain actual complete addresses (should have street numbers, street names, and ideally city/postal)
-   - Check if numeric columns contain only numbers
-   - Check if date columns contain valid dates
-   - Check if email/phone columns contain valid formats
+For EACH column, suggest:
+- A clearer name if needed (use clear, readable names - not necessarily snake_case)
+- The appropriate data type (text, number, date, boolean)
+- A confidence score (0-100) for your suggestion
 
-3. **COMMA-RELATED PARSING ERRORS** - Specifically check:
-   - Addresses that should contain commas but were split across multiple columns
-   - Business names with commas incorrectly split
-   - Any field that looks like it was cut off mid-value
+For quality issues, prefix each with severity:
+- "CRITICAL: " for issues that will break the merge
+- "WARNING: " for issues that should be reviewed
+- "INFO: " for minor observations
 
-4. **CROSS-COLUMN VALIDATION**:
-   - If there's a "store_name" and "address", verify the address is complete
-   - Check for patterns like: column has "Street" but previous column has number - likely merged
-   - Look for values that make no sense in their column context
-
-5. **DATA COMPLETENESS**:
-   - Missing values
-   - Unusually short values in columns that should have longer text
-   - Duplicate patterns that suggest parsing errors
-
-Provide a JSON response with this structure:
+Respond in this EXACT JSON format:
 {
   "columnMappings": [
     {
-      "original": "original_column_name",
-      "suggested": "clean_snake_case_name",
-      "dataType": "text|email|phone|date|number|address|url|boolean",
-      "confidence": 0.95
+      "original": "column name",
+      "suggested": "Clear Column Name",
+      "dataType": "text|number|date|boolean",
+      "confidence": 95
     }
   ],
   "qualityIssues": [
-    "CRITICAL: Address column contains fragments - data appears incorrectly split (found '123 Main' without street type)",
-    "WARNING: Column 5 contains street names that should be part of addresses",
-    "ERROR: 15 rows have misaligned data across columns"
+    "CRITICAL: Description of critical issue",
+    "WARNING: Description of warning",
+    "INFO: Minor observation"
   ],
   "suggestions": [
-    "Re-upload the source file - current data shows parsing errors",
-    "If using CSV, ensure addresses with commas are properly quoted",
-    "Consider using Excel format to avoid comma-related parsing issues"
+    "Clear, actionable suggestion for the user"
   ]
-}
-
-Be VERY critical and flag any suspicious patterns. If data looks incorrectly split, say so explicitly with examples.`;
+}`;
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',

@@ -46,21 +46,103 @@ export function FieldMappingWizard({
 
   useEffect(() => {
     const usableColumns = dataColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
-    const normalize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
     
-    const autoMappings = templateFields.map(templateField => {
-      const match = usableColumns.find(col => normalize(col) === normalize(templateField));
-      return {
-        templateField,
-        dataColumn: match || null,
-        confidence: match ? 95 : undefined
-      };
+    // Normalize with typo handling
+    const normalizeHard = (s: string) => {
+      const lower = s.toLowerCase();
+      // Replace common confusions before stripping
+      const replaced = lower
+        .replace(/sto+re?/g, "store")      // stoore -> store, storre -> store
+        .replace(/syore/g, "store")        // syore -> store
+        .replace(/\baddr(ess)?\b/g, "address")
+        .replace(/\bmgr\b/g, "manager")
+        .replace(/\bprov(ince)?\b/g, "province")
+        .replace(/\bcode\b/g, "code")
+        .replace(/\bid\b/g, "code");       // code/id synonym
+      // Remove non-alphanumeric
+      const stripped = replaced.replace(/[^a-z0-9]+/g, "");
+      // Collapse repeated letters: stoore -> store
+      return stripped.replace(/([a-z0-9])\1+/g, "$1");
+    };
+
+    const tokenize = (s: string) =>
+      s.toLowerCase().split(/[\s_]+/).filter(Boolean);
+
+    const jaccard = (a: string[], b: string[]) => {
+      const A = new Set(a);
+      const B = new Set(b);
+      const inter = [...A].filter(x => B.has(x)).length;
+      const uni = new Set([...a, ...b]).size;
+      return uni ? inter / uni : 0;
+    };
+
+    const levenshtein = (a: string, b: string) => {
+      const m = a.length, n = b.length;
+      if (!m) return n;
+      if (!n) return m;
+      const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i++) dp[i][0] = i;
+      for (let j = 0; j <= n; j++) dp[0][j] = j;
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,
+            dp[i][j - 1] + 1,
+            dp[i - 1][j - 1] + cost
+          );
+        }
+      }
+      return dp[m][n];
+    };
+
+    const similarity = (aRaw: string, bRaw: string) => {
+      const a = normalizeHard(aRaw);
+      const b = normalizeHard(bRaw);
+      if (!a || !b) return 0;
+      if (a === b) return 1;
+
+      // Substring score
+      const substringScore = (a.includes(b) || b.includes(a)) ? 0.9 : 0;
+
+      // Token similarity
+      const tokensA = tokenize(aRaw);
+      const tokensB = tokenize(bRaw);
+      const tokenScore = jaccard(tokensA, tokensB);
+
+      // Edit distance similarity
+      const dist = levenshtein(a, b);
+      const maxLen = Math.max(a.length, b.length);
+      const editScore = 1 - dist / Math.max(1, maxLen);
+
+      return Math.max(substringScore, tokenScore, editScore);
+    };
+
+    const THRESHOLD = 0.72;
+    const used = new Set<string>();
+
+    const autoMappings = templateFields.map(tf => {
+      let best: { col: string | null; score: number } = { col: null, score: 0 };
+      for (const col of usableColumns) {
+        if (used.has(col)) continue;
+        const s = similarity(tf, col);
+        if (s > best.score) best = { col, score: s };
+      }
+      if (best.col && best.score >= THRESHOLD) {
+        used.add(best.col);
+        return { 
+          templateField: tf, 
+          dataColumn: best.col, 
+          confidence: Math.round(best.score * 100) 
+        };
+      }
+      return { templateField: tf, dataColumn: null };
     });
-    
+
     setMappings(autoMappings);
     
     const autoMappedCount = autoMappings.filter(m => m.dataColumn).length;
-    console.debug('[FieldMappingWizard] Auto-mapped:', autoMappedCount, 'of', templateFields.length);
+    console.debug('[FieldMappingWizard] Auto-mapped:', autoMappedCount, 'of', templateFields.length, 'fields');
     
     if (autoMappedCount > 0) {
       toast({
@@ -68,7 +150,7 @@ export function FieldMappingWizard({
         description: `Matched ${autoMappedCount} of ${templateFields.length} fields`,
       });
     }
-  }, [templateFields, dataColumns]);
+  }, [templateFields, dataColumns, toast]);
 
   const handleMappingChange = (templateField: string, dataColumn: string) => {
     setMappings(prev =>

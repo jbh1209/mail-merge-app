@@ -16,6 +16,7 @@ import { DataReviewStep } from "./wizard/DataReviewStep";
 import { TemplateLibrary } from "./TemplateLibrary";
 import { TemplateUpload } from "./TemplateUpload";
 import { FieldMappingWizard } from "./FieldMappingWizard";
+import { TemplateDesignCanvas } from "./TemplateDesignCanvas";
 import { LabelSize } from "@/lib/avery-labels";
 import { useSubscription } from "@/hooks/useSubscription";
 
@@ -48,7 +49,10 @@ interface WizardState {
   aiAnalysisResult: any;
   templateId: string | null;
   templateFields: string[];
+  templateSize: { width: number; height: number } | null;
+  templateName: string;
   fieldMappingsComplete: boolean;
+  designConfig: any;
 }
 
 const WIZARD_STEPS = [
@@ -60,6 +64,7 @@ const WIZARD_STEPS = [
   { id: 4.5, title: "Review Data", description: "Validate & clean" },
   { id: 5, title: "Choose Template", description: "Select your design" },
   { id: 6, title: "Map Fields", description: "Connect your data" },
+  { id: 6.5, title: "Design Layout", description: "Position your fields" },
   { id: 7, title: "All Set!", description: "Ready to merge" }
 ];
 
@@ -112,7 +117,10 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
     aiAnalysisResult: null,
     templateId: null,
     templateFields: [],
+    templateSize: null,
+    templateName: "",
     fieldMappingsComplete: false,
+    designConfig: null,
   });
 
   const handleNext = () => setWizardState(prev => ({ ...prev, step: prev.step + 1 }));
@@ -130,8 +138,11 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
       dataReviewComplete: false,
       aiAnalysisResult: null,
       templateId: null, 
-      templateFields: [], 
-      fieldMappingsComplete: false 
+      templateFields: [],
+      templateSize: null,
+      templateName: "",
+      fieldMappingsComplete: false,
+      designConfig: null,
     });
     onOpenChange(false);
   };
@@ -445,6 +456,8 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                         ...prev,
                         templateId: savedTemplate.id,
                         templateFields: templateFields,
+                        templateSize: { width: template.width_mm, height: template.height_mm },
+                        templateName: template.name,
                         step: 6,
                       }));
                       
@@ -461,10 +474,16 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                   projectId={wizardState.projectId}
                   workspaceId={workspaceId as string}
                   onUploadComplete={(uploadedTemplate) => {
+                    const template = uploadedTemplate as any; // Type assertion for uploaded template
                     setWizardState(prev => ({
                       ...prev,
-                      templateId: uploadedTemplate.id,
-                      templateFields: uploadedTemplate.fields || ['field_1', 'field_2', 'field_3'],
+                      templateId: template.id,
+                      templateFields: template.fields || ['field_1', 'field_2', 'field_3'],
+                      templateSize: { 
+                        width: template.width_mm || 100, 
+                        height: template.height_mm || 50 
+                      },
+                      templateName: template.name || 'Uploaded Template',
                       step: 6
                     }));
                     toast({ title: "Template uploaded!" });
@@ -489,7 +508,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
             sampleData={wizardState.parsedData?.preview || []}
             subscriptionFeatures={subscriptionFeatures}
             onComplete={() => {
-              setWizardState(prev => ({ ...prev, fieldMappingsComplete: true, step: 7 }));
+              setWizardState(prev => ({ ...prev, fieldMappingsComplete: true, step: 6.5 }));
             }}
             onCancel={() => setWizardState(prev => ({ ...prev, step: 5 }))}
           />
@@ -498,6 +517,61 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
             <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">
               Missing required data. Please go back and complete previous steps.
+            </p>
+            <Button 
+              variant="outline" 
+              onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))}
+              className="mt-4"
+            >
+              Go Back
+            </Button>
+          </div>
+        )}
+
+        {/* Step 6.5: Canvas Design */}
+        {wizardState.step === 6.5 && 
+         wizardState.templateSize && 
+         wizardState.templateFields.length > 0 && 
+         wizardState.templateId ? (
+          <TemplateDesignCanvas
+            templateSize={wizardState.templateSize}
+            templateName={wizardState.templateName}
+            fieldNames={wizardState.templateFields}
+            sampleData={wizardState.parsedData?.preview || []}
+            onSave={async (designConfig) => {
+              try {
+                // Update template with design config
+                const { error } = await supabase
+                  .from('templates')
+                  .update({ 
+                    design_config: {
+                      ...wizardState.designConfig,
+                      ...designConfig
+                    }
+                  })
+                  .eq('id', wizardState.templateId);
+
+                if (error) throw error;
+
+                setWizardState(prev => ({ 
+                  ...prev, 
+                  designConfig,
+                  step: 7 
+                }));
+                
+                toast({ title: "Design saved successfully!" });
+              } catch (error) {
+                console.error("Error saving design:", error);
+                toast({ title: "Failed to save design", variant: "destructive" });
+              }
+            }}
+            onCancel={() => setWizardState(prev => ({ ...prev, step: 6 }))}
+          />
+        ) : wizardState.step === 6.5 && (
+          <div className="text-center py-8">
+            <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              Missing template data. Please go back and select a template.
             </p>
             <Button 
               variant="outline" 

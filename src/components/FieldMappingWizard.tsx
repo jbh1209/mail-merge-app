@@ -151,6 +151,7 @@ export function FieldMappingWizard({
     const THRESHOLD = 0.72;
     const used = new Set<string>();
 
+    // Build auto-mappings but preserve any existing manual/AI choices
     const autoMappings = templateFields.map(tf => {
       let best: { col: string | null; score: number } = { col: null, score: 0 };
       for (const col of usableColumns) {
@@ -169,9 +170,17 @@ export function FieldMappingWizard({
       return { templateField: tf, dataColumn: null };
     });
 
-    setMappings(autoMappings);
+    // Preserve existing selections: only fill when empty
+    setMappings(prev => {
+      if (!prev || prev.length === 0) return autoMappings;
+      const byField = new Map(prev.map(m => [m.templateField, m] as const));
+      return autoMappings.map(auto => {
+        const existing = byField.get(auto.templateField);
+        return existing && existing.dataColumn ? existing : auto;
+      });
+    });
     
-    const autoMappedCount = autoMappings.filter(m => m.dataColumn).length;
+    const autoMappedCount = (mappings.length ? mappings : autoMappings).filter(m => m.dataColumn).length;
     console.debug('[FieldMappingWizard] Auto-mapped:', autoMappedCount, 'of', templateFields.length, 'fields');
     
     if (autoMappedCount > 0) {
@@ -180,7 +189,7 @@ export function FieldMappingWizard({
         description: `Matched ${autoMappedCount} of ${templateFields.length} fields`,
       });
     }
-  }, [templateFields, dataColumns, columnsFromDb, toast]);
+  }, [templateFields, dataColumns, columnsFromDb, toast, mappings]);
 
   const handleMappingChange = (templateField: string, dataColumn: string) => {
     setMappings(prev =>
@@ -188,6 +197,60 @@ export function FieldMappingWizard({
         m.templateField === templateField ? { ...m, dataColumn, confidence: 100 } : m
       )
     );
+  };
+
+  const handleAISuggest = async () => {
+    if (!(subscriptionFeatures?.hasAdvancedAI)) {
+      toast({ title: "Upgrade required", description: "AI suggestions are available on Pro or Business.", variant: "destructive" });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
+      const usableColumns = sourceColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
+
+      const { data, error } = await supabase.functions.invoke('suggest-field-mappings', {
+        body: {
+          dataColumns: usableColumns,
+          templateFields,
+          sampleData: (sampleData || []).slice(0, 3),
+        },
+      });
+
+      if (error) throw error;
+
+      const suggestions = (data as any)?.mappings as Array<{ templateField: string; dataColumn: string; confidence?: number }>;
+      if (!Array.isArray(suggestions)) {
+        throw new Error('Invalid AI response');
+      }
+
+      let applied = 0;
+      setMappings(prev => {
+        const byField = new Map(prev.map(m => [m.templateField, m] as const));
+        const next = [...prev];
+        for (const s of suggestions) {
+          if (!s?.templateField || !s?.dataColumn) continue;
+          if (!usableColumns.includes(s.dataColumn)) continue;
+          const existing = byField.get(s.templateField);
+          if (existing && !existing.dataColumn) {
+            existing.dataColumn = s.dataColumn;
+            existing.confidence = typeof s.confidence === 'number' ? s.confidence : undefined;
+            applied++;
+          }
+        }
+        return next;
+      });
+
+      if (applied > 0) {
+        toast({ title: 'AI suggestions applied', description: `Filled ${applied} field${applied === 1 ? '' : 's'}.` });
+      } else {
+        toast({ title: 'No changes', description: 'AI did not find improvements over your current mappings.' });
+      }
+    } catch (e: any) {
+      toast({ title: 'AI suggest failed', description: e.message || 'Unexpected error', variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -231,6 +294,19 @@ export function FieldMappingWizard({
         <CardDescription>Auto-mapped {mappedCount} of {templateFields.length} fields</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Need help with mapping?</p>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline"
+              onClick={async () => { await handleAISuggest(); }}
+              disabled={aiLoading || !(subscriptionFeatures?.hasAdvancedAI)}
+            >
+              {aiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (subscriptionFeatures?.hasAdvancedAI ? <Wand2 className="mr-2 h-4 w-4" /> : <Lock className="mr-2 h-4 w-4" />)}
+              AI Suggest Mappings
+            </Button>
+          </div>
+        </div>
         <div className="space-y-4">
           {mappings.map((mapping) => (
             <div key={mapping.templateField} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">

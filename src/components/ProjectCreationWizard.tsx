@@ -427,7 +427,12 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                   selectedId={wizardState.templateId}
                   onSelect={async (template: LabelSize) => {
                     try {
-                      const templateFields = extractTemplateFields(template);
+                      const defaultTemplateFields = extractTemplateFields(template);
+                      const dataColumns = wizardState.dataColumns || [];
+                      // Use data columns if we have more columns than the default template fields
+                      const templateFields = dataColumns.length > defaultTemplateFields.length 
+                        ? dataColumns.slice(0, 20) 
+                        : defaultTemplateFields;
                       
                       const { data: savedTemplate, error } = await supabase
                         .from("templates")
@@ -475,10 +480,16 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                   workspaceId={workspaceId as string}
                   onUploadComplete={(uploadedTemplate) => {
                     const template = uploadedTemplate as any; // Type assertion for uploaded template
+                    const dataColumns = wizardState.dataColumns || [];
+                    // Use data columns as default fields for uploaded templates, or fallback to template fields or generic
+                    const templateFields = dataColumns.length > 0 
+                      ? dataColumns.slice(0, 20)
+                      : (template.fields || ['field_1', 'field_2', 'field_3']);
+                    
                     setWizardState(prev => ({
                       ...prev,
                       templateId: template.id,
-                      templateFields: template.fields || ['field_1', 'field_2', 'field_3'],
+                      templateFields: templateFields,
                       templateSize: { 
                         width: template.width_mm || 100, 
                         height: template.height_mm || 50 

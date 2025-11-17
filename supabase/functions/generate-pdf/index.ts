@@ -13,23 +13,6 @@ function mmToPoints(mm: number): number {
   return (mm / 25.4) * 72;
 }
 
-// Calculate font size to fit text within width
-function calculateFontSize(
-  text: string,
-  font: PDFFont,
-  maxWidth: number,
-  defaultSize: number = 10
-): number {
-  let fontSize = defaultSize;
-  const textWidth = font.widthOfTextAtSize(text, fontSize);
-  
-  if (textWidth > maxWidth) {
-    fontSize = (maxWidth / textWidth) * fontSize;
-  }
-  
-  return Math.max(fontSize, 6); // Minimum 6pt
-}
-
 // Wrap text to fit within maxWidth
 function wrapText(
   text: string,
@@ -59,20 +42,15 @@ function wrapText(
 
 // Get page dimensions based on template type
 function getPageDimensions(template: any): [number, number] {
-  // Check if it's an Avery label (always use US Letter)
-  const averyLabel = template.design_config?.averyCode || template.name?.includes('Avery');
-  
-  if (averyLabel || template.template_type === 'built_in_library') {
+  if (template.template_type === 'built_in_library') {
     return [612, 792]; // US Letter: 8.5" x 11"
   }
   
-  // Standard A4
   if (template.width_mm && template.height_mm) {
     return [mmToPoints(template.width_mm), mmToPoints(template.height_mm)];
   }
   
-  // Default to US Letter
-  return [612, 792];
+  return [612, 792]; // Default to US Letter
 }
 
 // Calculate label grid layout for Avery labels
@@ -89,23 +67,17 @@ interface LabelLayout {
 }
 
 function calculateLabelLayout(template: any): LabelLayout {
-  const design = template.design_config;
-  
-  // Use template dimensions
   const labelWidth = mmToPoints(template.width_mm || 66.68);
   const labelHeight = mmToPoints(template.height_mm || 25.4);
   
-  // Calculate layout based on page size
   const pageWidth = 612; // US Letter width
   const pageHeight = 792; // US Letter height
   
-  // Default margins for Avery labels
-  const marginTop = mmToPoints(12.7); // ~0.5"
-  const marginLeft = mmToPoints(4.76); // ~0.1875"
-  const horizontalGap = mmToPoints(3.18); // ~0.125"
+  const marginTop = mmToPoints(12.7);
+  const marginLeft = mmToPoints(4.76);
+  const horizontalGap = mmToPoints(3.18);
   const verticalGap = 0;
   
-  // Calculate how many fit
   const columns = Math.floor((pageWidth - marginLeft) / (labelWidth + horizontalGap));
   const rows = Math.floor((pageHeight - marginTop) / (labelHeight + verticalGap));
   
@@ -137,56 +109,206 @@ function calculateLabelPosition(
   return { x, y };
 }
 
-// Render a single label with mapped data
-function renderLabel(
+// Render text field with optional label
+function renderTextField(
+  page: PDFPage,
+  field: any,
+  dataRow: Record<string, any>,
+  dataColumn: string | null,
+  fonts: { regular: PDFFont; bold: PDFFont },
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const value = dataColumn ? String(dataRow[dataColumn] || '') : '';
+  let yOffset = y + height - 6;
+  
+  // Render label if enabled
+  if (field.showLabel && field.name) {
+    const labelFont = fonts.regular;
+    const labelSize = field.labelStyle?.fontSize || (field.fontSize * 0.7);
+    const labelText = field.name.toUpperCase();
+    
+    page.drawText(labelText, {
+      x: x + 6,
+      y: yOffset,
+      size: labelSize,
+      font: labelFont,
+      color: rgb(0.4, 0.4, 0.4)
+    });
+    
+    yOffset -= (labelSize + 2);
+  }
+  
+  // Render value
+  const font = field.fontWeight === 'bold' ? fonts.bold : fonts.regular;
+  const fontSize = field.fontSize || 12;
+  const lines = wrapText(value, font, width - 12, fontSize);
+  
+  for (const line of lines) {
+    if (yOffset < y + 6) break;
+    
+    let xPos = x + 6;
+    if (field.textAlign === 'center') {
+      const textWidth = font.widthOfTextAtSize(line, fontSize);
+      xPos = x + (width - textWidth) / 2;
+    } else if (field.textAlign === 'right') {
+      const textWidth = font.widthOfTextAtSize(line, fontSize);
+      xPos = x + width - textWidth - 6;
+    }
+    
+    page.drawText(line, {
+      x: xPos,
+      y: yOffset,
+      size: fontSize,
+      font: font,
+      color: rgb(0, 0, 0)
+    });
+    yOffset -= (fontSize + 2);
+  }
+}
+
+// Render barcode placeholder
+function renderBarcodeField(
+  page: PDFPage,
+  field: any,
+  dataRow: Record<string, any>,
+  dataColumn: string | null,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const value = dataColumn ? String(dataRow[dataColumn] || '') : '';
+  
+  for (let i = 0; i < 15; i++) {
+    if (i % 2 === 0) {
+      page.drawRectangle({
+        x: x + 6 + (i * ((width - 12) / 15)),
+        y: y + height * 0.35,
+        width: (width - 12) / 15,
+        height: height * 0.4,
+        color: rgb(0, 0, 0)
+      });
+    }
+  }
+  
+  page.drawText(value, {
+    x: x + 6,
+    y: y + 8,
+    size: 8,
+    color: rgb(0, 0, 0)
+  });
+}
+
+// Render QR code placeholder
+function renderQRCodeField(
+  page: PDFPage,
+  field: any,
+  dataRow: Record<string, any>,
+  dataColumn: string | null,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const size = Math.min(width, height) - 12;
+  const cellSize = size / 12;
+  const startX = x + (width - size) / 2;
+  const startY = y + (height - size) / 2;
+  
+  for (let row = 0; row < 12; row++) {
+    for (let col = 0; col < 12; col++) {
+      if ((row + col) % 2 === 0) {
+        page.drawRectangle({
+          x: startX + (col * cellSize),
+          y: startY + size - ((row + 1) * cellSize),
+          width: cellSize,
+          height: cellSize,
+          color: rgb(0, 0, 0)
+        });
+      }
+    }
+  }
+}
+
+// Render sequence number
+function renderSequenceField(
+  page: PDFPage,
+  field: any,
+  recordIndex: number,
+  fonts: { regular: PDFFont; bold: PDFFont },
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const config = field.typeConfig || {};
+  const start = config.sequenceStart || 1;
+  const prefix = config.sequencePrefix || '';
+  const padding = config.sequencePadding || 0;
+  
+  const number = start + recordIndex;
+  const paddedNumber = String(number).padStart(padding, '0');
+  const value = prefix + paddedNumber;
+  
+  const font = field.fontWeight === 'bold' ? fonts.bold : fonts.regular;
+  const fontSize = field.fontSize || 12;
+  
+  page.drawText(value, {
+    x: x + 6,
+    y: y + (height / 2) - (fontSize / 2),
+    size: fontSize,
+    font: font,
+    color: rgb(0, 0, 0)
+  });
+}
+
+// Render a single label with design config
+function renderLabelWithDesign(
   page: PDFPage,
   dataRow: Record<string, any>,
+  fields: any[],
   mappings: Record<string, string>,
-  position: { x: number; y: number },
-  layout: LabelLayout,
-  font: PDFFont
+  offsetX: number,
+  offsetY: number,
+  pageHeight: number,
+  fonts: { regular: PDFFont; bold: PDFFont },
+  recordIndex: number
 ) {
-  const padding = 6; // 6pt padding inside label
-  const maxWidth = layout.labelWidth - (padding * 2);
-  const lineHeight = 12; // Space between lines
-  
-  let yOffset = position.y + layout.labelHeight - padding - 10; // Start from top with padding
-  
   try {
-    // Render each mapped field
-    for (const [templateField, dataColumn] of Object.entries(mappings)) {
-      const value = String(dataRow[dataColumn] || '');
-      if (!value) continue;
+    for (const field of fields) {
+      const dataColumn = mappings[field.name] || null;
       
-      const text = `${templateField}: ${value}`;
-      const fontSize = calculateFontSize(text, font, maxWidth, 9);
-      const lines = wrapText(text, font, maxWidth, fontSize);
+      const x = offsetX + mmToPoints(field.x);
+      const y = pageHeight - offsetY - mmToPoints(field.y) - mmToPoints(field.height);
+      const width = mmToPoints(field.width);
+      const height = mmToPoints(field.height);
       
-      // Render each line
-      for (const line of lines) {
-        if (yOffset < position.y + padding) break; // Don't overflow label bottom
-        
-        page.drawText(line, {
-          x: position.x + padding,
-          y: yOffset,
-          size: fontSize,
-          font: font,
-          color: rgb(0, 0, 0),
-        });
-        
-        yOffset -= lineHeight;
+      switch (field.fieldType) {
+        case 'barcode':
+          renderBarcodeField(page, field, dataRow, dataColumn, x, y, width, height);
+          break;
+        case 'qrcode':
+          renderQRCodeField(page, field, dataRow, dataColumn, x, y, width, height);
+          break;
+        case 'sequence':
+          renderSequenceField(page, field, recordIndex, fonts, x, y, width, height);
+          break;
+        case 'text':
+        default:
+          renderTextField(page, field, dataRow, dataColumn, fonts, x, y, width, height);
+          break;
       }
-      
-      yOffset -= 3; // Extra space between fields
     }
   } catch (error) {
     console.error('Error rendering label:', error);
-    // Draw error indicator
     page.drawText('ERROR', {
-      x: position.x + padding,
-      y: position.y + layout.labelHeight / 2,
+      x: offsetX + 6,
+      y: pageHeight - offsetY - 20,
       size: 8,
-      font: font,
+      font: fonts.regular,
       color: rgb(1, 0, 0),
     });
   }
@@ -201,12 +323,10 @@ serve(async (req) => {
     const { mergeJobId } = await req.json();
     console.log('Starting PDF generation for job:', mergeJobId);
 
-    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Update job status to processing
     await supabase
       .from('merge_jobs')
       .update({ 
@@ -215,7 +335,6 @@ serve(async (req) => {
       })
       .eq('id', mergeJobId);
 
-    // Fetch merge job details with relations
     const { data: job, error: jobError } = await supabase
       .from('merge_jobs')
       .select(`
@@ -233,10 +352,10 @@ serve(async (req) => {
     console.log('Job details loaded:', {
       template: job.template.name,
       totalPages: job.total_pages,
-      templateType: job.template.template_type
+      templateType: job.template.template_type,
+      hasDesignConfig: !!job.template.design_config
     });
 
-    // Get field mappings
     const { data: mappings, error: mappingsError } = await supabase
       .from('field_mappings')
       .select('mappings')
@@ -251,7 +370,10 @@ serve(async (req) => {
     const fieldMappings = mappings.mappings as Record<string, string>;
     console.log('Field mappings loaded:', Object.keys(fieldMappings).length, 'fields');
 
-    // Get data rows from data source
+    const designConfig = job.template.design_config || {};
+    const fields = designConfig.fields || [];
+    console.log('Design config fields:', fields.length);
+
     const dataSource = job.data_source;
     const parsedFields = dataSource.parsed_fields as any;
     const dataRows = parsedFields?.preview || [];
@@ -262,12 +384,11 @@ serve(async (req) => {
 
     console.log('Processing', dataRows.length, 'records');
 
-    // Create PDF document
     const pdfDoc = await PDFDocument.create();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fonts = { regular: regularFont, bold: boldFont };
 
-    // Get page dimensions and layout
     const [pageWidth, pageHeight] = getPageDimensions(job.template);
     const layout = calculateLabelLayout(job.template);
     
@@ -278,32 +399,39 @@ serve(async (req) => {
       labelsPerPage: layout.labelsPerPage
     });
 
-    // Generate labels
     let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
     let labelsOnCurrentPage = 0;
     let processedRecords = 0;
-    const updateInterval = Math.max(Math.floor(dataRows.length / 10), 10); // Update at least 10 times
+    const updateInterval = Math.max(Math.floor(dataRows.length / 10), 10);
 
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
       
-      // Create new page if needed
       if (labelsOnCurrentPage >= layout.labelsPerPage) {
         currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
         labelsOnCurrentPage = 0;
         console.log('Created new page');
       }
 
-      // Calculate position for this label
       const position = calculateLabelPosition(labelsOnCurrentPage, layout, pageHeight);
       
-      // Render the label
-      renderLabel(currentPage, row, fieldMappings, position, layout, font);
+      if (fields.length > 0) {
+        renderLabelWithDesign(
+          currentPage,
+          row,
+          fields,
+          fieldMappings,
+          position.x,
+          position.y,
+          pageHeight,
+          fonts,
+          i
+        );
+      }
       
       labelsOnCurrentPage++;
       processedRecords++;
 
-      // Update progress periodically
       if (processedRecords % updateInterval === 0) {
         await supabase
           .from('merge_jobs')
@@ -314,13 +442,11 @@ serve(async (req) => {
       }
     }
 
-    // Final progress update
     await supabase
       .from('merge_jobs')
       .update({ processed_pages: processedRecords })
       .eq('id', mergeJobId);
 
-    // Save PDF
     const pdfBytes = await pdfDoc.save();
     console.log('PDF generated:', {
       size: `${(pdfBytes.length / 1024).toFixed(2)} KB`,
@@ -328,8 +454,13 @@ serve(async (req) => {
       records: processedRecords
     });
 
-    // Upload to storage
     const fileName = `${mergeJobId}_${Date.now()}.pdf`;
+    console.log('Attempting to upload PDF to storage...', {
+      bucket: 'generated-pdfs',
+      fileName,
+      sizeKB: (pdfBytes.length / 1024).toFixed(2)
+    });
+
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('generated-pdfs')
       .upload(fileName, pdfBytes, {
@@ -338,18 +469,23 @@ serve(async (req) => {
       });
 
     if (uploadError) {
-      console.error('Upload error:', uploadError);
+      console.error('Storage upload error details:', {
+        message: uploadError.message,
+        error: uploadError
+      });
+      
+      const { data: buckets } = await supabase.storage.listBuckets();
+      console.log('Available buckets:', buckets?.map(b => b.name));
+      
       throw new Error(`Failed to upload PDF: ${uploadError.message}`);
     }
 
     console.log('PDF uploaded:', uploadData.path);
 
-    // Get public URL
     const { data: { publicUrl } } = supabase.storage
       .from('generated-pdfs')
       .getPublicUrl(uploadData.path);
 
-    // Create generated output record with 30-day expiration
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
@@ -362,74 +498,57 @@ serve(async (req) => {
       expires_at: expiresAt.toISOString()
     });
 
-    // Update job status to complete
     await supabase
       .from('merge_jobs')
       .update({
         status: 'complete',
         output_url: publicUrl,
-        processed_pages: processedRecords,
         processing_completed_at: new Date().toISOString()
       })
       .eq('id', mergeJobId);
 
-    // Log usage
-    const billingCycleMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('pages_used_this_month, owner_id')
-      .eq('id', job.workspace_id)
-      .single();
+    const currentDate = new Date();
+    const billingCycleMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+    
+    await supabase.from('usage_logs').insert({
+      workspace_id: job.workspace_id,
+      user_id: job.data_source.workspace_id,
+      merge_job_id: mergeJobId,
+      pages_generated: pdfDoc.getPageCount(),
+      billing_cycle_month: billingCycleMonth
+    });
 
-    if (workspace) {
-      // Create usage log entry
-      await supabase
-        .from('usage_logs')
-        .insert({
-          workspace_id: job.workspace_id,
-          user_id: workspace.owner_id,
-          merge_job_id: mergeJobId,
-          pages_generated: processedRecords,
-          billing_cycle_month: billingCycleMonth
-        });
-
-      // Update workspace usage counter
-      await supabase
-        .from('workspaces')
-        .update({
-          pages_used_this_month: workspace.pages_used_this_month + processedRecords
-        })
-        .eq('id', job.workspace_id);
-    }
+    await supabase.rpc('increment_workspace_usage', {
+      workspace_id: job.workspace_id,
+      pages_count: pdfDoc.getPageCount()
+    });
 
     console.log('Job completed successfully');
 
     return new Response(
       JSON.stringify({ 
         success: true,
-        outputUrl: publicUrl,
-        pagesGenerated: pdfDoc.getPageCount(),
-        recordsProcessed: processedRecords
+        output_url: publicUrl,
+        page_count: pdfDoc.getPageCount()
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('PDF generation error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
 
-    // Update job status to error
     try {
       const { mergeJobId } = await req.json();
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const supabase = createClient(supabaseUrl, supabaseKey);
-      
+
       await supabase
         .from('merge_jobs')
         .update({
           status: 'error',
-          error_message: error.message,
-          processing_completed_at: new Date().toISOString()
+          error_message: errorMessage
         })
         .eq('id', mergeJobId);
     } catch (updateError) {
@@ -437,7 +556,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { 
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

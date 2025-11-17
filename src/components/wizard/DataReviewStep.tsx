@@ -117,7 +117,7 @@ export function DataReviewStep({
         let autoCount = 0;
         
         data.columnMappings.forEach(mapping => {
-          if (mapping.confidence >= 85 && mapping.original !== mapping.suggested) {
+          if (mapping.confidence >= 75 && mapping.original !== mapping.suggested) {
             autoApplied[mapping.original] = mapping.suggested;
             autoCount++;
           }

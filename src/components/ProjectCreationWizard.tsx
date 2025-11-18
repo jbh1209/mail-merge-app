@@ -185,7 +185,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn(
         wizardState.step === 6.5 
-          ? "w-[98vw] h-[98vh] p-0 overflow-hidden" 
+          ? "w-[95vw] max-w-none h-[95vh] p-2 overflow-auto" 
           : "w-[90vw] max-w-7xl h-[90vh] max-h-[90vh] overflow-y-auto p-4 sm:p-6"
       )}>
         {wizardState.step !== 6.5 && (

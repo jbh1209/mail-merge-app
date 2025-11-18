@@ -75,7 +75,20 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Delete merge_jobs
+    // 3. Detach usage_logs from merge_jobs (set merge_job_id to null)
+    if (mergeJobIds.length > 0) {
+      const { error: usageLogsError } = await supabase
+        .from('usage_logs')
+        .update({ merge_job_id: null })
+        .in('merge_job_id', mergeJobIds);
+      
+      if (usageLogsError) {
+        console.error('Error detaching usage_logs:', usageLogsError);
+        throw new Error(`Failed to detach usage logs: ${usageLogsError.message}`);
+      }
+    }
+
+    // 4. Delete merge_jobs
     const { error: jobsError } = await supabase
       .from('merge_jobs')
       .delete()
@@ -86,7 +99,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to delete merge jobs: ${jobsError.message}`);
     }
 
-    // 4. Delete field_mappings
+    // 5. Delete field_mappings
     const { error: mappingsError } = await supabase
       .from('field_mappings')
       .delete()
@@ -97,7 +110,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to delete field mappings: ${mappingsError.message}`);
     }
 
-    // 5. Delete data_sources
+    // 6. Delete data_sources
     const { error: dataSourcesError } = await supabase
       .from('data_sources')
       .delete()
@@ -108,7 +121,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to delete data sources: ${dataSourcesError.message}`);
     }
 
-    // 6. Delete templates
+    // 7. Delete templates
     const { error: templatesError } = await supabase
       .from('templates')
       .delete()
@@ -119,7 +132,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to delete templates: ${templatesError.message}`);
     }
 
-    // 7. Finally, delete the project itself
+    // 8. Finally, delete the project itself
     const { error: projectError } = await supabase
       .from('projects')
       .delete()

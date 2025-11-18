@@ -183,13 +183,19 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[90vw] max-w-7xl h-[90vh] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
-        <DialogHeader>
-          <DialogTitle className="text-xl sm:text-2xl">Create New Project</DialogTitle>
-          <DialogDescription className="text-sm sm:text-base">{wizardState.step < 7 ? "Follow the steps to set up your mail merge project" : "Your project is ready!"}</DialogDescription>
-        </DialogHeader>
+      <DialogContent className={cn(
+        wizardState.step === 6.5 
+          ? "w-[98vw] h-[98vh] p-0 overflow-hidden" 
+          : "w-[90vw] max-w-7xl h-[90vh] max-h-[90vh] overflow-y-auto p-4 sm:p-6"
+      )}>
+        {wizardState.step !== 6.5 && (
+          <DialogHeader>
+            <DialogTitle className="text-xl sm:text-2xl">Create New Project</DialogTitle>
+            <DialogDescription className="text-sm sm:text-base">{wizardState.step < 7 ? "Follow the steps to set up your mail merge project" : "Your project is ready!"}</DialogDescription>
+          </DialogHeader>
+        )}
         
-        {wizardState.step < 7 && (
+        {wizardState.step < 7 && wizardState.step !== 6.5 && (
           <div className="space-y-3 mb-4 sm:mb-6">
             <div className="flex items-center justify-between gap-1">
               {WIZARD_STEPS.slice(0, -1).map((stepConfig, idx) => (
@@ -545,7 +551,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
          wizardState.templateSize && 
          wizardState.templateFields.length > 0 && 
          wizardState.templateId ? (
-          <div className="flex flex-col h-full -mt-6">
+          <div className="flex flex-col h-full">
             <TemplateDesignCanvas
               templateSize={wizardState.templateSize}
               templateName={wizardState.templateName}

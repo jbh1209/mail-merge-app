@@ -132,19 +132,18 @@ export function TemplateDesignCanvas({
       </div>
 
       {/* Main canvas area - takes all available space */}
-      <div className="flex-1 overflow-auto bg-muted/20 p-2 min-h-0">
+      <div className="flex-1 overflow-auto bg-muted/20 p-4 min-h-0">
         <div className="flex items-center justify-center h-full">
-          <Card className="shadow-xl">
-            <div className="p-2">
-              {/* Compact template info */}
-              <div className="text-xs text-muted-foreground mb-1 text-center">
-                {templateName} ({templateSize.width} × {templateSize.height}mm)
-              </div>
-              
-              {/* The actual canvas */}
-              <div
-                ref={canvasRef}
-                className="relative border-2 border-border shadow-inner"
+          <div className="flex flex-col items-center gap-2">
+            {/* Compact template info */}
+            <div className="text-xs text-muted-foreground">
+              {templateName} ({templateSize.width} × {templateSize.height}mm)
+            </div>
+            
+            {/* The actual canvas */}
+            <div
+              ref={canvasRef}
+              className="relative border-2 border-border shadow-xl bg-background"
                 style={{
                   width: `${mmToPx(templateSize.width, settings.scale)}px`,
                   height: `${mmToPx(templateSize.height, settings.scale)}px`,
@@ -176,9 +175,8 @@ export function TemplateDesignCanvas({
                     }}
                   />
                 ))}
-              </div>
             </div>
-          </Card>
+          </div>
         </div>
       </div>
 

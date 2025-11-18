@@ -25,6 +25,8 @@ interface CanvasToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   onAutoLayout: () => void;
+  showAllLabels: boolean;
+  onToggleAllLabels: () => void;
   selectedField: FieldConfig | null;
   onUpdateFieldStyle: (updates: Partial<FieldConfig['style']>) => void;
   onToggleLabel: () => void;
@@ -44,6 +46,8 @@ export function CanvasToolbar({
   onUndo,
   onRedo,
   onAutoLayout,
+  showAllLabels,
+  onToggleAllLabels,
   selectedField,
   onUpdateFieldStyle,
   onToggleLabel,
@@ -122,89 +126,97 @@ export function CanvasToolbar({
         <span className="text-xs">Auto</span>
       </Button>
 
+      <Separator orientation="vertical" className="h-5" />
+
+      {/* Global Label Toggle */}
+      <div className="flex items-center gap-1.5">
+        <Switch checked={showAllLabels} onCheckedChange={onToggleAllLabels} className="scale-75" />
+        <Label className="text-xs">Show All Labels</Label>
+      </div>
+
       {/* Field styling options - only show when field is selected */}
       {selectedField && (
         <>
           <Separator orientation="vertical" className="h-5" />
           
-          {/* Show label toggle */}
-          <Button
-            variant={selectedField.showLabel ? "default" : "ghost"}
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={onToggleLabel}
-            title="Toggle field label"
-          >
-            <Tag className="h-3.5 w-3.5" />
-          </Button>
+          {/* Field label toggle */}
+          <div className="flex items-center gap-1.5">
+            <Switch 
+              checked={selectedField.showLabel || false} 
+              onCheckedChange={onToggleLabel} 
+              className="scale-75" 
+            />
+            <Label className="text-xs">Field Label</Label>
+          </div>
 
           <Separator orientation="vertical" className="h-5" />
           
           {/* Field type selector */}
-          <Select
-            value={selectedField.fieldType}
-            onValueChange={(value: FieldType) => {
-              const typeConfig = value === 'sequence' 
-                ? { sequenceStart: 1, sequencePadding: 3 }
-                : value === 'barcode'
-                ? { barcodeFormat: 'CODE128' as const }
-                : value === 'qrcode'
-                ? { qrErrorCorrection: 'M' as const }
-                : undefined;
-              onUpdateFieldType(value, typeConfig);
-            }}
-          >
-            <SelectTrigger className="w-24 h-7 text-xs">
+          <Select value={selectedField.fieldType} onValueChange={(value: FieldType) => onUpdateFieldType(value)}>
+            <SelectTrigger className="h-7 w-[130px] text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="text">
                 <div className="flex items-center gap-2">
-                  <Type className="h-3 w-3" />
-                  <span>Text</span>
+                  <Type className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-start">
+                    <span>Text</span>
+                    <span className="text-[10px] text-muted-foreground">Standard data</span>
+                  </div>
                 </div>
               </SelectItem>
               <SelectItem value="barcode">
                 <div className="flex items-center gap-2">
-                  <BarChart3 className="h-3 w-3" />
-                  <span>Barcode</span>
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-start">
+                    <span>Barcode</span>
+                    <span className="text-[10px] text-muted-foreground">Linear codes</span>
+                  </div>
                 </div>
               </SelectItem>
               <SelectItem value="qrcode">
                 <div className="flex items-center gap-2">
-                  <QrCode className="h-3 w-3" />
-                  <span>QR Code</span>
+                  <QrCode className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-start">
+                    <span>QR Code</span>
+                    <span className="text-[10px] text-muted-foreground">2D matrix</span>
+                  </div>
                 </div>
               </SelectItem>
               <SelectItem value="sequence">
                 <div className="flex items-center gap-2">
-                  <Hash className="h-3 w-3" />
-                  <span>Sequence</span>
+                  <Hash className="h-3.5 w-3.5" />
+                  <div className="flex flex-col items-start">
+                    <span>Sequence</span>
+                    <span className="text-[10px] text-muted-foreground">Auto-increment</span>
+                  </div>
                 </div>
               </SelectItem>
             </SelectContent>
           </Select>
 
-          <Separator orientation="vertical" className="h-5" />
-          
           {/* Font size - only for text fields */}
           {selectedField.fieldType === 'text' && (
-            <div className="flex items-center gap-1">
-              <Type className="h-3.5 w-3.5 text-muted-foreground" />
-              <Select
-                value={selectedField.style.fontSize.toString()}
-                onValueChange={(value) => onUpdateFieldStyle({ fontSize: parseInt(value) })}
-              >
-                <SelectTrigger className="w-16 h-7 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[6, 8, 10, 12, 14, 16, 18, 20, 24].map(size => (
-                    <SelectItem key={size} value={size.toString()}>{size}pt</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <>
+              <Separator orientation="vertical" className="h-5" />
+              <div className="flex items-center gap-1">
+                <Type className="h-3.5 w-3.5 text-muted-foreground" />
+                <Select
+                  value={selectedField.style.fontSize.toString()}
+                  onValueChange={(value) => onUpdateFieldStyle({ fontSize: parseInt(value) })}
+                >
+                  <SelectTrigger className="w-16 h-7 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[6, 8, 10, 12, 14, 16, 18, 20, 24].map(size => (
+                      <SelectItem key={size} value={size.toString()}>{size}pt</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           )}
           
           {/* Text align - only for text fields */}
@@ -237,7 +249,7 @@ export function CanvasToolbar({
             </div>
           )}
           
-          {/* Bold - only for text fields */}
+          {/* Bold toggle - only for text fields */}
           {selectedField.fieldType === 'text' && (
             <Button
               variant={selectedField.style.fontWeight === 'bold' ? "default" : "ghost"}

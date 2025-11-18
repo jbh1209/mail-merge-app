@@ -63,7 +63,9 @@ export function TemplateDesignCanvas({
         backgroundColor: settings.backgroundColor,
         showGrid: settings.showGrid,
         snapToGrid: settings.snapToGrid,
-        gridSize: settings.gridSize
+        gridSize: settings.gridSize,
+        showAllLabels: settings.showAllLabels,
+        defaultLabelFontSize: settings.defaultLabelFontSize
       }
     };
     onSave(designConfig);
@@ -112,6 +114,8 @@ export function TemplateDesignCanvas({
           onUndo={undo}
           onRedo={redo}
           onAutoLayout={autoLayout}
+          showAllLabels={settings.showAllLabels}
+          onToggleAllLabels={() => updateSettings({ showAllLabels: !settings.showAllLabels })}
           selectedField={selectedField}
           onUpdateFieldStyle={(updates) => {
             if (selectedFieldId) {
@@ -165,6 +169,7 @@ export function TemplateDesignCanvas({
                     scale={settings.scale}
                     isSelected={field.id === selectedFieldId}
                     sampleData={sampleRow}
+                    showAllLabels={settings.showAllLabels}
                     onSelect={() => setSelectedFieldId(field.id)}
                     onMove={(position) => moveField(field.id, position)}
                     onResize={(size) => resizeField(field.id, size)}

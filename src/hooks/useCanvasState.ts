@@ -12,6 +12,8 @@ export interface CanvasSettings {
   snapToGrid: boolean;
   gridSize: number; // mm
   backgroundColor: string;
+  showAllLabels: boolean;
+  defaultLabelFontSize: number; // pt
 }
 
 interface UseCanvasStateProps {
@@ -36,7 +38,9 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     showGrid: true,
     snapToGrid: true,
     gridSize: 1,
-    backgroundColor: '#ffffff'
+    backgroundColor: '#ffffff',
+    showAllLabels: false,
+    defaultLabelFontSize: 6
   });
   const [history, setHistory] = useState<FieldConfig[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -158,11 +162,13 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
   const autoLayout = useCallback(() => {
     const newFields = autoLayoutFields(
       fields.map(f => f.templateField),
-      templateSize
+      templateSize,
+      5, // padding
+      settings.showAllLabels
     );
     setFields(newFields);
     saveToHistory(newFields);
-  }, [fields, templateSize, saveToHistory]);
+  }, [fields, templateSize, settings.showAllLabels, saveToHistory]);
 
   const updateSettings = useCallback((newSettings: Partial<CanvasSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));

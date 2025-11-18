@@ -162,8 +162,11 @@ const getSmartFieldHeight = (fieldName: string, baseHeight: number): number => {
 export const autoLayoutFields = (
   fieldNames: string[],
   templateSize: Size,
-  padding: number = 2
+  padding: number = 5,
+  showLabels: boolean = false
 ): FieldConfig[] => {
+  // Label height in mm when labels are shown
+  const labelHeightMm = showLabels ? 6 : 0;
   const usableHeight = templateSize.height - (padding * 2);
   const usableWidth = templateSize.width - (padding * 2);
   
@@ -191,12 +194,15 @@ export const autoLayoutFields = (
     
     const fontSize = Math.min(18, Math.max(12, fieldHeight * 1.3));
     
+    // Add extra space for label if showing labels
+    const yPosition = currentY + (showLabels ? labelHeightMm : 0);
+    
     fields.push({
       id: `field-${index}`,
       templateField: name,
       position: {
         x: padding + (column * (columnWidth + 2)),
-        y: currentY
+        y: yPosition
       },
       size: {
         width: columnWidth,
@@ -212,9 +218,9 @@ export const autoLayoutFields = (
         verticalAlign: 'middle'
       },
       overflow: 'truncate',
-      showLabel: false,
+      showLabel: showLabels,
       labelStyle: {
-        fontSize: Math.round(fontSize * 0.65),
+        fontSize: 6,
         color: '#666666',
         position: 'above'
       },
@@ -222,7 +228,8 @@ export const autoLayoutFields = (
       typeConfig: fieldType === 'sequence' ? { sequenceStart: 1, sequencePadding: 3 } : undefined
     });
     
-    currentY += fieldHeight + 1;
+    // Add field height plus padding, plus label space if showing labels
+    currentY += fieldHeight + 1 + (showLabels ? labelHeightMm : 0);
   });
   
   return fields;

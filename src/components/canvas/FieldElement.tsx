@@ -8,6 +8,7 @@ interface FieldElementProps {
   scale: number;
   isSelected: boolean;
   sampleData?: Record<string, any>;
+  showAllLabels?: boolean;
   onSelect: () => void;
   onMove: (position: { x: number; y: number }) => void;
   onResize: (size: { width: number; height: number }) => void;
@@ -20,6 +21,7 @@ export function FieldElement({
   scale,
   isSelected,
   sampleData,
+  showAllLabels = false,
   onSelect,
   onMove,
   onResize,
@@ -105,6 +107,7 @@ export function FieldElement({
   };
 
   const displayText = sampleData?.[field.templateField] || generateSampleText(field.templateField);
+  const shouldShowLabel = showAllLabels || field.showLabel;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -177,81 +180,80 @@ export function FieldElement({
 
   return (
     <div
-      className={`absolute cursor-move select-none transition-shadow ${
-        isSelected ? 'ring-2 ring-primary shadow-lg z-10' : 'hover:ring-1 hover:ring-primary/50'
-      } ${isDragging || isResizing ? 'cursor-grabbing' : ''}`}
+      className="absolute"
       style={{
         left: `${mmToPx(field.position.x, scale)}px`,
         top: `${mmToPx(field.position.y, scale)}px`,
-        width: `${mmToPx(field.size.width, scale)}px`,
-        height: `${mmToPx(field.size.height, scale)}px`,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        border: '1px solid #e5e7eb',
-        borderRadius: '4px',
-        overflow: 'hidden'
       }}
-      onMouseDown={handleMouseDown}
-      onClick={handleClick}
     >
-      {/* Label above field if enabled */}
-      {field.showLabel && field.labelStyle?.position === 'above' && (
-        <div 
-          className="text-muted-foreground px-1 py-0.5 bg-background/80 border-b uppercase font-medium truncate"
-          style={{ 
-            fontSize: `${(field.labelStyle.fontSize / 72) * 96}px`,
-            color: field.labelStyle.color 
+      {/* Field Label - positioned above the field */}
+      {shouldShowLabel && (
+        <div
+          className="text-muted-foreground font-medium mb-0.5 pointer-events-none select-none"
+          style={{
+            fontSize: `${(field.labelStyle?.fontSize || 6) * scale}pt`,
+            lineHeight: 1.2
           }}
         >
           {field.templateField}
         </div>
       )}
-
-      {/* Field content */}
-      <div 
-        className="overflow-hidden"
+      
+      {/* Field Content */}
+      <div
+        className={`border-2 transition-all duration-150 ${
+          isSelected ? 'border-primary ring-2 ring-primary/20 z-10' : 'border-border/50 hover:border-border'
+        } ${isDragging && 'cursor-grabbing opacity-70'} ${isResizing && 'opacity-70'}`}
         style={{
-          height: field.showLabel && field.labelStyle?.position === 'above' ? 'calc(100% - 20px)' : '100%',
-          textAlign: field.style.textAlign
+          width: `${mmToPx(field.size.width, scale)}px`,
+          height: `${mmToPx(field.size.height, scale)}px`,
+          cursor: isDragging ? 'grabbing' : 'grab',
+          backgroundColor: 'rgba(255, 255, 255, 0.9)',
+          borderRadius: '4px',
+          overflow: 'hidden'
         }}
+        onClick={handleClick}
+        onMouseDown={handleMouseDown}
       >
         {renderFieldContent()}
-      </div>
 
-      {/* Action buttons and type badge when selected */}
-      {isSelected && (
-        <>
-          {/* Field type badge */}
-          {field.fieldType !== 'text' && (
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-accent text-accent-foreground text-[10px] font-medium rounded-full shadow-lg">
-              {field.fieldType === 'barcode' && 'Barcode'}
-              {field.fieldType === 'qrcode' && 'QR Code'}
-              {field.fieldType === 'sequence' && 'Sequence'}
-            </div>
-          )}
-          
-          <Button
-            variant="destructive"
-            size="icon"
-            className="absolute -top-3 -right-3 h-6 w-6 p-0 rounded-full shadow-lg"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            <X className="h-3 w-3" />
-          </Button>
-
-          <div className="absolute -top-3 -left-3 h-6 w-6 p-0 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center cursor-grab">
-            <GripVertical className="h-3 w-3" />
+        {/* Selected state actions */}
+        {isSelected && (
+          <div className="absolute top-1 right-1 flex gap-1">
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-5 w-5 p-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-5 w-5 p-0 cursor-move"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                handleMouseDown(e as any);
+              }}
+            >
+              <GripVertical className="h-3 w-3" />
+            </Button>
           </div>
+        )}
 
-          {/* Resize handle */}
+        {/* Resize handle */}
+        {isSelected && (
           <div
-            className="absolute -bottom-2 -right-2 h-4 w-4 bg-primary rounded-full cursor-se-resize shadow-lg border-2 border-background"
+            className="absolute bottom-0 right-0 w-3 h-3 bg-primary cursor-nwse-resize"
             onMouseDown={handleResizeMouseDown}
+            style={{ cursor: 'nwse-resize' }}
           />
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

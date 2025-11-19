@@ -482,9 +482,15 @@ serve(async (req) => {
 
     console.log('PDF uploaded:', uploadData.path);
 
-    const { data: { publicUrl } } = supabase.storage
+    // Generate signed URL with 7-day expiration (604800 seconds)
+    const { data: signedUrlData, error: signError } = await supabase.storage
       .from('generated-pdfs')
-      .getPublicUrl(uploadData.path);
+      .createSignedUrl(uploadData.path, 604800);
+
+    if (signError) {
+      console.error('Failed to create signed URL:', signError);
+      throw new Error(`Failed to create signed URL: ${signError.message}`);
+    }
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
@@ -492,7 +498,7 @@ serve(async (req) => {
     await supabase.from('generated_outputs').insert({
       merge_job_id: mergeJobId,
       workspace_id: job.workspace_id,
-      file_url: publicUrl,
+      file_url: signedUrlData.signedUrl,
       file_size_bytes: pdfBytes.length,
       page_count: pdfDoc.getPageCount(),
       expires_at: expiresAt.toISOString()
@@ -502,7 +508,7 @@ serve(async (req) => {
       .from('merge_jobs')
       .update({
         status: 'complete',
-        output_url: publicUrl,
+        output_url: signedUrlData.signedUrl,
         processing_completed_at: new Date().toISOString()
       })
       .eq('id', mergeJobId);
@@ -528,7 +534,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true,
-        output_url: publicUrl,
+        output_url: signedUrlData.signedUrl,
         page_count: pdfDoc.getPageCount()
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

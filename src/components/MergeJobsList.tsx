@@ -121,11 +121,37 @@ export function MergeJobsList({ jobs }: MergeJobsListProps) {
     }
   };
 
-  const handleDownload = (url: string, jobId: string) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `output_${jobId}.pdf`;
-    link.click();
+  const handleDownload = async (url: string, jobId: string) => {
+    try {
+      // Extract file path from the signed URL
+      const urlParts = url.split('/');
+      const fileName = urlParts[urlParts.length - 1].split('?')[0]; // Remove query params
+      
+      // Generate fresh signed URL for download (1 hour expiration)
+      const { data, error } = await supabase.storage
+        .from('generated-pdfs')
+        .createSignedUrl(fileName, 3600);
+
+      if (error) {
+        console.error('Failed to generate download URL:', error);
+        throw error;
+      }
+
+      // Download using the fresh signed URL
+      const link = document.createElement('a');
+      link.href = data.signedUrl;
+      link.download = `output_${jobId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Download error:', error);
+      toast({
+        title: "Download failed",
+        description: "Could not generate download link",
+        variant: "destructive"
+      });
+    }
   };
 
   return (

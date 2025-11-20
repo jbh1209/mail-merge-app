@@ -278,32 +278,53 @@ function renderLabelWithDesign(
   recordIndex: number
 ) {
   try {
+    console.log(`🎨 Rendering label at offset (${offsetX}, ${offsetY})`);
+    console.log(`📊 Data row keys:`, Object.keys(dataRow));
+    console.log(`🗺️ Mappings:`, mappings);
+    console.log(`📝 Fields to render:`, fields.length);
+
     for (const field of fields) {
       const dataColumn = mappings[field.name] || null;
+      
+      console.log(`\n🔍 Processing field: ${field.name}`);
+      console.log(`   Type: ${field.fieldType || 'text'}`);
+      console.log(`   Mapped to data column: ${dataColumn}`);
+      console.log(`   showLabel: ${field.showLabel}`);
+      
+      if (dataColumn) {
+        const dataValue = dataRow[dataColumn];
+        console.log(`   Data value: "${dataValue}"`);
+      }
       
       const x = offsetX + mmToPoints(field.x);
       const y = pageHeight - offsetY - mmToPoints(field.y) - mmToPoints(field.height);
       const width = mmToPoints(field.width);
       const height = mmToPoints(field.height);
       
+      console.log(`   Position: (${x}, ${y}), Size: ${width}x${height}`);
+      
       switch (field.fieldType) {
         case 'barcode':
+          console.log(`   ✏️ Rendering barcode`);
           renderBarcodeField(page, field, dataRow, dataColumn, x, y, width, height);
           break;
         case 'qrcode':
+          console.log(`   ✏️ Rendering QR code`);
           renderQRCodeField(page, field, dataRow, dataColumn, x, y, width, height);
           break;
         case 'sequence':
+          console.log(`   ✏️ Rendering sequence #${recordIndex}`);
           renderSequenceField(page, field, recordIndex, fonts, x, y, width, height);
           break;
         case 'text':
         default:
+          console.log(`   ✏️ Rendering text field`);
           renderTextField(page, field, dataRow, dataColumn, fonts, x, y, width, height);
           break;
       }
     }
   } catch (error) {
-    console.error('Error rendering label:', error);
+    console.error('❌ Error rendering label:', error);
     page.drawText('ERROR', {
       x: offsetX + 6,
       y: pageHeight - offsetY - 20,

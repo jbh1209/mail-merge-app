@@ -43,18 +43,20 @@ Deno.serve(async (req) => {
     // Delete each file from storage and database
     for (const output of expiredOutputs) {
       try {
-        // Extract file name from URL
-        const fileName = output.file_url.split('/').pop();
+        // Use the storage path directly (no longer contains signed URL params)
+        const storagePath = output.file_url;
         
-        if (fileName) {
+        if (storagePath) {
           // Delete from storage
           const { error: storageError } = await supabase.storage
             .from('generated-pdfs')
-            .remove([fileName]);
+            .remove([storagePath]);
 
           if (storageError) {
-            console.error(`Failed to delete file ${fileName}:`, storageError);
-            errors.push(`Storage: ${fileName}`);
+            console.error(`Failed to delete file ${storagePath}:`, storageError);
+            errors.push(`Storage: ${storagePath}`);
+          } else {
+            console.log(`Deleted file: ${storagePath}`);
           }
         }
 

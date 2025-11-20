@@ -560,14 +560,24 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               stepInfo={{ current: 9, total: 9 }}
               onSave={async (designConfig) => {
               try {
-                // Update template with design config
+                // Get current template to preserve base config
+                const { data: currentTemplate } = await supabase
+                  .from('templates')
+                  .select('design_config')
+                  .eq('id', wizardState.templateId)
+                  .single();
+
+                const baseConfig = (currentTemplate?.design_config as Record<string, any>) || {};
+
+                // Update template with design config, preserving base template info
                 const { error } = await supabase
                   .from('templates')
                   .update({ 
                     design_config: {
-                      ...wizardState.designConfig,
-                      ...designConfig
-                    }
+                      ...baseConfig,
+                      fields: designConfig.fields,
+                      canvasSettings: designConfig.canvasSettings
+                    } as any
                   })
                   .eq('id', wizardState.templateId);
 

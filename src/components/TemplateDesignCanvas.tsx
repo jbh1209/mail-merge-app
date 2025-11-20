@@ -41,6 +41,7 @@ export function TemplateDesignCanvas({
     autoLayout,
     deleteField,
     toggleFieldLabels,
+    toggleAllFieldLabels,
     updateFieldType,
     undo,
     redo,
@@ -115,7 +116,7 @@ export function TemplateDesignCanvas({
           onRedo={redo}
           onAutoLayout={autoLayout}
           showAllLabels={settings.showAllLabels}
-          onToggleAllLabels={() => updateSettings({ showAllLabels: !settings.showAllLabels })}
+          onToggleAllLabels={() => toggleAllFieldLabels(!settings.showAllLabels)}
           selectedField={selectedField}
           onUpdateFieldStyle={(updates) => {
             if (selectedFieldId) {

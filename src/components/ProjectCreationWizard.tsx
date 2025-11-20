@@ -684,10 +684,10 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                 className="flex-1"
                 onClick={() => {
                   handleClose();
-                  navigate(`/projects/${wizardState.projectId}`);
+                  navigate(`/projects/${wizardState.projectId}?tab=merge-jobs&autoSelect=true`);
                 }}
               >
-                Go to Project
+                Generate First Batch
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
               <Button

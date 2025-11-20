@@ -398,7 +398,8 @@ serve(async (req) => {
 
     const dataSource = job.data_source;
     const parsedFields = dataSource.parsed_fields as any;
-    const dataRows = parsedFields?.preview || [];
+    // Use all rows, fallback to preview for backwards compatibility
+    const dataRows = parsedFields?.rows || parsedFields?.preview || [];
     
     if (dataRows.length === 0) {
       throw new Error('No data rows found in data source');

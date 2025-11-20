@@ -174,6 +174,20 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     setSettings(prev => ({ ...prev, ...newSettings }));
   }, []);
 
+  const toggleAllFieldLabels = useCallback((showLabels: boolean) => {
+    setFields(prev => {
+      const newFields = prev.map(f => ({
+        ...f,
+        showLabel: showLabels
+      }));
+      saveToHistory(newFields);
+      return newFields;
+    });
+    
+    // Also update the canvas setting for visual consistency
+    updateSettings({ showAllLabels: showLabels });
+  }, [saveToHistory, updateSettings]);
+
   const finalizeFieldPositions = useCallback(() => {
     // Save final positions to history
     saveToHistory(fields);
@@ -188,6 +202,7 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     resizeField,
     updateFieldStyle,
     toggleFieldLabels,
+    toggleAllFieldLabels,
     updateFieldType,
     updateSettings,
     autoLayout,

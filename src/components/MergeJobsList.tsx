@@ -123,37 +123,41 @@ export function MergeJobsList({ jobs }: MergeJobsListProps) {
 
   const handleDownload = async (url: string, jobId: string) => {
     try {
-      // Call edge function to get fresh signed URL
+      // Step 1: Get signed URL from edge function
       const { data, error } = await supabase.functions.invoke('get-download-url', {
         body: { mergeJobId: jobId }
       });
 
-      if (error) {
-        console.error('Failed to generate download URL:', error);
-        throw error;
+      if (error || !data?.signedUrl) {
+        throw new Error('Failed to generate download URL');
       }
 
-      if (!data?.signedUrl) {
-        throw new Error('No download URL returned');
+      // Step 2: Fetch PDF as blob to prevent navigation and hide backend URL
+      const response = await fetch(data.signedUrl);
+      if (!response.ok) {
+        throw new Error('Failed to download file');
       }
-
-      // Download using the fresh signed URL
-      const link = document.createElement('a');
-      link.href = data.signedUrl;
-      link.download = `output_${jobId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      
+      const blob = await response.blob();
+      
+      // Step 3: Create object URL (stays on app domain)
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      // Step 4: Open in new tab (prevents same-window navigation)
+      window.open(blobUrl, '_blank');
+      
+      // Step 5: Clean up after a delay
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
 
       toast({
-        title: "Download started",
-        description: "Your PDF is downloading",
+        title: "PDF opened",
+        description: "Your PDF is opening in a new tab",
       });
     } catch (error) {
       console.error('Download error:', error);
       toast({
         title: "Download failed",
-        description: "Could not generate download link. The file may have expired.",
+        description: "Could not download PDF. The file may have expired.",
         variant: "destructive"
       });
     }

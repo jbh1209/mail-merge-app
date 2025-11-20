@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadStep, setUploadStep] = useState<'upload' | 'preview'>('upload');
@@ -32,6 +33,15 @@ export default function ProjectDetail() {
   const [fieldMappingOpen, setFieldMappingOpen] = useState(false);
   const [selectedDataSource, setSelectedDataSource] = useState<any>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState("data-sources");
+
+  // Handle URL params for auto-navigation to merge jobs tab
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'merge-jobs') {
+      setActiveTab('jobs');
+    }
+  }, [searchParams]);
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -236,15 +246,15 @@ export default function ProjectDetail() {
         </Card>
       )}
 
-      <Tabs defaultValue="data" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
-          <TabsTrigger value="data">Data Sources</TabsTrigger>
+          <TabsTrigger value="data-sources">Data Sources</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="mappings">Field Mappings</TabsTrigger>
           <TabsTrigger value="jobs">Merge Jobs</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="data" className="space-y-4">
+        <TabsContent value="data-sources" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -412,6 +422,7 @@ export default function ProjectDetail() {
                   dataSources={dataSources || []}
                   templates={templates || []}
                   fieldMappings={fieldMappings || []}
+                  autoSelectLatest={searchParams.get('autoSelect') === 'true'}
                   onJobCreated={() => {
                     queryClient.invalidateQueries({ queryKey: ["merge-jobs", id] });
                   }}

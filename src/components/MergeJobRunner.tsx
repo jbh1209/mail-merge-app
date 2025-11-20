@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Rocket, Loader2, AlertCircle, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { toast as sonnerToast } from "sonner";
 
 interface MergeJobRunnerProps {
   projectId: string;
@@ -17,6 +18,7 @@ interface MergeJobRunnerProps {
   templates: any[];
   fieldMappings: any[];
   onJobCreated: () => void;
+  autoSelectLatest?: boolean;
 }
 
 export function MergeJobRunner({
@@ -25,7 +27,8 @@ export function MergeJobRunner({
   dataSources,
   templates,
   fieldMappings,
-  onJobCreated
+  onJobCreated,
+  autoSelectLatest = false
 }: MergeJobRunnerProps) {
   const [selectedDataSource, setSelectedDataSource] = useState<string>("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
@@ -45,6 +48,26 @@ export function MergeJobRunner({
       return data;
     }
   });
+
+  // Auto-select latest data source and template when autoSelectLatest is true
+  useEffect(() => {
+    if (autoSelectLatest && dataSources.length > 0 && templates.length > 0) {
+      // Sort by created_at to get the newest
+      const latestDataSource = [...dataSources].sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )[0];
+      const latestTemplate = [...templates].sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )[0];
+      
+      setSelectedDataSource(latestDataSource.id);
+      setSelectedTemplate(latestTemplate.id);
+      
+      sonnerToast.success("Ready to generate!", {
+        description: "Your data source and template have been automatically selected. Click Generate PDFs to continue."
+      });
+    }
+  }, [autoSelectLatest, dataSources, templates]);
 
   const dataSource = dataSources.find(ds => ds.id === selectedDataSource);
   const totalPages = dataSource?.row_count || 0;

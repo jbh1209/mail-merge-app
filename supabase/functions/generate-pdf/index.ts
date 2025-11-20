@@ -125,10 +125,10 @@ function renderTextField(
   let yOffset = y + height - 6;
   
   // Render label if enabled
-  if (field.showLabel && field.name) {
+  if (field.showLabel && field.templateField) {
     const labelFont = fonts.regular;
-    const labelSize = field.labelStyle?.fontSize || (field.fontSize * 0.7);
-    const labelText = field.name.toUpperCase();
+    const labelSize = field.labelStyle?.fontSize || ((field.style?.fontSize || 12) * 0.7);
+    const labelText = field.templateField.toUpperCase();
     
     page.drawText(labelText, {
       x: x + 6,
@@ -142,18 +142,19 @@ function renderTextField(
   }
   
   // Render value
-  const font = field.fontWeight === 'bold' ? fonts.bold : fonts.regular;
-  const fontSize = field.fontSize || 12;
+  const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
+  const fontSize = field.style?.fontSize || 12;
   const lines = wrapText(value, font, width - 12, fontSize);
   
   for (const line of lines) {
     if (yOffset < y + 6) break;
     
     let xPos = x + 6;
-    if (field.textAlign === 'center') {
+    const textAlign = field.style?.textAlign || 'left';
+    if (textAlign === 'center') {
       const textWidth = font.widthOfTextAtSize(line, fontSize);
       xPos = x + (width - textWidth) / 2;
-    } else if (field.textAlign === 'right') {
+    } else if (textAlign === 'right') {
       const textWidth = font.widthOfTextAtSize(line, fontSize);
       xPos = x + width - textWidth - 6;
     }
@@ -253,8 +254,8 @@ function renderSequenceField(
   const paddedNumber = String(number).padStart(padding, '0');
   const value = prefix + paddedNumber;
   
-  const font = field.fontWeight === 'bold' ? fonts.bold : fonts.regular;
-  const fontSize = field.fontSize || 12;
+  const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
+  const fontSize = field.style?.fontSize || 12;
   
   page.drawText(value, {
     x: x + 6,
@@ -284,9 +285,9 @@ function renderLabelWithDesign(
     console.log(`📝 Fields to render:`, fields.length);
 
     for (const field of fields) {
-      const dataColumn = mappings[field.name] || null;
+      const dataColumn = mappings[field.templateField] || null;
       
-      console.log(`\n🔍 Processing field: ${field.name}`);
+      console.log(`\n🔍 Processing field: ${field.templateField}`);
       console.log(`   Type: ${field.fieldType || 'text'}`);
       console.log(`   Mapped to data column: ${dataColumn}`);
       console.log(`   showLabel: ${field.showLabel}`);
@@ -296,10 +297,10 @@ function renderLabelWithDesign(
         console.log(`   Data value: "${dataValue}"`);
       }
       
-      const x = offsetX + mmToPoints(field.x);
-      const y = pageHeight - offsetY - mmToPoints(field.y) - mmToPoints(field.height);
-      const width = mmToPoints(field.width);
-      const height = mmToPoints(field.height);
+      const x = offsetX + mmToPoints(field.position?.x || 0);
+      const y = pageHeight - offsetY - mmToPoints(field.position?.y || 0) - mmToPoints(field.size?.height || 0);
+      const width = mmToPoints(field.size?.width || 0);
+      const height = mmToPoints(field.size?.height || 0);
       
       console.log(`   Position: (${x}, ${y}), Size: ${width}x${height}`);
       

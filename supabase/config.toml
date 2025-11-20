@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.generate-pdf]
 verify_jwt = false
+
+[functions.get-download-url]
+verify_jwt = true

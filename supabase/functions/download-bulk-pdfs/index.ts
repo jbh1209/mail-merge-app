@@ -51,17 +51,16 @@ Deno.serve(async (req) => {
     // Download each PDF and add to ZIP
     for (const job of jobs) {
       try {
-        // Extract file name from storage path
-        const fileName = job.output_url.split('/').pop() || `output_${job.id}.pdf`;
-        const storagePath = fileName;
+        // Use the storage path directly
+        const storagePath = job.output_url;
 
-        // Download from storage
+        // Download from storage (service role has access)
         const { data: fileData, error: downloadError } = await supabase.storage
           .from('generated-pdfs')
           .download(storagePath);
 
         if (downloadError) {
-          console.error(`Failed to download ${fileName}:`, downloadError);
+          console.error(`Failed to download ${storagePath}:`, downloadError);
           continue;
         }
 

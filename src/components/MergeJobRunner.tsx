@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Rocket, Loader2, AlertCircle, TrendingUp } from "lucide-react";
+import { Rocket, Loader2, AlertCircle, TrendingUp, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast as sonnerToast } from "sonner";
+import { LabelPreviewModal } from "@/components/LabelPreviewModal";
 
 interface MergeJobRunnerProps {
   projectId: string;
@@ -33,6 +34,7 @@ export function MergeJobRunner({
   const [selectedDataSource, setSelectedDataSource] = useState<string>("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [generating, setGenerating] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -276,24 +278,51 @@ export function MergeJobRunner({
           </div>
         )}
 
-        <Button
-          onClick={handleGenerate}
-          disabled={!canGenerate || !hasMapping || generating}
-          className="w-full"
-          size="lg"
-        >
-          {generating ? (
-            <>
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              Generating PDFs...
-            </>
-          ) : (
-            <>
-              <Rocket className="h-5 w-5 mr-2" />
-              Generate PDFs
-            </>
-          )}
-        </Button>
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            onClick={() => setShowPreview(true)}
+            disabled={!canGenerate || !hasMapping}
+            variant="outline"
+            size="lg"
+          >
+            <Eye className="h-5 w-5 mr-2" />
+            Preview
+          </Button>
+          
+          <Button
+            onClick={handleGenerate}
+            disabled={!canGenerate || !hasMapping || generating}
+            size="lg"
+          >
+            {generating ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Rocket className="h-5 w-5 mr-2" />
+                Generate PDFs
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Preview Modal */}
+        {showPreview && selectedDataSource && selectedTemplate && (
+          <LabelPreviewModal
+            open={showPreview}
+            onClose={() => setShowPreview(false)}
+            template={templates.find(t => t.id === selectedTemplate)}
+            designConfig={templates.find(t => t.id === selectedTemplate)?.design_config || {}}
+            allDataRows={(dataSources.find(ds => ds.id === selectedDataSource)?.parsed_fields as any)?.data || []}
+            fieldMappings={(fieldMappings.find(m => 
+              m.data_source_id === selectedDataSource && m.template_id === selectedTemplate
+            )?.mappings as Record<string, string>) || {}}
+            onGenerate={handleGenerate}
+            generating={generating}
+          />
+        )}
       </CardContent>
     </Card>
   );

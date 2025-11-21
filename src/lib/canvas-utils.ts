@@ -28,6 +28,7 @@ export interface FieldConfig {
   };
   maxLines?: number;
   overflow: 'truncate' | 'wrap' | 'shrink';
+  autoFit?: boolean; // Enable auto-sizing for best fit
   showLabel?: boolean;
   labelStyle?: {
     fontSize: number;
@@ -217,7 +218,8 @@ export const autoLayoutFields = (
         color: '#000000',
         verticalAlign: 'middle'
       },
-      overflow: 'truncate',
+      overflow: 'shrink', // Default to auto-fit
+      autoFit: true,
       showLabel: showLabels,
       labelStyle: {
         fontSize: 6,

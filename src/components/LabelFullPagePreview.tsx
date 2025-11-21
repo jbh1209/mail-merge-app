@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { LabelPagePreview } from './LabelPagePreview';
@@ -54,8 +55,8 @@ export function LabelFullPagePreview({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center">
       {/* Header with close button and page counter */}
       <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/60 to-transparent">
         <div className="text-white text-lg font-semibold">
@@ -111,6 +112,7 @@ export function LabelFullPagePreview({
           Use <kbd className="px-2 py-1 bg-white/20 rounded">←</kbd> <kbd className="px-2 py-1 bg-white/20 rounded">→</kbd> arrow keys or click arrows to navigate • <kbd className="px-2 py-1 bg-white/20 rounded">ESC</kbd> to close
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

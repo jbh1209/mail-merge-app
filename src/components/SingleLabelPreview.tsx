@@ -60,6 +60,13 @@ export function SingleLabelPreview({
       );
 
       if (overflow.hasOverflow) {
+        console.log(`🚨 OVERSET DETECTED: "${field.templateField}"`, {
+          text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+          containerWidth: containerWidth.toFixed(1),
+          containerHeight: containerHeight.toFixed(1),
+          fontSize: field.style.fontSize,
+          overflowPercentage: overflow.overflowPercentage.toFixed(1) + '%'
+        });
         oversets.push({
           fieldName: field.templateField,
           overflowPercentage: overflow.overflowPercentage

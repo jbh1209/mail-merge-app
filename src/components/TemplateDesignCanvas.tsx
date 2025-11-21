@@ -1,14 +1,15 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FieldElement } from './canvas/FieldElement';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx } from '@/lib/canvas-utils';
-import { CheckCircle2, Info, Eye, Loader2 } from 'lucide-react';
+import { CheckCircle2, Info, ArrowLeft } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { LabelFullPagePreview } from './LabelFullPagePreview';
+import { InlinePreviewArea } from './InlinePreviewArea';
 import { useToast } from '@/hooks/use-toast';
+import { detectTextOverflow } from '@/lib/text-measurement-utils';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
@@ -38,9 +39,8 @@ export function TemplateDesignCanvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewData, setPreviewData] = useState<any>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [currentLabelIndex, setCurrentLabelIndex] = useState(0);
 
   const {
     fields,
@@ -99,27 +99,78 @@ export function TemplateDesignCanvas({
       return;
     }
     
-    // Create mappings from current field positions (1:1 mapping during design)
-    const currentMappings: Record<string, string> = {};
-    fields.forEach(field => {
-      currentMappings[field.templateField] = field.templateField;
-    });
-    
-    // Use current wizard state
-    setPreviewData({
-      mappings: currentMappings,
-      allDataRows: sampleData,
-      template: {
-        id: templateId,
-        name: templateName,
-        width_mm: templateSize.width,
-        height_mm: templateSize.height,
-        template_type: 'built_in_library'
-      }
-    });
-    
-    setShowPreview(true);
+    setPreviewMode(true);
+    setCurrentLabelIndex(0);
   };
+
+  // Create mappings from current field positions (1:1 mapping during design)
+  const currentMappings: Record<string, string> = {};
+  fields.forEach(field => {
+    currentMappings[field.templateField] = field.templateField;
+  });
+
+  // Template object for preview
+  const templateObj = {
+    id: templateId,
+    name: templateName,
+    width_mm: templateSize.width,
+    height_mm: templateSize.height,
+    template_type: 'built_in_library'
+  };
+
+  // Calculate overset count for current label
+  const oversetCount = useMemo(() => {
+    if (!previewMode || !sampleData || currentLabelIndex >= sampleData.length) return 0;
+    
+    const currentRow = sampleData[currentLabelIndex];
+    let count = 0;
+
+    fields.forEach(field => {
+      if (field.fieldType !== 'text') return;
+      
+      const dataColumn = currentMappings[field.templateField];
+      if (!dataColumn) return;
+      
+      const text = String(currentRow[dataColumn] || '');
+      if (!text) return;
+
+      const containerWidth = mmToPx(field.size.width, 1);
+      const containerHeight = mmToPx(field.size.height, 1);
+      
+      const overflow = detectTextOverflow(
+        text,
+        containerWidth,
+        containerHeight,
+        field.style.fontSize,
+        field.style.fontFamily,
+        field.style.fontWeight
+      );
+
+      if (overflow.hasOverflow) count++;
+    });
+
+    return count;
+  }, [previewMode, currentLabelIndex, sampleData, fields, currentMappings]);
+
+  if (previewMode) {
+    // Show inline preview mode
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <InlinePreviewArea
+          currentIndex={currentLabelIndex}
+          totalLabels={sampleData?.length || 0}
+          template={templateObj}
+          designConfig={{ fields, canvasSettings: settings }}
+          allDataRows={sampleData || []}
+          fieldMappings={currentMappings}
+          onNext={() => setCurrentLabelIndex(i => Math.min(i + 1, (sampleData?.length || 1) - 1))}
+          onPrev={() => setCurrentLabelIndex(i => Math.max(i - 1, 0))}
+          onClose={() => setPreviewMode(false)}
+          oversetCount={oversetCount}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -243,7 +294,6 @@ export function TemplateDesignCanvas({
             onClick={handlePreviewClick}
             disabled={!sampleData || sampleData.length === 0}
           >
-            <Eye className="mr-2 h-4 w-4" />
             Preview Pages
           </Button>
           <Button size="sm" onClick={handleSave}>
@@ -252,21 +302,6 @@ export function TemplateDesignCanvas({
           </Button>
         </div>
       </div>
-
-      {/* Full-screen Preview */}
-      {showPreview && previewData && (
-        <LabelFullPagePreview
-          open={showPreview}
-          onClose={() => setShowPreview(false)}
-          template={previewData.template}
-          designConfig={{
-            fields,
-            canvasSettings: settings
-          }}
-          allDataRows={previewData.allDataRows}
-          fieldMappings={previewData.mappings}
-        />
-      )}
     </div>
   );
 }

@@ -102,6 +102,15 @@ export function TemplateDesignCanvas({
     // CRITICAL: Finalize field positions before preview to sync layout
     finalizeFieldPositions();
     
+    console.log('🎨 ENTERING PREVIEW MODE');
+    console.log('Canvas Scale:', settings.scale);
+    console.log('Fields to preview:', fields.map(f => ({
+      name: f.templateField,
+      position: f.position,
+      size: f.size,
+      fontSize: f.style.fontSize
+    })));
+    
     setPreviewMode(true);
     setCurrentLabelIndex(0);
   };
@@ -163,7 +172,10 @@ export function TemplateDesignCanvas({
           currentIndex={currentLabelIndex}
           totalLabels={sampleData?.length || 0}
           template={templateObj}
-          designConfig={{ fields, canvasSettings: settings }}
+          designConfig={{ 
+            fields, 
+            canvasSettings: { ...settings, scale: 1 } // Force scale=1 for 1:1 preview
+          }}
           allDataRows={sampleData || []}
           fieldMappings={currentMappings}
           onNext={() => setCurrentLabelIndex(i => Math.min(i + 1, (sampleData?.length || 1) - 1))}

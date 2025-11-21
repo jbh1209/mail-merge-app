@@ -189,6 +189,12 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
   }, [saveToHistory, updateSettings]);
 
   const finalizeFieldPositions = useCallback(() => {
+    console.log('💾 FINALIZING FIELD POSITIONS:', fields.map(f => ({
+      name: f.templateField,
+      position: f.position,
+      size: f.size,
+      fontSize: f.style.fontSize
+    })));
     // Save final positions to history
     saveToHistory(fields);
   }, [fields, saveToHistory]);

@@ -19,20 +19,24 @@ export function SingleLabelPreview({
 }: SingleLabelPreviewProps) {
   const fields: FieldConfig[] = designConfig?.fields || [];
   
-  // Calculate optimal scale to fit the screen nicely
-  const viewportWidth = window.innerWidth * 0.7; // 70% of viewport
-  const viewportHeight = window.innerHeight * 0.7; // 70% of viewport
+  // Use the scale from design config to match the canvas exactly
+  // If not provided, use scale=1 for true 1:1 preview
+  const scale = designConfig?.canvasSettings?.scale || 1;
   
   const labelWidthMm = template.width_mm || 101.6;
   const labelHeightMm = template.height_mm || 50.8;
-  
-  // Calculate scale to fit viewport
-  const scaleByWidth = viewportWidth / mmToPx(labelWidthMm, 1);
-  const scaleByHeight = viewportHeight / mmToPx(labelHeightMm, 1);
-  const scale = Math.min(scaleByWidth, scaleByHeight, 3); // Max 3x zoom
 
   const labelWidth = mmToPx(labelWidthMm, scale);
   const labelHeight = mmToPx(labelHeightMm, scale);
+
+  console.log('🖼️ PREVIEW RENDER:', {
+    scale,
+    labelWidthMm,
+    labelHeightMm,
+    labelWidthPx: labelWidth.toFixed(1),
+    labelHeightPx: labelHeight.toFixed(1),
+    fieldsCount: fields.length
+  });
 
   // Detect overset fields for this label
   const oversetFields = useMemo(() => {
@@ -95,6 +99,17 @@ export function SingleLabelPreview({
       textAlign: field.style.textAlign,
       color: field.style.color,
     };
+
+    console.log(`📍 RENDERING FIELD "${field.templateField}":`, {
+      position: { x: field.position.x.toFixed(1), y: field.position.y.toFixed(1) },
+      positionPx: { x: x.toFixed(1), y: y.toFixed(1) },
+      size: { width: field.size.width.toFixed(1), height: field.size.height.toFixed(1) },
+      sizePx: { width: width.toFixed(1), height: height.toFixed(1) },
+      fontSize: field.style.fontSize,
+      fontSizeScaled: `${field.style.fontSize * scale}pt`,
+      scale,
+      value: value.substring(0, 30) + (value.length > 30 ? '...' : '')
+    });
 
     return (
       <div

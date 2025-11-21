@@ -141,15 +141,26 @@ export function detectTextOverflow(
   const availableWidth = containerWidth - padding;
   const availableHeight = containerHeight - padding;
 
+  // Measure with word wrapping
   const measurement = measureText(text, fontFamily, fontSize, fontWeight, availableWidth);
   
-  const hasOverflow = measurement.height > availableHeight || measurement.width > availableWidth;
+  const hasOverflow = measurement.height > availableHeight;
   const overflowPercentage = hasOverflow
-    ? Math.max(
-        ((measurement.width - availableWidth) / availableWidth) * 100,
-        ((measurement.height - availableHeight) / availableHeight) * 100
-      )
+    ? ((measurement.height - availableHeight) / availableHeight) * 100
     : 0;
+
+  // Debug logging
+  if (hasOverflow) {
+    console.log('⚠️ Text overflow detected:', {
+      text: text.substring(0, 50) + '...',
+      containerSize: { width: containerWidth, height: containerHeight },
+      availableSize: { width: availableWidth, height: availableHeight },
+      measuredSize: { width: measurement.width, height: measurement.height },
+      fontSize,
+      lineCount: measurement.lineCount,
+      overflowPercentage: Math.round(overflowPercentage)
+    });
+  }
 
   return {
     hasOverflow,

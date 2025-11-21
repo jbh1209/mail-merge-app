@@ -92,14 +92,19 @@ export function SingleLabelPreview({
     return (
       <div
         key={field.id}
-        className={`absolute overflow-hidden px-1 ${
-          hasOverflow ? 'border-2 border-destructive bg-destructive/10' : ''
+        className={`absolute px-1 ${
+          hasOverflow ? 'border-4 border-destructive bg-destructive/20' : ''
         }`}
         style={{
           left: `${x}px`,
           top: `${y}px`,
           width: `${width}px`,
           height: `${height}px`,
+          overflow: 'hidden',
+          whiteSpace: 'normal',
+          wordWrap: 'break-word',
+          overflowWrap: 'break-word',
+          wordBreak: 'break-word',
           ...style
         }}
         title={hasOverflow ? `⚠️ ${field.templateField}: Text overflow detected` : field.templateField}
@@ -109,7 +114,16 @@ export function SingleLabelPreview({
             {field.templateField}
           </div>
         )}
-        <div className={hasOverflow ? 'text-destructive font-semibold' : ''}>{value}</div>
+        <div 
+          className={hasOverflow ? 'text-destructive font-bold' : ''}
+          style={{
+            whiteSpace: 'normal',
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word'
+          }}
+        >
+          {value}
+        </div>
       </div>
     );
   };

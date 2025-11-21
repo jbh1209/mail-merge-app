@@ -99,6 +99,9 @@ export function TemplateDesignCanvas({
       return;
     }
     
+    // CRITICAL: Finalize field positions before preview to sync layout
+    finalizeFieldPositions();
+    
     setPreviewMode(true);
     setCurrentLabelIndex(0);
   };

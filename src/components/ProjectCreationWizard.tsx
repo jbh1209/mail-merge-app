@@ -523,7 +523,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
             templateId={wizardState.templateId}
             dataColumns={wizardState.dataColumns}
             templateFields={wizardState.templateFields}
-            sampleData={wizardState.parsedData?.preview || []}
+            sampleData={wizardState.parsedData?.rows || wizardState.parsedData?.preview || []}
             subscriptionFeatures={subscriptionFeatures}
             onComplete={() => {
               setWizardState(prev => ({ ...prev, fieldMappingsComplete: true, step: 6.5 }));
@@ -556,7 +556,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               templateSize={wizardState.templateSize}
               templateName={wizardState.templateName}
               fieldNames={wizardState.templateFields}
-              sampleData={wizardState.parsedData?.preview || []}
+              sampleData={wizardState.parsedData?.rows || wizardState.parsedData?.preview || []}
               stepInfo={{ current: 9, total: 9 }}
               templateId={wizardState.templateId}
               dataSourceId={wizardState.dataSourceId}

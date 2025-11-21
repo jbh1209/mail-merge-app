@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { LabelPagePreview } from './LabelPagePreview';
-import { getLabelsPerPage, calculateTotalPages, getPageData } from '@/lib/label-layout-utils';
+import { ChevronLeft, ChevronRight, X, AlertTriangle } from 'lucide-react';
+import { SingleLabelPreview } from './SingleLabelPreview';
+import { detectTextOverflow } from '@/lib/text-measurement-utils';
+import { mmToPx } from '@/lib/canvas-utils';
 
 interface LabelFullPagePreviewProps {
   open: boolean;
@@ -24,9 +25,45 @@ export function LabelFullPagePreview({
 }: LabelFullPagePreviewProps) {
   const [currentPage, setCurrentPage] = useState(0);
 
-  const labelsPerPage = getLabelsPerPage(template);
-  const totalPages = calculateTotalPages(allDataRows.length, labelsPerPage);
-  const currentPageData = getPageData(allDataRows, currentPage, labelsPerPage);
+  // Single label preview mode: 1 label per page
+  const totalPages = allDataRows.length;
+  const currentLabel = allDataRows[currentPage];
+
+  // Count overset fields for current label
+  const oversetCount = useMemo(() => {
+    if (!currentLabel || !designConfig?.fields) return 0;
+    
+    const fields = designConfig.fields;
+    let count = 0;
+    
+    fields.forEach((field: any) => {
+      if (field.fieldType !== 'text') return;
+      
+      const dataColumn = fieldMappings[field.templateField];
+      if (!dataColumn) return;
+      
+      const text = String(currentLabel[dataColumn] || '');
+      if (!text) return;
+
+      const containerWidth = mmToPx(field.size.width, 1);
+      const containerHeight = mmToPx(field.size.height, 1);
+      
+      const overflow = detectTextOverflow(
+        text,
+        containerWidth,
+        containerHeight,
+        field.style.fontSize,
+        field.style.fontFamily,
+        field.style.fontWeight
+      );
+
+      if (overflow.hasOverflow) {
+        count++;
+      }
+    });
+
+    return count;
+  }, [currentLabel, designConfig, fieldMappings]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -57,10 +94,20 @@ export function LabelFullPagePreview({
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center">
-      {/* Header with close button and page counter */}
+      {/* Header with close button and label counter */}
       <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/60 to-transparent">
-        <div className="text-white text-lg font-semibold">
-          Page {currentPage + 1} of {totalPages}
+        <div className="flex items-center gap-3">
+          <div className="text-white text-lg font-semibold">
+            Label {currentPage + 1} of {totalPages}
+          </div>
+          {oversetCount > 0 && (
+            <div className="flex items-center gap-2 bg-destructive/20 border border-destructive/40 px-3 py-1 rounded-full">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <span className="text-destructive text-sm font-medium">
+                {oversetCount} field{oversetCount !== 1 ? 's' : ''} overflow
+              </span>
+            </div>
+          )}
         </div>
         <Button
           variant="ghost"
@@ -83,15 +130,14 @@ export function LabelFullPagePreview({
         <ChevronLeft className="h-10 w-10" />
       </Button>
 
-      {/* Page preview - full size in scrollable container */}
-      <div className="max-w-[90vw] max-h-[85vh] overflow-auto">
-        <LabelPagePreview
+      {/* Single label preview - centered and large */}
+      <div className="w-full h-full flex items-center justify-center px-24">
+        <SingleLabelPreview
           template={template}
           designConfig={designConfig}
-          dataRows={currentPageData}
+          dataRow={currentLabel}
           fieldMappings={fieldMappings}
-          pageIndex={currentPage}
-          scale={1}
+          labelIndex={currentPage}
         />
       </div>
 

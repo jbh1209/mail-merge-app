@@ -1,12 +1,15 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FieldElement } from './canvas/FieldElement';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx } from '@/lib/canvas-utils';
-import { CheckCircle2, Info } from 'lucide-react';
+import { CheckCircle2, Info, Eye, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { LabelPreviewModal } from './LabelPreviewModal';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
@@ -16,6 +19,9 @@ interface TemplateDesignCanvasProps {
   onSave: (designConfig: any) => void;
   onCancel: () => void;
   stepInfo?: { current: number; total: number };
+  templateId?: string;
+  dataSourceId?: string;
+  projectId?: string;
 }
 
 export function TemplateDesignCanvas({
@@ -25,9 +31,17 @@ export function TemplateDesignCanvas({
   sampleData,
   onSave,
   onCancel,
-  stepInfo
+  stepInfo,
+  templateId,
+  dataSourceId,
+  projectId
 }: TemplateDesignCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+  
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   const {
     fields,
@@ -74,6 +88,62 @@ export function TemplateDesignCanvas({
 
   const handleCanvasClick = () => {
     setSelectedFieldId(null);
+  };
+
+  const handlePreviewClick = async () => {
+    if (!templateId || !dataSourceId) {
+      toast({ 
+        title: "Cannot preview", 
+        description: "Missing template or data source",
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    setLoadingPreview(true);
+    
+    try {
+      // 1. Fetch field mappings
+      const { data: mappings } = await supabase
+        .from('field_mappings')
+        .select('mappings')
+        .eq('template_id', templateId)
+        .eq('data_source_id', dataSourceId)
+        .maybeSingle();
+      
+      // 2. Fetch full dataset
+      const { data: dataSource } = await supabase
+        .from('data_sources')
+        .select('parsed_fields')
+        .eq('id', dataSourceId)
+        .single();
+      
+      // 3. Get current template
+      const { data: template } = await supabase
+        .from('templates')
+        .select('*')
+        .eq('id', templateId)
+        .single();
+      
+      const parsedFields = dataSource?.parsed_fields as { data?: any[] } | null;
+      
+      setPreviewData({
+        mappings: mappings?.mappings || {},
+        allDataRows: parsedFields?.data || [],
+        template
+      });
+      
+      setShowPreview(true);
+    } catch (error) {
+      console.error('Preview error:', error);
+      toast({ 
+        title: "Failed to load preview", 
+        description: "Could not fetch data for preview",
+        variant: "destructive" 
+      });
+    } finally {
+      setLoadingPreview(false);
+    }
   };
 
   return (
@@ -191,11 +261,50 @@ export function TemplateDesignCanvas({
         <Button variant="outline" size="sm" onClick={onCancel}>
           Back
         </Button>
-        <Button size="sm" onClick={handleSave}>
-          <CheckCircle2 className="h-4 w-4 mr-2" />
-          Save Design
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePreviewClick}
+            disabled={!templateId || !dataSourceId || loadingPreview}
+          >
+            {loadingPreview ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : (
+              <>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview with Real Data
+              </>
+            )}
+          </Button>
+          <Button size="sm" onClick={handleSave}>
+            <CheckCircle2 className="h-4 w-4 mr-2" />
+            Save Design
+          </Button>
+        </div>
       </div>
+
+      {/* Preview Modal */}
+      {showPreview && previewData && (
+        <LabelPreviewModal
+          open={showPreview}
+          onClose={() => setShowPreview(false)}
+          template={previewData.template}
+          designConfig={{
+            fields,
+            canvasSettings: settings
+          }}
+          allDataRows={previewData.allDataRows}
+          fieldMappings={previewData.mappings}
+          onGenerate={() => {
+            setShowPreview(false);
+          }}
+          generating={false}
+        />
+      )}
     </div>
   );
 }

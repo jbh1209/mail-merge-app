@@ -558,6 +558,9 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               fieldNames={wizardState.templateFields}
               sampleData={wizardState.parsedData?.preview || []}
               stepInfo={{ current: 9, total: 9 }}
+              templateId={wizardState.templateId}
+              dataSourceId={wizardState.dataSourceId}
+              projectId={wizardState.projectId}
               onSave={async (designConfig) => {
               try {
                 // Get current template to preserve base config

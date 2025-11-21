@@ -221,6 +221,51 @@ export type Database = {
           },
         ]
       }
+      label_overrides: {
+        Row: {
+          created_at: string | null
+          data_source_id: string
+          field_overrides: Json
+          id: string
+          label_index: number
+          template_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          data_source_id: string
+          field_overrides?: Json
+          id?: string
+          label_index: number
+          template_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          data_source_id?: string
+          field_overrides?: Json
+          id?: string
+          label_index?: number
+          template_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "label_overrides_data_source_id_fkey"
+            columns: ["data_source_id"]
+            isOneToOne: false
+            referencedRelation: "data_sources"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "label_overrides_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       merge_jobs: {
         Row: {
           created_at: string

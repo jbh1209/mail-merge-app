@@ -7,8 +7,7 @@ import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx } from '@/lib/canvas-utils';
 import { CheckCircle2, Info, Eye, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { LabelPreviewModal } from './LabelPreviewModal';
-import { supabase } from '@/integrations/supabase/client';
+import { LabelFullPagePreview } from './LabelFullPagePreview';
 import { useToast } from '@/hooks/use-toast';
 
 interface TemplateDesignCanvasProps {
@@ -90,60 +89,36 @@ export function TemplateDesignCanvas({
     setSelectedFieldId(null);
   };
 
-  const handlePreviewClick = async () => {
-    if (!templateId || !dataSourceId) {
+  const handlePreviewClick = () => {
+    if (!sampleData || sampleData.length === 0) {
       toast({ 
-        title: "Cannot preview", 
-        description: "Missing template or data source",
+        title: "No data available", 
+        description: "Please upload data first to preview",
         variant: "destructive" 
       });
       return;
     }
     
-    setLoadingPreview(true);
+    // Create mappings from current field positions (1:1 mapping during design)
+    const currentMappings: Record<string, string> = {};
+    fields.forEach(field => {
+      currentMappings[field.templateField] = field.templateField;
+    });
     
-    try {
-      // 1. Fetch field mappings
-      const { data: mappings } = await supabase
-        .from('field_mappings')
-        .select('mappings')
-        .eq('template_id', templateId)
-        .eq('data_source_id', dataSourceId)
-        .maybeSingle();
-      
-      // 2. Fetch full dataset
-      const { data: dataSource } = await supabase
-        .from('data_sources')
-        .select('parsed_fields')
-        .eq('id', dataSourceId)
-        .single();
-      
-      // 3. Get current template
-      const { data: template } = await supabase
-        .from('templates')
-        .select('*')
-        .eq('id', templateId)
-        .single();
-      
-      const parsedFields = dataSource?.parsed_fields as { data?: any[] } | null;
-      
-      setPreviewData({
-        mappings: mappings?.mappings || {},
-        allDataRows: parsedFields?.data || [],
-        template
-      });
-      
-      setShowPreview(true);
-    } catch (error) {
-      console.error('Preview error:', error);
-      toast({ 
-        title: "Failed to load preview", 
-        description: "Could not fetch data for preview",
-        variant: "destructive" 
-      });
-    } finally {
-      setLoadingPreview(false);
-    }
+    // Use current wizard state
+    setPreviewData({
+      mappings: currentMappings,
+      allDataRows: sampleData,
+      template: {
+        id: templateId,
+        name: templateName,
+        width_mm: templateSize.width,
+        height_mm: templateSize.height,
+        template_type: 'built_in_library'
+      }
+    });
+    
+    setShowPreview(true);
   };
 
   return (
@@ -266,19 +241,10 @@ export function TemplateDesignCanvas({
             variant="outline"
             size="sm"
             onClick={handlePreviewClick}
-            disabled={!templateId || !dataSourceId || loadingPreview}
+            disabled={!sampleData || sampleData.length === 0}
           >
-            {loadingPreview ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading...
-              </>
-            ) : (
-              <>
-                <Eye className="mr-2 h-4 w-4" />
-                Preview with Real Data
-              </>
-            )}
+            <Eye className="mr-2 h-4 w-4" />
+            Preview Pages
           </Button>
           <Button size="sm" onClick={handleSave}>
             <CheckCircle2 className="h-4 w-4 mr-2" />
@@ -287,9 +253,9 @@ export function TemplateDesignCanvas({
         </div>
       </div>
 
-      {/* Preview Modal */}
+      {/* Full-screen Preview */}
       {showPreview && previewData && (
-        <LabelPreviewModal
+        <LabelFullPagePreview
           open={showPreview}
           onClose={() => setShowPreview(false)}
           template={previewData.template}
@@ -299,10 +265,6 @@ export function TemplateDesignCanvas({
           }}
           allDataRows={previewData.allDataRows}
           fieldMappings={previewData.mappings}
-          onGenerate={() => {
-            setShowPreview(false);
-          }}
-          generating={false}
         />
       )}
     </div>

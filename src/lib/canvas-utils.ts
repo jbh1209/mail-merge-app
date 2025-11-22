@@ -174,8 +174,8 @@ const estimateRequiredHeight = (text: string, fieldType: FieldType, width: numbe
 };
 
 /**
- * Intelligent auto-layout fields based on actual content with ZERO overflow
- * Uses actual text measurement to PREVENT overflow before it happens
+ * Intelligent auto-layout with weighted space allocation
+ * Analyzes content to give more space to longer fields, less to short fields
  */
 export const autoLayoutFields = (
   fieldNames: string[],
@@ -184,27 +184,18 @@ export const autoLayoutFields = (
   padding: number = 5,
   showLabels: boolean = false
 ): FieldConfig[] => {
-  if (!fieldNames || fieldNames.length === 0) {
-    return [];
-  }
+  if (!fieldNames || fieldNames.length === 0) return [];
 
   const usableWidth = templateSize.width - (padding * 2);
   const usableHeight = templateSize.height - (padding * 2);
-  const MIN_FONT_SIZE = 7; // Minimum readable font size
-  const PREFERRED_FONT_SIZE = 12; // Start with this and shrink if needed
-  const PADDING_PX = 6; // Padding inside fields
+  const MIN_FONT_SIZE = 8; // More readable minimum
+  const TARGET_FONT_SIZE = 11; // Nice readable size
+  const PADDING_PX = 6;
 
-  console.log('🎨 AUTO-LAYOUT START:', { 
-    templateSize, 
-    usableWidth, 
-    usableHeight, 
-    fieldCount: fieldNames.length,
-    hasSampleData: sampleData.length > 0
-  });
+  console.log('🎨 AUTO-LAYOUT START:', { templateSize, fieldCount: fieldNames.length });
 
-  // Step 1: Analyze each field's content requirements using REAL sample data
-  const fieldRequirements = fieldNames.map(fieldName => {
-    // Find longest content for this field across all sample rows
+  // Step 1: Analyze content and assign weights
+  const fieldAnalysis = fieldNames.map(fieldName => {
     const maxContent = sampleData.length > 0
       ? sampleData.reduce((longest, row) => {
           const value = String(row[fieldName] || '');
@@ -216,175 +207,105 @@ export const autoLayoutFields = (
     const fieldType = detectFieldType(fieldName);
     const priority = getFieldPriority(fieldName);
 
-    return {
-      fieldName,
-      fieldType,
-      priority,
-      sampleText,
-      contentLength: sampleText.length
-    };
+    // Assign weight based on priority and content length
+    let weight = 1.0;
+    if (priority === 'high') weight = 2.5; // Addresses, descriptions get 2.5x space
+    else if (priority === 'medium') weight = 1.5; // Names get 1.5x space
+    else if (sampleText.length < 10) weight = 0.5; // Short fields (IDs) get 0.5x space
+
+    return { fieldName, fieldType, priority, sampleText, weight };
   });
 
-  // Step 2: Determine layout strategy (1 or 2 columns)
-  const useTwoColumns = fieldNames.length >= 4 && usableWidth > 100;
+  // Step 2: Smart column strategy
+  const useTwoColumns = fieldNames.length >= 5 && usableWidth > 100;
   const numColumns = useTwoColumns ? 2 : 1;
-  const columnGap = 2;
-  const columnWidth = useTwoColumns 
-    ? (usableWidth - columnGap) / 2 
-    : usableWidth;
-  const fieldsPerColumn = Math.ceil(fieldNames.length / numColumns);
+  const columnGap = 3;
+  const columnWidth = useTwoColumns ? (usableWidth - columnGap) / 2 : usableWidth;
 
-  console.log('📐 LAYOUT STRATEGY:', { useTwoColumns, numColumns, columnWidth, fieldsPerColumn });
-
-  // Step 3: Calculate field dimensions using ACTUAL text measurement
-  const measuredFields = fieldRequirements.map((req, index) => {
-    const column = Math.floor(index / fieldsPerColumn);
-    const containerWidthPx = mmToPx(columnWidth);
+  // Distribute fields to columns (try to balance by weight)
+  const columns: typeof fieldAnalysis[] = [[], []];
+  if (useTwoColumns) {
+    const totalWeight = fieldAnalysis.reduce((sum, f) => sum + f.weight, 0);
+    let col1Weight = 0;
     
-    // Start with equal height distribution
-    const initialHeightMm = (usableHeight / fieldsPerColumn) - 1;
-    const containerHeightPx = mmToPx(initialHeightMm);
-
-    // Use calculateBestFitFontSize to find font that makes content fit PERFECTLY
-    const { fontSize, willFit, overflowPercentage } = calculateBestFitFontSize(
-      req.sampleText,
-      containerWidthPx,
-      containerHeightPx,
-      PREFERRED_FONT_SIZE,
-      'Arial',
-      'normal',
-      MIN_FONT_SIZE,
-      PADDING_PX
-    );
-
-    // Measure actual text dimensions with the calculated font size
-    const measurement = measureText(
-      req.sampleText,
-      'Arial',
-      fontSize,
-      'normal',
-      containerWidthPx - (PADDING_PX * 2)
-    );
-
-    // Calculate required height in mm with padding
-    const paddingMm = pxToMm(PADDING_PX * 2);
-    const requiredHeightMm = pxToMm(measurement.height) + paddingMm;
-    
-    // Use the larger of: initial equal distribution OR actual required height
-    const fieldHeightMm = Math.max(initialHeightMm, requiredHeightMm);
-
-    if (!willFit) {
-      console.warn(`⚠️ FIELD "${req.fieldName}" content may not fit perfectly`, {
-        fontSize,
-        overflowPercentage,
-        contentLength: req.sampleText.length,
-        containerHeightPx,
-        requiredHeightPx: measurement.height
-      });
-    } else {
-      console.log(`✅ FIELD "${req.fieldName}" fits perfectly`, {
-        fontSize,
-        height: fieldHeightMm.toFixed(1) + 'mm'
-      });
-    }
-
-    return {
-      ...req,
-      column,
-      fontSize,
-      width: columnWidth,
-      height: fieldHeightMm,
-      willFit,
-      overflowPercentage
-    };
-  });
-
-  // Step 4: Optimize space allocation - shrink if total height exceeds available space
-  const columnHeights = Array(numColumns).fill(0);
-  measuredFields.forEach(f => {
-    columnHeights[f.column] += f.height + 1;
-  });
-
-  const maxColumnHeight = Math.max(...columnHeights);
-  const needsShrinking = maxColumnHeight > usableHeight;
-
-  if (needsShrinking) {
-    console.log('📏 SHRINKING FIELDS - Total height exceeds available space', {
-      maxColumnHeight: maxColumnHeight.toFixed(1) + 'mm',
-      usableHeight: usableHeight.toFixed(1) + 'mm'
+    fieldAnalysis.forEach(field => {
+      if (col1Weight < totalWeight / 2 && columns[0].length < fieldAnalysis.length) {
+        columns[0].push(field);
+        col1Weight += field.weight;
+      } else {
+        columns[1].push(field);
+      }
     });
-    
-    const shrinkFactor = (usableHeight - fieldsPerColumn) / maxColumnHeight; // Leave 1mm per field for spacing
-    
-    measuredFields.forEach(f => {
-      const oldHeight = f.height;
-      f.height = f.height * shrinkFactor;
-      
-      // Recalculate font size for new height
-      const newHeightPx = mmToPx(f.height);
-      const newWidthPx = mmToPx(f.width);
+  } else {
+    columns[0] = fieldAnalysis;
+  }
+
+  // Step 3: Allocate height within each column based on weights
+  const fields: FieldConfig[] = [];
+  
+  columns.forEach((columnFields, colIndex) => {
+    if (columnFields.length === 0) return;
+
+    const columnWeightSum = columnFields.reduce((sum, f) => sum + f.weight, 0);
+    let currentY = padding;
+
+    columnFields.forEach(field => {
+      // Calculate proportional height with 15% headroom
+      const proportionalHeight = (field.weight / columnWeightSum) * usableHeight;
+      const heightWithHeadroom = proportionalHeight * 1.15; // Add 15% extra space
+      const fieldHeightMm = Math.min(heightWithHeadroom, usableHeight * 0.4); // Cap at 40% of height
+
+      // Calculate best-fit font size with generous container
+      const containerWidthPx = mmToPx(columnWidth);
+      const containerHeightPx = mmToPx(fieldHeightMm);
+
       const { fontSize } = calculateBestFitFontSize(
-        f.sampleText,
-        newWidthPx,
-        newHeightPx,
-        PREFERRED_FONT_SIZE,
+        field.sampleText,
+        containerWidthPx,
+        containerHeightPx,
+        TARGET_FONT_SIZE,
         'Arial',
         'normal',
         MIN_FONT_SIZE,
         PADDING_PX
       );
-      f.fontSize = fontSize;
-      
-      console.log(`  Shrunk "${f.fieldName}": ${oldHeight.toFixed(1)}mm → ${f.height.toFixed(1)}mm, font: ${fontSize}pt`);
+
+      // Ensure we don't overflow column
+      const finalHeight = Math.min(fieldHeightMm, usableHeight - (currentY - padding));
+
+      const x = padding + (colIndex * (columnWidth + columnGap));
+
+      fields.push({
+        id: `field-${crypto.randomUUID()}`,
+        templateField: field.fieldName,
+        position: { x, y: currentY },
+        size: { width: columnWidth, height: finalHeight },
+        style: {
+          fontSize,
+          fontFamily: 'Arial',
+          fontWeight: 'normal',
+          fontStyle: 'normal',
+          textAlign: 'left',
+          color: '#000000',
+          verticalAlign: 'top'
+        },
+        overflow: 'shrink',
+        autoFit: true,
+        showLabel: showLabels,
+        labelStyle: showLabels ? { fontSize: 6, color: '#666666', position: 'above' } : undefined,
+        fieldType: field.fieldType,
+        typeConfig: field.fieldType === 'sequence' ? { sequenceStart: 1, sequencePadding: 3 } : undefined
+      });
+
+      currentY += finalHeight + 1.5; // Spacing between fields
     });
-  }
-
-  // Step 5: Create final field configurations
-  const fields: FieldConfig[] = [];
-  const columnY: number[] = Array(numColumns).fill(padding);
-
-  measuredFields.forEach(field => {
-    const x = padding + (field.column * (columnWidth + columnGap));
-    const y = columnY[field.column];
-
-    fields.push({
-      id: `field-${crypto.randomUUID()}`,
-      templateField: field.fieldName,
-      position: { x, y },
-      size: { width: field.width, height: field.height },
-      style: {
-        fontSize: field.fontSize,
-        fontFamily: 'Arial',
-        fontWeight: 'normal',
-        fontStyle: 'normal',
-        textAlign: 'left',
-        color: '#000000',
-        verticalAlign: 'top'
-      },
-      overflow: 'shrink',
-      autoFit: true,
-      showLabel: showLabels,
-      labelStyle: showLabels ? {
-        fontSize: 6,
-        color: '#666666',
-        position: 'above'
-      } : undefined,
-      fieldType: field.fieldType,
-      typeConfig: field.fieldType === 'sequence' ? { sequenceStart: 1, sequencePadding: 3 } : undefined
-    });
-
-    columnY[field.column] += field.height + 1;
   });
 
-  console.log('✅ AUTO-LAYOUT COMPLETE:', { 
-    totalFields: fields.length,
-    finalHeights: columnY.map((y, i) => `Column ${i + 1}: ${(y - padding).toFixed(1)}mm`),
-    fields: fields.map(f => ({
-      name: f.templateField,
-      fontSize: f.style.fontSize,
-      height: f.size.height.toFixed(1) + 'mm'
-    }))
-  });
+  console.log('✅ AUTO-LAYOUT COMPLETE:', fields.map(f => ({
+    name: f.templateField,
+    fontSize: f.style.fontSize + 'pt',
+    height: f.size.height.toFixed(1) + 'mm'
+  })));
 
   return fields;
 };

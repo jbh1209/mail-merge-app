@@ -128,6 +128,7 @@ export function calculateBestFitFontSize(
 
 /**
  * Detect if text will overflow at the given font size
+ * With 8% tolerance - minor overflow is acceptable
  */
 export function detectTextOverflow(
   text: string,
@@ -144,23 +145,12 @@ export function detectTextOverflow(
   // Measure with word wrapping
   const measurement = measureText(text, fontFamily, fontSize, fontWeight, availableWidth);
   
-  const hasOverflow = measurement.height > availableHeight;
-  const overflowPercentage = hasOverflow
+  // Add 8% tolerance - only flag if significantly over
+  const toleranceHeight = availableHeight * 1.08;
+  const hasOverflow = measurement.height > toleranceHeight;
+  const overflowPercentage = measurement.height > availableHeight
     ? ((measurement.height - availableHeight) / availableHeight) * 100
     : 0;
-
-  // Debug logging
-  if (hasOverflow) {
-    console.log('⚠️ Text overflow detected:', {
-      text: text.substring(0, 50) + '...',
-      containerSize: { width: containerWidth, height: containerHeight },
-      availableSize: { width: availableWidth, height: availableHeight },
-      measuredSize: { width: measurement.width, height: measurement.height },
-      fontSize,
-      lineCount: measurement.lineCount,
-      overflowPercentage: Math.round(overflowPercentage)
-    });
-  }
 
   return {
     hasOverflow,

@@ -95,7 +95,8 @@ export function TemplateDesignCanvas({
         containerHeight,
         field.style.fontSize,
         field.style.fontFamily,
-        field.style.fontWeight
+        field.style.fontWeight,
+        6 // Match auto-layout padding
       );
     });
   }, [fields, sampleRow]);
@@ -194,7 +195,8 @@ export function TemplateDesignCanvas({
         containerHeight,
         field.style.fontSize,
         field.style.fontFamily,
-        field.style.fontWeight
+        field.style.fontWeight,
+        6 // Match auto-layout padding
       );
 
       if (overflow.hasOverflow) count++;

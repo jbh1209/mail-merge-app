@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, X, AlertTriangle } from 'lucide-react';
-import { SingleLabelPreview } from './SingleLabelPreview';
+import { SimpleLabelPreview } from './SimpleLabelPreview';
 import { detectTextOverflow } from '@/lib/text-measurement-utils';
 import { mmToPx } from '@/lib/canvas-utils';
 
@@ -132,7 +132,7 @@ export function LabelFullPagePreview({
 
       {/* Single label preview - centered and large */}
       <div className="w-full h-full flex items-center justify-center px-24">
-        <SingleLabelPreview
+        <SimpleLabelPreview
           template={template}
           designConfig={designConfig}
           dataRow={currentLabel}

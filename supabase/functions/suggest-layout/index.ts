@@ -56,16 +56,51 @@ ${dataAnalysis.map((d: any, i: number) =>
   `${i + 1}. ${d.field}: avg ${d.avgLength} chars, max ${d.maxLength} chars${d.samples ? ` (e.g., "${d.samples[0]}")` : ''}`
 ).join('\n')}
 
-REQUIREMENTS:
-1. All text must fit comfortably (no overflow)
-2. Minimum font size: 8pt
-3. Optimal font size: 10-12pt for readability
-4. Use multi-column layout if beneficial (5+ fields and sufficient width)
-5. Group related fields (city/state/zip, street/city)
-6. Create visual hierarchy (important fields larger/prominent)
-7. Long fields (addresses) need more height
-8. Short fields (IDs, codes) can share horizontal space
-9. Professional spacing and alignment
+CRITICAL REQUIREMENTS (in priority order):
+
+1. MAXIMIZE FONT SIZES:
+   - Start with 14pt and only reduce if text won't fit
+   - NEVER use less than 9pt unless absolutely necessary
+   - Address fields: aim for 11-13pt minimum
+   - Short fields (IDs, codes): can use 13-15pt
+   - Names/titles: 12-14pt
+   
+2. SPACE UTILIZATION:
+   - Fill the available label space efficiently
+   - Don't leave large empty areas
+   - Increase field dimensions to use available space
+   - Larger fields = larger fonts = better readability
+
+3. PREVENT OVERFLOW WITH BUFFERS:
+   - Add 10% height buffer for text fields
+   - Address fields need at least 3 lines worth of height
+   - Use actual sample data to estimate required space
+   - Test with longest sample values
+
+4. SMART MULTI-COLUMN LAYOUT:
+   - Use 2-column layout for 5+ fields when width > 50mm
+   - Place short fields on left, long fields on right
+   - Balance visual weight across columns
+
+5. VISUAL HIERARCHY:
+   - Primary fields (names, addresses): Largest fonts (12-15pt)
+   - Secondary fields (codes, IDs): Medium fonts (10-12pt)
+   - Tertiary info: Smaller fonts (9-10pt) only if needed
+
+6. ANALYSIS OF SAMPLE DATA:
+Sample data provided shows:
+${sampleData?.slice(0, 3).map((row: any, i: number) => 
+  `Row ${i + 1}: ${JSON.stringify(row, null, 2)}`
+).join('\n') || 'No sample data'}
+
+Use this data to:
+- Identify fields with long content (>50 chars) → need more space
+- Identify short fields (<20 chars) → can share horizontal space
+- Estimate required dimensions based on actual content
+
+7. PROFESSIONAL SPACING:
+- Group related fields (city/state/zip, street/city)
+- Consistent alignment and padding
 
 DESIGN PRINCIPLES:
 - Balance: Distribute fields evenly

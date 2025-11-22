@@ -1,5 +1,13 @@
 // Text measurement utilities for dynamic font sizing and overflow detection
 
+/**
+ * Convert CSS points to pixels (96 DPI standard)
+ * 12pt = 16px, 14pt = 18.67px, etc.
+ */
+export function pointsToPixels(points: number): number {
+  return (points / 72) * 96;
+}
+
 export interface TextMeasurement {
   width: number;
   height: number;
@@ -134,26 +142,34 @@ export function detectTextOverflow(
   text: string,
   containerWidth: number,
   containerHeight: number,
-  fontSize: number,
+  fontSizeInPoints: number, // Explicitly points
   fontFamily: string = 'Arial',
   fontWeight: string = 'normal',
   padding: number = 12
 ): { hasOverflow: boolean; overflowPercentage: number } {
+  // Convert points to pixels for Canvas API
+  const fontSizeInPixels = pointsToPixels(fontSizeInPoints);
   const availableWidth = containerWidth - padding;
   const availableHeight = containerHeight - padding;
 
-  // Measure with word wrapping
-  const measurement = measureText(text, fontFamily, fontSize, fontWeight, availableWidth);
+  // Measure using pixels
+  const measurement = measureText(text, fontFamily, fontSizeInPixels, fontWeight, availableWidth);
   
-  // Add 8% tolerance - only flag if significantly over
-  const toleranceHeight = availableHeight * 1.08;
-  const hasOverflow = measurement.height > toleranceHeight;
-  const overflowPercentage = measurement.height > availableHeight
-    ? ((measurement.height - availableHeight) / availableHeight) * 100
-    : 0;
+  // Check for both height and width overflow
+  const hasHeightOverflow = measurement.height > availableHeight;
+  const hasWidthOverflow = measurement.width > availableWidth;
+  
+  if (!hasHeightOverflow && !hasWidthOverflow) {
+    return { hasOverflow: false, overflowPercentage: 0 };
+  }
 
+  const heightRatio = measurement.height / availableHeight;
+  const widthRatio = measurement.width / availableWidth;
+  const overflowPercentage = (Math.max(heightRatio, widthRatio) - 1) * 100;
+
+  const TOLERANCE = 8; // 8% tolerance
   return {
-    hasOverflow,
+    hasOverflow: overflowPercentage > TOLERANCE,
     overflowPercentage: Math.round(overflowPercentage)
   };
 }

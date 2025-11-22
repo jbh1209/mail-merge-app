@@ -103,6 +103,14 @@ export function TemplateDesignCanvas({
     }
   };
 
+  // Auto-trigger AI layout on mount if we have sample data
+  useEffect(() => {
+    if (sampleData && sampleData.length > 0 && !initialDesignConfig?.fields) {
+      console.log('🎨 AUTO-TRIGGERING AI LAYOUT ON MOUNT');
+      handleAutoLayout();
+    }
+  }, []); // Empty deps = only run once on mount
+
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
   const sampleRow = sampleData?.[currentDataIndex];
 
@@ -217,7 +225,10 @@ export function TemplateDesignCanvas({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setCurrentDataIndex(Math.max(0, currentDataIndex - 1))}
+                onClick={() => {
+                  console.log('⬅️ Previous label clicked, current:', currentDataIndex);
+                  setCurrentDataIndex(Math.max(0, currentDataIndex - 1));
+                }}
                 disabled={currentDataIndex === 0}
                 className="h-7 w-7 p-0"
               >
@@ -229,7 +240,10 @@ export function TemplateDesignCanvas({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setCurrentDataIndex(Math.min(sampleData.length - 1, currentDataIndex + 1))}
+                onClick={() => {
+                  console.log('➡️ Next label clicked, current:', currentDataIndex);
+                  setCurrentDataIndex(Math.min(sampleData.length - 1, currentDataIndex + 1));
+                }}
                 disabled={currentDataIndex >= sampleData.length - 1}
                 className="h-7 w-7 p-0"
               >

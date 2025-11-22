@@ -19,18 +19,43 @@ export function SingleLabelPreview({
 }: SingleLabelPreviewProps) {
   const fields: FieldConfig[] = designConfig?.fields || [];
   
-  // Use the scale from design config to match the canvas exactly
-  // If not provided, use scale=1 for true 1:1 preview
-  const scale = designConfig?.canvasSettings?.scale || 1;
-  
   const labelWidthMm = template.width_mm || 101.6;
   const labelHeightMm = template.height_mm || 50.8;
 
-  const labelWidth = mmToPx(labelWidthMm, scale);
-  const labelHeight = mmToPx(labelHeightMm, scale);
+  // Calculate viewport-aware scale for preview
+  const calculatePreviewScale = (): number => {
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Target: fill 70% of viewport width OR 80% of viewport height, whichever is smaller
+    const labelWidthPx = mmToPx(labelWidthMm, 1); // at scale 1
+    const labelHeightPx = mmToPx(labelHeightMm, 1); // at scale 1
+    
+    const scaleByWidth = (viewportWidth * 0.70) / labelWidthPx;
+    const scaleByHeight = (viewportHeight * 0.80) / labelHeightPx;
+    
+    // Use the smaller scale to ensure it fits
+    const optimalScale = Math.min(scaleByWidth, scaleByHeight, 5); // Cap at 5x
+    
+    console.log('📐 PREVIEW SCALE CALCULATION:', {
+      viewportWidth,
+      viewportHeight,
+      labelWidthPx: labelWidthPx.toFixed(1),
+      labelHeightPx: labelHeightPx.toFixed(1),
+      scaleByWidth: scaleByWidth.toFixed(2),
+      scaleByHeight: scaleByHeight.toFixed(2),
+      optimalScale: optimalScale.toFixed(2)
+    });
+    
+    return Math.max(1.5, optimalScale); // Minimum 1.5x for readability
+  };
+
+  const previewScale = calculatePreviewScale();
+  const labelWidth = mmToPx(labelWidthMm, previewScale);
+  const labelHeight = mmToPx(labelHeightMm, previewScale);
 
   console.log('🖼️ PREVIEW RENDER:', {
-    scale,
+    previewScale: previewScale.toFixed(2),
     labelWidthMm,
     labelHeightMm,
     labelWidthPx: labelWidth.toFixed(1),
@@ -51,6 +76,7 @@ export function SingleLabelPreview({
       const text = String(dataRow[dataColumn] || '');
       if (!text) return;
 
+      // CRITICAL: Use scale=1 for overset detection (actual label dimensions)
       const containerWidth = mmToPx(field.size.width, 1);
       const containerHeight = mmToPx(field.size.height, 1);
       
@@ -79,21 +105,22 @@ export function SingleLabelPreview({
     });
 
     return oversets;
-  }, [dataRow, fields, fieldMappings]);
+  }, [dataRow, fields, fieldMappings, template]);
 
   const renderField = (field: FieldConfig) => {
     const dataColumn = fieldMappings[field.templateField];
     const value = dataColumn ? String(dataRow[dataColumn] || '') : generateSampleText(field.templateField);
 
-    const x = mmToPx(field.position.x, scale);
-    const y = mmToPx(field.position.y, scale);
-    const width = mmToPx(field.size.width, scale);
-    const height = mmToPx(field.size.height, scale);
+    // Use preview scale for display
+    const x = mmToPx(field.position.x, previewScale);
+    const y = mmToPx(field.position.y, previewScale);
+    const width = mmToPx(field.size.width, previewScale);
+    const height = mmToPx(field.size.height, previewScale);
 
     const hasOverflow = oversetFields.some(o => o.fieldName === field.templateField);
 
     const style = {
-      fontSize: `${field.style.fontSize * scale}pt`,
+      fontSize: `${field.style.fontSize * previewScale}pt`,
       fontFamily: field.style.fontFamily,
       fontWeight: field.style.fontWeight,
       textAlign: field.style.textAlign,
@@ -106,8 +133,8 @@ export function SingleLabelPreview({
       size: { width: field.size.width.toFixed(1), height: field.size.height.toFixed(1) },
       sizePx: { width: width.toFixed(1), height: height.toFixed(1) },
       fontSize: field.style.fontSize,
-      fontSizeScaled: `${field.style.fontSize * scale}pt`,
-      scale,
+      fontSizeScaled: `${field.style.fontSize * previewScale}pt`,
+      previewScale: previewScale.toFixed(2),
       value: value.substring(0, 30) + (value.length > 30 ? '...' : '')
     });
 

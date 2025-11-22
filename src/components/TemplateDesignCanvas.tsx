@@ -102,20 +102,23 @@ export function TemplateDesignCanvas({
       return;
     }
     
-    // CRITICAL: Finalize field positions before preview to sync layout
+    // CRITICAL: Finalize field positions before preview
     finalizeFieldPositions();
     
-    console.log('🎨 ENTERING PREVIEW MODE');
-    console.log('Canvas Scale:', settings.scale);
-    console.log('Fields to preview:', fields.map(f => ({
-      name: f.templateField,
-      position: f.position,
-      size: f.size,
-      fontSize: f.style.fontSize
-    })));
-    
-    setPreviewMode(true);
-    setCurrentLabelIndex(0);
+    // Use setTimeout to ensure React has flushed state updates
+    setTimeout(() => {
+      console.log('🎨 ENTERING PREVIEW MODE');
+      console.log('Canvas Scale:', settings.scale);
+      console.log('Fields to preview:', fields.map(f => ({
+        name: f.templateField,
+        position: f.position,
+        size: f.size,
+        fontSize: f.style.fontSize
+      })));
+      
+      setPreviewMode(true);
+      setCurrentLabelIndex(0);
+    }, 50); // Small delay to ensure state is synced
   };
 
   // Create mappings from current field positions (1:1 mapping during design)

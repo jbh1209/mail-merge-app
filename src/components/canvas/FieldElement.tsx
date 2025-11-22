@@ -155,11 +155,21 @@ export function FieldElement({
         );
       
       default: // text
+        const isLongText = displayText.length > 50;
+        const shouldWrap = isLongText || displayText.includes(',');
+        
         return (
-          <div className="flex items-center h-full px-2">
+          <div 
+            className="flex items-start h-full px-2 py-1"
+            style={{
+              overflow: 'hidden',
+              wordWrap: shouldWrap ? 'break-word' : 'normal',
+              whiteSpace: shouldWrap ? 'normal' : 'nowrap'
+            }}
+          >
             {field.showLabel && field.labelStyle?.position === 'inline' && (
               <span 
-                className="mr-2 text-muted-foreground uppercase font-medium"
+                className="mr-2 text-muted-foreground uppercase font-medium flex-shrink-0"
                 style={{ 
                   fontSize: `${(field.labelStyle.fontSize / 72) * 96}px`,
                   color: field.labelStyle.color 
@@ -168,13 +178,17 @@ export function FieldElement({
                 {field.templateField}:
               </span>
             )}
-            <span style={{ 
-              fontSize: `${(field.style.fontSize / 72) * 96}px`,
-              fontFamily: field.style.fontFamily,
-              fontWeight: field.style.fontWeight,
-              fontStyle: field.style.fontStyle,
-              color: field.style.color
-            }}>
+            <span 
+              style={{ 
+                fontSize: `${(field.style.fontSize / 72) * 96}px`,
+                fontFamily: field.style.fontFamily,
+                fontWeight: field.style.fontWeight,
+                fontStyle: field.style.fontStyle,
+                color: field.style.color,
+                lineHeight: '1.2',
+                display: shouldWrap ? 'block' : 'inline'
+              }}
+            >
               {displayText}
             </span>
           </div>

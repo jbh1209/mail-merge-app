@@ -47,6 +47,8 @@ export function TemplateDesignCanvas({
   // CRITICAL: Snapshot ref to capture exact field state for preview
   const fieldsSnapshotRef = useRef<any[]>([]);
 
+  const [isAutoLayoutLoading, setIsAutoLayoutLoading] = useState(false);
+
   const {
     fields,
     selectedFieldId,
@@ -56,7 +58,7 @@ export function TemplateDesignCanvas({
     resizeField,
     updateFieldStyle,
     updateSettings,
-    autoLayout,
+    autoLayout: autoLayoutFn,
     deleteField,
     toggleFieldLabels,
     toggleAllFieldLabels,
@@ -72,6 +74,25 @@ export function TemplateDesignCanvas({
     initialDesignConfig,
     sampleData
   });
+
+  const handleAutoLayout = async () => {
+    setIsAutoLayoutLoading(true);
+    const result = await autoLayoutFn();
+    setIsAutoLayoutLoading(false);
+    
+    if (result.success) {
+      toast({
+        title: "AI Layout Applied",
+        description: result.strategy,
+      });
+    } else {
+      toast({
+        title: "AI Layout Failed",
+        description: `${result.error}. Using fallback layout.`,
+        variant: "destructive"
+      });
+    }
+  };
 
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
   const sampleRow = sampleData?.[0];
@@ -266,7 +287,8 @@ export function TemplateDesignCanvas({
           canRedo={canRedo}
           onUndo={undo}
           onRedo={redo}
-          onAutoLayout={autoLayout}
+          onAutoLayout={handleAutoLayout}
+          isAutoLayoutLoading={isAutoLayoutLoading}
           showAllLabels={settings.showAllLabels}
           onToggleAllLabels={() => toggleAllFieldLabels(!settings.showAllLabels)}
           selectedField={selectedField}

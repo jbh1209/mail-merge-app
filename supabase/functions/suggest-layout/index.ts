@@ -42,115 +42,56 @@ serve(async (req) => {
       };
     });
 
-    const prompt = `You are an expert label designer. Create an optimal layout for this label.
+    const prompt = `You are an expert label designer with deep understanding of typography and layout.
 
-TEMPLATE:
+LABEL SPECIFICATIONS:
 - Dimensions: ${templateSize.width}mm × ${templateSize.height}mm
-- Category: ${templateType || 'Label'}
-- Available space: ${Math.round(templateSize.width * templateSize.height)} mm²
-- Padding: 6mm on all sides
-- Usable area: ${templateSize.width - 12}mm × ${templateSize.height - 12}mm
+- Usable area (after 6mm padding): ${templateSize.width - 12}mm × ${templateSize.height - 12}mm
+- Total area: ${Math.round(templateSize.width * templateSize.height)} mm²
 
-FIELD ANALYSIS:
+DATA TO LAYOUT:
 ${dataAnalysis.map((d: any, i: number) => {
-  const isAddress = d.field.toLowerCase().includes('address') || 
-                    d.field.toLowerCase().includes('street') ||
-                    d.field.toLowerCase().includes('location') ||
-                    (d.samples && d.samples[0] && (
-                      d.samples[0].includes(',') && d.samples[0].split(',').length >= 2
-                    ));
-  const hasCommas = d.samples && d.samples[0] && d.samples[0].includes(',');
-  const commaCount = hasCommas ? d.samples[0].split(',').length - 1 : 0;
-  
-  return `${i + 1}. ${d.field}: 
-     - Type: ${isAddress ? '🏠 ADDRESS (multi-line)' : '📝 Regular text'}
-     - Length: avg ${d.avgLength} chars, max ${d.maxLength} chars
-     - Commas: ${commaCount} (each comma = natural line break)
-     - Sample: "${d.samples ? d.samples[0] : 'N/A'}"
-     ${isAddress ? '   ⚠️ REQUIRES: Height for 3-4 lines, font 10-11pt' : ''}`;
-}).join('\n')}
+  return `${i + 1}. Field: "${d.field}"
+   - Sample data: "${d.samples?.[0] || 'N/A'}"
+   - Content length: avg ${d.avgLength} chars, max ${d.maxLength} chars`;
+}).join('\n\n')}
 
-CRITICAL REQUIREMENTS (in priority order):
+YOUR MISSION:
+Create a professional label layout that maximizes readability and uses space efficiently.
 
-1. MAXIMIZE FONT SIZES:
-   - Start with 14pt and only reduce if text won't fit
-   - NEVER use less than 9pt unless absolutely necessary
-   - Address fields: aim for 11-13pt minimum
-   - Short fields (IDs, codes): can use 13-15pt
-   - Names/titles: 12-14pt
-   
-2. SPACE UTILIZATION:
-   - Fill the available label space efficiently
-   - Don't leave large empty areas
-   - Increase field dimensions to use available space
-   - Larger fields = larger fonts = better readability
+Key principles to consider:
+• Maximize font sizes while ensuring all text fits comfortably
+• Addresses with commas should display across multiple lines (split naturally at commas)
+• Balance visual hierarchy - important fields should be prominent
+• Use available space wisely - don't leave large empty areas
+• Ensure proper spacing and alignment for professional appearance
 
-3. PREVENT OVERFLOW WITH SMART HEIGHT ALLOCATION:
-   - ADDRESS FIELDS (contain commas or keywords like "street", "road"):
-     * Calculate: (number of commas + 1) × line height
-     * Minimum 3 lines of height, 4 lines if >100 chars
-     * Use font size 10-11pt (smaller for multi-line readability)
-     * Width: Use most of label width (don't split addresses into columns)
-   
-   - REGULAR FIELDS:
-     * Add 10% height buffer
-     * Use larger fonts (12-14pt)
-     * Can be arranged in columns if space allows
-   
-   - ALWAYS test against LONGEST sample value
-   - Height calculation: (fontSize × 1.2 × estimatedLineCount) + 10% buffer
+Think through:
+1. What type of content is each field? (address, name, ID, etc.)
+2. What dimensions would make each field readable?
+3. What font size works best for each type of content?
+4. How should fields be arranged spatially?
 
-4. SMART MULTI-COLUMN LAYOUT:
-   - Use 2-column layout for 5+ fields when width > 50mm
-   - Place short fields on left, long fields on right
-   - Balance visual weight across columns
+Return a JSON layout with your reasoning documented in "layoutStrategy".
 
-5. VISUAL HIERARCHY:
-   - Primary fields (names, addresses): Largest fonts (12-15pt)
-   - Secondary fields (codes, IDs): Medium fonts (10-12pt)
-   - Tertiary info: Smaller fonts (9-10pt) only if needed
-
-6. ANALYSIS OF SAMPLE DATA:
-Sample data provided shows:
-${sampleData?.slice(0, 3).map((row: any, i: number) => 
-  `Row ${i + 1}: ${JSON.stringify(row, null, 2)}`
-).join('\n') || 'No sample data'}
-
-Use this data to:
-- Identify fields with long content (>50 chars) → need more space
-- Identify short fields (<20 chars) → can share horizontal space
-- Estimate required dimensions based on actual content
-
-7. PROFESSIONAL SPACING:
-- Group related fields (city/state/zip, street/city)
-- Consistent alignment and padding
-
-DESIGN PRINCIPLES:
-- Balance: Distribute fields evenly
-- Readability: Ensure comfortable reading
-- Hierarchy: Important info stands out
-- Aesthetics: Clean, professional look
-
-Return ONLY valid JSON with this structure:
+Required JSON structure:
 {
   "fields": [
     {
       "templateField": "field_name",
-      "position": { "x": 6, "y": 6 },
-      "size": { "width": 45, "height": 15 },
+      "position": { "x": number, "y": number },
+      "size": { "width": number, "height": number },
       "style": {
-        "fontSize": 10,
+        "fontSize": number,
         "fontFamily": "Arial",
         "fontWeight": "normal",
         "textAlign": "left"
       }
     }
   ],
-  "layoutStrategy": "description of approach used",
-  "confidence": 85
-}
-
-Coordinates are in millimeters from top-left. Ensure all fields fit within usable area.`;
+  "layoutStrategy": "explain your design decisions",
+  "confidence": number (0-100)
+}`;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -164,12 +105,12 @@ Coordinates are in millimeters from top-left. Ensure all fields fit within usabl
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-2.5-pro',
         messages: [
           { role: 'system', content: 'You are a professional label layout designer. Return only valid JSON.' },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.4,
+        temperature: 0.7,
       }),
     });
 

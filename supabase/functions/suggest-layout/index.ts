@@ -59,7 +59,7 @@ ${dataAnalysis.map((d: any, i: number) => {
 YOUR MISSION:
 Create a professional label layout that maximizes readability and uses space efficiently.
 
-Key principles to consider:
+Design Principles:
 • Maximize font sizes while ensuring all text fits comfortably
 • Addresses with commas should display across multiple lines (split naturally at commas)
 • Balance visual hierarchy - important fields should be prominent
@@ -72,24 +72,32 @@ Think through:
 3. What font size works best for each type of content?
 4. How should fields be arranged spatially?
 
+TECHNICAL REQUIREMENTS (CRITICAL):
+• ALL positions and sizes MUST be in MILLIMETERS (mm)
+• ALL font sizes MUST be in POINTS (pt)
+• Font sizes: Use 9-14pt range (9pt for long text, 14pt for short important fields)
+• Field heights: Minimum 6mm, allow 8-15mm for multi-line content
+• Field widths: Leave margins, don't use full label width
+• Positions: All x,y coordinates are from top-left in mm
+
 Return a JSON layout with your reasoning documented in "layoutStrategy".
 
-Required JSON structure:
+Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
 {
   "fields": [
     {
       "templateField": "field_name",
-      "position": { "x": number, "y": number },
-      "size": { "width": number, "height": number },
+      "position": { "x": <mm>, "y": <mm> },
+      "size": { "width": <mm>, "height": <mm> },
       "style": {
-        "fontSize": number,
+        "fontSize": <points, 9-14 range>,
         "fontFamily": "Arial",
         "fontWeight": "normal",
         "textAlign": "left"
       }
     }
   ],
-  "layoutStrategy": "explain your design decisions",
+  "layoutStrategy": "explain your design decisions in detail",
   "confidence": number (0-100)
 }`;
 
@@ -128,10 +136,51 @@ Required JSON structure:
 
     const layout = JSON.parse(suggestions);
 
+    // Validate and constrain AI output
+    if (layout.fields) {
+      layout.fields = layout.fields.map((field: any) => {
+        // Constrain font sizes to reasonable range (9-16pt)
+        const fontSize = Math.max(9, Math.min(16, field.style.fontSize));
+        
+        // Constrain widths to usable area
+        const maxWidth = templateSize.width - 12; // 6mm padding each side
+        const width = Math.max(15, Math.min(maxWidth, field.size.width));
+        
+        // Constrain heights (min 6mm for readability)
+        const maxHeight = templateSize.height - 12;
+        const height = Math.max(6, Math.min(maxHeight, field.size.height));
+        
+        // Constrain positions to label bounds
+        const x = Math.max(6, Math.min(templateSize.width - width - 6, field.position.x));
+        const y = Math.max(6, Math.min(templateSize.height - height - 6, field.position.y));
+        
+        console.log(`Validated ${field.templateField}:`, {
+          original: { x: field.position.x, y: field.position.y, w: field.size.width, h: field.size.height, fontSize: field.style.fontSize },
+          constrained: { x, y, width, height, fontSize }
+        });
+        
+        return {
+          ...field,
+          position: { x, y },
+          size: { width, height },
+          style: {
+            ...field.style,
+            fontSize
+          }
+        };
+      });
+    }
+
     console.log('AI layout generated:', { 
       fieldsCount: layout.fields?.length, 
       strategy: layout.layoutStrategy,
-      confidence: layout.confidence 
+      confidence: layout.confidence,
+      fieldsDetails: layout.fields?.map((f: any) => ({
+        name: f.templateField,
+        position: `${f.position.x}mm, ${f.position.y}mm`,
+        size: `${f.size.width}mm × ${f.size.height}mm`,
+        fontSize: `${f.style.fontSize}pt`
+      }))
     });
 
     return new Response(

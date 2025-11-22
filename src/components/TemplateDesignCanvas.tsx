@@ -1,13 +1,13 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FieldElement } from './canvas/FieldElement';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx } from '@/lib/canvas-utils';
-import { CheckCircle2, Info, ArrowLeft } from 'lucide-react';
+import { CheckCircle2, Info, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { InlinePreviewArea } from './InlinePreviewArea';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { detectTextOverflow } from '@/lib/text-measurement-utils';
 
@@ -41,12 +41,7 @@ export function TemplateDesignCanvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
-  const [previewMode, setPreviewMode] = useState(false);
-  const [currentLabelIndex, setCurrentLabelIndex] = useState(0);
-  
-  // CRITICAL: Snapshot ref to capture exact field state for preview
-  const fieldsSnapshotRef = useRef<any[]>([]);
-
+  const [currentDataIndex, setCurrentDataIndex] = useState(0);
   const [isAutoLayoutLoading, setIsAutoLayoutLoading] = useState(false);
 
   const {
@@ -109,7 +104,7 @@ export function TemplateDesignCanvas({
   };
 
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
-  const sampleRow = sampleData?.[0];
+  const sampleRow = sampleData?.[currentDataIndex];
 
   // Real-time overset detection for design canvas
   const fieldOversets = useMemo(() => {
@@ -136,6 +131,54 @@ export function TemplateDesignCanvas({
     });
   }, [fields, sampleRow]);
 
+  // Calculate overset count for current label (used in header badge)
+  const oversetCount = useMemo(() => {
+    if (!sampleData || sampleData.length === 0 || !sampleRow) return 0;
+
+    let count = 0;
+    fields.forEach((field) => {
+      if (field.fieldType !== 'text') return;
+      
+      const dataValue = sampleRow[field.templateField] || field.templateField;
+      const text = String(dataValue);
+      if (!text) return;
+
+      const containerWidth = mmToPx(field.size.width, 1);
+      const containerHeight = mmToPx(field.size.height, 1);
+
+      const hasOverflow = detectTextOverflow(
+        text,
+        containerWidth,
+        containerHeight,
+        field.style.fontSize,
+        field.style.fontFamily,
+        field.style.fontWeight,
+        6
+      );
+
+      if (hasOverflow.hasOverflow) {
+        count++;
+      }
+    });
+
+    return count;
+  }, [fields, sampleRow, currentDataIndex]);
+
+  // Keyboard navigation for sample data
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!sampleData || sampleData.length <= 1) return;
+      
+      if (e.key === 'ArrowLeft' && currentDataIndex > 0) {
+        setCurrentDataIndex(currentDataIndex - 1);
+      } else if (e.key === 'ArrowRight' && currentDataIndex < sampleData.length - 1) {
+        setCurrentDataIndex(currentDataIndex + 1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentDataIndex, sampleData]);
+
   const handleSave = () => {
     finalizeFieldPositions();
     const designConfig = {
@@ -156,116 +199,9 @@ export function TemplateDesignCanvas({
     setSelectedFieldId(null);
   };
 
-  const handlePreviewClick = () => {
-    if (!sampleData || sampleData.length === 0) {
-      toast({ 
-        title: "No data available", 
-        description: "Please upload data first to preview",
-        variant: "destructive" 
-      });
-      return;
-    }
-    
-    console.log('📸 Preview button clicked - Capturing field snapshot');
-    
-    // Finalize positions first
-    finalizeFieldPositions();
-    
-    // CRITICAL: Synchronously capture deep clone of current fields state
-    // This ensures preview gets exact field positions, not stale state
-    fieldsSnapshotRef.current = JSON.parse(JSON.stringify(fields));
-    
-    console.log('📸 SNAPSHOT CAPTURED:', {
-      fieldCount: fieldsSnapshotRef.current.length,
-      fields: fieldsSnapshotRef.current.map(f => ({
-        name: f.templateField,
-        position: f.position,
-        size: f.size,
-        fontSize: f.style.fontSize
-      }))
-    });
-    
-    // Enter preview mode immediately (no setTimeout needed)
-    setPreviewMode(true);
-    setCurrentLabelIndex(0);
-  };
-
-  // Create mappings from current field positions (1:1 mapping during design)
-  const currentMappings: Record<string, string> = {};
-  fields.forEach(field => {
-    currentMappings[field.templateField] = field.templateField;
-  });
-
-  // Template object for preview
-  const templateObj = {
-    id: templateId,
-    name: templateName,
-    width_mm: templateSize.width,
-    height_mm: templateSize.height,
-    template_type: 'built_in_library'
-  };
-
-  // Calculate overset count for current label
-  const oversetCount = useMemo(() => {
-    if (!previewMode || !sampleData || currentLabelIndex >= sampleData.length) return 0;
-    
-    const currentRow = sampleData[currentLabelIndex];
-    let count = 0;
-
-    fields.forEach(field => {
-      if (field.fieldType !== 'text') return;
-      
-      const dataColumn = currentMappings[field.templateField];
-      if (!dataColumn) return;
-      
-      const text = String(currentRow[dataColumn] || '');
-      if (!text) return;
-
-      const containerWidth = mmToPx(field.size.width, 1);
-      const containerHeight = mmToPx(field.size.height, 1);
-      
-      const overflow = detectTextOverflow(
-        text,
-        containerWidth,
-        containerHeight,
-        field.style.fontSize,
-        field.style.fontFamily,
-        field.style.fontWeight,
-        6 // Match auto-layout padding
-      );
-
-      if (overflow.hasOverflow) count++;
-    });
-
-    return count;
-  }, [previewMode, currentLabelIndex, sampleData, fields, currentMappings]);
-
-  if (previewMode) {
-    // Show inline preview mode using SNAPSHOT (not live state)
-    return (
-      <div className="flex flex-col h-full overflow-hidden">
-        <InlinePreviewArea
-          currentIndex={currentLabelIndex}
-          totalLabels={sampleData?.length || 0}
-          template={templateObj}
-          designConfig={{ 
-            fields: fieldsSnapshotRef.current, // Use snapshot instead of live state
-            canvasSettings: { ...settings, scale: 1 } // Force scale=1 for 1:1 preview
-          }}
-          allDataRows={sampleData || []}
-          fieldMappings={currentMappings}
-          onNext={() => setCurrentLabelIndex(i => Math.min(i + 1, (sampleData?.length || 1) - 1))}
-          onPrev={() => setCurrentLabelIndex(i => Math.max(i - 1, 0))}
-          onClose={() => setPreviewMode(false)}
-          oversetCount={oversetCount}
-        />
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Compact header with step indicator and help */}
+      {/* Compact header with step indicator and navigation */}
       <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 border-b bg-background">
         <div className="flex items-center gap-3">
           {stepInfo && (
@@ -274,13 +210,48 @@ export function TemplateDesignCanvas({
             </span>
           )}
           <span className="text-sm font-semibold">Design Layout</span>
+          
+          {/* Navigation for sample data */}
+          {sampleData && sampleData.length > 1 && (
+            <div className="flex items-center gap-2 text-sm border-l pl-3 ml-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentDataIndex(Math.max(0, currentDataIndex - 1))}
+                disabled={currentDataIndex === 0}
+                className="h-7 w-7 p-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-muted-foreground text-xs">
+                Label {currentDataIndex + 1} of {sampleData.length}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentDataIndex(Math.min(sampleData.length - 1, currentDataIndex + 1))}
+                disabled={currentDataIndex >= sampleData.length - 1}
+                className="h-7 w-7 p-0"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          
+          {/* Overset warning badge */}
+          {oversetCount > 0 && (
+            <Badge variant="destructive" className="gap-1.5 ml-2">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {oversetCount} overflow{oversetCount !== 1 ? 's' : ''}
+            </Badge>
+          )}
         </div>
         <Button
           variant="ghost"
           size="sm"
           className="h-7 w-7 p-0"
           onClick={() => {
-            import('sonner').then(m => m.toast.info('Drag fields to position them, resize using handles, and use toolbar to style.'));
+            import('sonner').then(m => m.toast.info('Drag fields to position them, resize using handles, and use toolbar to style. Use arrows to preview different labels.'));
           }}
         >
           <Info className="h-4 w-4" />
@@ -381,20 +352,10 @@ export function TemplateDesignCanvas({
         <Button variant="outline" size="sm" onClick={onCancel}>
           Back
         </Button>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handlePreviewClick}
-            disabled={!sampleData || sampleData.length === 0}
-          >
-            Preview Pages
-          </Button>
-          <Button size="sm" onClick={handleSave}>
-            <CheckCircle2 className="h-4 w-4 mr-2" />
-            Save Design
-          </Button>
-        </div>
+        <Button size="sm" onClick={handleSave}>
+          <CheckCircle2 className="h-4 w-4 mr-2" />
+          Save Design
+        </Button>
       </div>
     </div>
   );

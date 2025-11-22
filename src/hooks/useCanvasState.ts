@@ -20,19 +20,21 @@ interface UseCanvasStateProps {
   templateSize: Size;
   initialFields: string[];
   initialDesignConfig?: any;
+  sampleData?: any[];
 }
 
 export const useCanvasState = ({ 
   templateSize, 
   initialFields, 
-  initialDesignConfig 
+  initialDesignConfig,
+  sampleData = []
 }: UseCanvasStateProps) => {
   // Initialize fields from existing design or create new
   const [fields, setFields] = useState<FieldConfig[]>(() => {
     if (initialDesignConfig?.fields) {
       return initialDesignConfig.fields;
     }
-    return autoLayoutFields(initialFields, templateSize);
+    return autoLayoutFields(initialFields, templateSize, sampleData);
   });
   
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
@@ -180,12 +182,13 @@ export const useCanvasState = ({
     const newFields = autoLayoutFields(
       fields.map(f => f.templateField),
       templateSize,
+      sampleData,
       5, // padding
       settings.showAllLabels
     );
     setFields(newFields);
     saveToHistory(newFields);
-  }, [fields, templateSize, settings.showAllLabels, saveToHistory]);
+  }, [fields, templateSize, sampleData, settings.showAllLabels, saveToHistory]);
 
   const updateSettings = useCallback((newSettings: Partial<CanvasSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));

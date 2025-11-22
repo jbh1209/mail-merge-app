@@ -66,11 +66,36 @@ export function TemplateDesignCanvas({
   } = useCanvasState({ 
     templateSize, 
     initialFields: fieldNames,
-    initialDesignConfig 
+    initialDesignConfig,
+    sampleData
   });
 
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
   const sampleRow = sampleData?.[0];
+
+  // Real-time overset detection for design canvas
+  const fieldOversets = useMemo(() => {
+    if (!sampleRow) return fields.map(() => ({ hasOverflow: false, overflowPercentage: 0 }));
+    
+    return fields.map(field => {
+      if (field.fieldType !== 'text') return { hasOverflow: false, overflowPercentage: 0 };
+      
+      const text = String(sampleRow[field.templateField] || '');
+      if (!text) return { hasOverflow: false, overflowPercentage: 0 };
+      
+      const containerWidth = mmToPx(field.size.width, 1); // Use scale=1 for accurate measurement
+      const containerHeight = mmToPx(field.size.height, 1);
+      
+      return detectTextOverflow(
+        text,
+        containerWidth,
+        containerHeight,
+        field.style.fontSize,
+        field.style.fontFamily,
+        field.style.fontWeight
+      );
+    });
+  }, [fields, sampleRow]);
 
   const handleSave = () => {
     finalizeFieldPositions();
@@ -280,7 +305,7 @@ export function TemplateDesignCanvas({
                 }}
                 onClick={handleCanvasClick}
               >
-                {fields.map((field) => (
+                {fields.map((field, index) => (
                   <FieldElement
                     key={field.id}
                     field={field}
@@ -288,6 +313,8 @@ export function TemplateDesignCanvas({
                     isSelected={field.id === selectedFieldId}
                     sampleData={sampleRow}
                     showAllLabels={settings.showAllLabels}
+                    hasOverflow={fieldOversets[index]?.hasOverflow}
+                    overflowPercentage={fieldOversets[index]?.overflowPercentage || 0}
                     onSelect={() => setSelectedFieldId(field.id)}
                     onMove={(position) => moveField(field.id, position)}
                     onResize={(size) => resizeField(field.id, size)}

@@ -124,13 +124,6 @@ export const calculateOptimalFontSize = (
 };
 
 /**
- * Auto-layout fields in a template
- * @param fieldNames - Names of fields to layout
- * @param templateSize - Template dimensions
- * @param padding - Padding in mm
- * @returns Array of field configurations
- */
-/**
  * Detect field type from field name
  */
 const detectFieldType = (fieldName: string): FieldType => {
@@ -142,67 +135,144 @@ const detectFieldType = (fieldName: string): FieldType => {
 };
 
 /**
- * Intelligent field height based on field name
+ * Get field priority for space allocation
  */
-const getSmartFieldHeight = (fieldName: string, baseHeight: number): number => {
+const getFieldPriority = (fieldName: string): 'high' | 'medium' | 'low' => {
   const lower = fieldName.toLowerCase();
-  
-  // Address fields need more space
-  if (lower.includes('address') || lower.includes('street')) return Math.max(baseHeight * 1.5, 15);
-  
-  // ID/code fields can be shorter
-  if (lower.includes('id') || lower.includes('code') || lower.includes('sku')) return Math.max(baseHeight * 0.7, 6);
-  
-  // QR codes and barcodes need square/rectangular space
-  if (lower.includes('barcode')) return Math.max(baseHeight * 0.8, 10);
-  if (lower.includes('qr')) return Math.max(baseHeight, 12);
-  
-  return baseHeight;
+  if (lower.includes('address') || lower.includes('description') || lower.includes('notes')) return 'high';
+  if (lower.includes('name') || lower.includes('title') || lower.includes('company')) return 'medium';
+  return 'low'; // IDs, codes, short fields
 };
 
+/**
+ * Estimate required width for text content
+ */
+const estimateRequiredWidth = (text: string, fontSize: number = 12): number => {
+  // Rough estimation: ~0.6 times fontSize per character in mm
+  const charWidthMm = fontSize * 0.6 * 0.35; // 0.35mm per pt at standard density
+  return Math.max(20, Math.min(text.length * charWidthMm, 150));
+};
+
+/**
+ * Estimate required height for text content
+ */
+const estimateRequiredHeight = (text: string, fieldType: FieldType, width: number, fontSize: number = 12): number => {
+  if (fieldType !== 'text') {
+    if (fieldType === 'barcode') return 12;
+    if (fieldType === 'qrcode') return 15;
+    return 8;
+  }
+  
+  // Calculate how many lines needed
+  const charWidthMm = fontSize * 0.6 * 0.35;
+  const charsPerLine = Math.floor(width / charWidthMm);
+  const lines = Math.ceil(text.length / Math.max(charsPerLine, 1));
+  const lineHeightMm = fontSize * 0.5; // ~0.5mm per pt
+  
+  return Math.max(8, Math.min(lines * lineHeightMm + 4, 40));
+};
+
+/**
+ * Intelligent auto-layout fields based on actual content
+ * @param fieldNames - Names of fields to layout
+ * @param templateSize - Template dimensions
+ * @param sampleData - Sample data rows for content analysis
+ * @param padding - Padding in mm
+ * @param showLabels - Show field labels
+ * @returns Array of optimized field configurations
+ */
 export const autoLayoutFields = (
   fieldNames: string[],
   templateSize: Size,
+  sampleData: any[] = [],
   padding: number = 5,
   showLabels: boolean = false
 ): FieldConfig[] => {
-  // Label height in mm when labels are shown
+  // Step 1: Analyze content requirements from sample data
+  const fieldRequirements = fieldNames.map(fieldName => {
+    const fieldType = detectFieldType(fieldName);
+    const priority = getFieldPriority(fieldName);
+    
+    // Find max content length across all sample rows
+    let maxContent = generateSampleText(fieldName); // fallback
+    if (sampleData && sampleData.length > 0) {
+      maxContent = sampleData.reduce((longest, row) => {
+        const value = String(row[fieldName] || '');
+        return value.length > longest.length ? value : longest;
+      }, '');
+    }
+    
+    return {
+      fieldName,
+      fieldType,
+      priority,
+      maxContent: maxContent || generateSampleText(fieldName),
+      contentLength: maxContent.length
+    };
+  });
+  
+  // Step 2: Calculate layout strategy
   const labelHeightMm = showLabels ? 6 : 0;
   const usableHeight = templateSize.height - (padding * 2);
   const usableWidth = templateSize.width - (padding * 2);
   
-  // Determine if we should use two-column layout for wide templates
-  const useTwoColumns = templateSize.width > 100 && fieldNames.length > 4;
-  const columnWidth = useTwoColumns ? (usableWidth - 2) / 2 : usableWidth;
+  // Determine column layout based on available space and field count
+  const useTwoColumns = templateSize.width > 100 && fieldNames.length >= 6;
+  const columnWidth = useTwoColumns ? (usableWidth - 3) / 2 : usableWidth;
+  const fieldsPerColumn = useTwoColumns ? Math.ceil(fieldNames.length / 2) : fieldNames.length;
   
-  let currentY = padding;
+  // Step 3: Calculate available height per field
+  const baseAvailableHeight = (usableHeight - (labelHeightMm * fieldsPerColumn)) / fieldsPerColumn;
+  
+  // Step 4: Intelligent field sizing based on content
   const fields: FieldConfig[] = [];
+  let currentY = [padding, padding]; // Track Y for each column
   
-  fieldNames.forEach((name, index) => {
-    const column = useTwoColumns && index >= Math.ceil(fieldNames.length / 2) ? 1 : 0;
-    const baseFieldHeight = Math.min(
-      Math.floor(usableHeight / (useTwoColumns ? Math.ceil(fieldNames.length / 2) : fieldNames.length)) - 1,
-      12
-    );
-    
-    const fieldHeight = getSmartFieldHeight(name, baseFieldHeight);
-    const fieldType = detectFieldType(name);
+  fieldRequirements.forEach((req, index) => {
+    const column = useTwoColumns && index >= fieldsPerColumn ? 1 : 0;
     
     // Reset Y for second column
-    if (column === 1 && index === Math.ceil(fieldNames.length / 2)) {
-      currentY = padding;
+    if (column === 1 && index === fieldsPerColumn) {
+      currentY[1] = padding;
     }
     
-    const fontSize = Math.min(18, Math.max(12, fieldHeight * 1.3));
+    // Start with preferred font size and calculate space needed
+    let fontSize = 12;
     
-    // Add extra space for label if showing labels
-    const yPosition = currentY + (showLabels ? labelHeightMm : 0);
+    // Adjust font size based on content length and priority
+    if (req.contentLength > 100) {
+      fontSize = 10; // Long content gets smaller font
+    } else if (req.contentLength < 20 && req.priority === 'low') {
+      fontSize = 11; // Short, low-priority content
+    } else if (req.priority === 'high') {
+      fontSize = 13; // High priority gets larger font
+    }
+    
+    // Estimate required height based on content and width
+    const estimatedHeight = estimateRequiredHeight(
+      req.maxContent,
+      req.fieldType,
+      columnWidth,
+      fontSize
+    );
+    
+    // Use estimated height but constrain to available space
+    const fieldHeight = Math.max(
+      6, // minimum height
+      Math.min(
+        estimatedHeight,
+        baseAvailableHeight - 2 // leave 2mm spacing
+      )
+    );
+    
+    // Add label space if showing labels
+    const yPosition = currentY[column] + (showLabels ? labelHeightMm : 0);
     
     fields.push({
       id: `field-${index}`,
-      templateField: name,
+      templateField: req.fieldName,
       position: {
-        x: padding + (column * (columnWidth + 2)),
+        x: padding + (column * (columnWidth + 3)),
         y: yPosition
       },
       size: {
@@ -218,7 +288,7 @@ export const autoLayoutFields = (
         color: '#000000',
         verticalAlign: 'middle'
       },
-      overflow: 'shrink', // Default to auto-fit
+      overflow: 'shrink', // Enable auto-fit
       autoFit: true,
       showLabel: showLabels,
       labelStyle: {
@@ -226,12 +296,12 @@ export const autoLayoutFields = (
         color: '#666666',
         position: 'above'
       },
-      fieldType,
-      typeConfig: fieldType === 'sequence' ? { sequenceStart: 1, sequencePadding: 3 } : undefined
+      fieldType: req.fieldType,
+      typeConfig: req.fieldType === 'sequence' ? { sequenceStart: 1, sequencePadding: 3 } : undefined
     });
     
-    // Add field height plus padding, plus label space if showing labels
-    currentY += fieldHeight + 1 + (showLabels ? labelHeightMm : 0);
+    // Advance Y position for next field
+    currentY[column] += fieldHeight + 1 + (showLabels ? labelHeightMm : 0);
   });
   
   return fields;

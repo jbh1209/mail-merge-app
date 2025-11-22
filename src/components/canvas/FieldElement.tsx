@@ -9,6 +9,8 @@ interface FieldElementProps {
   isSelected: boolean;
   sampleData?: Record<string, any>;
   showAllLabels?: boolean;
+  hasOverflow?: boolean;
+  overflowPercentage?: number;
   onSelect: () => void;
   onMove: (position: { x: number; y: number }) => void;
   onResize: (size: { width: number; height: number }) => void;
@@ -22,6 +24,8 @@ export function FieldElement({
   isSelected,
   sampleData,
   showAllLabels = false,
+  hasOverflow = false,
+  overflowPercentage = 0,
   onSelect,
   onMove,
   onResize,
@@ -202,7 +206,11 @@ export function FieldElement({
       {/* Field Content */}
       <div
         className={`border-2 transition-all duration-150 ${
-          isSelected ? 'border-primary ring-2 ring-primary/20 z-10' : 'border-border/50 hover:border-border'
+          hasOverflow 
+            ? 'border-red-500 ring-2 ring-red-500/20' 
+            : isSelected 
+              ? 'border-primary ring-2 ring-primary/20 z-10' 
+              : 'border-border/50 hover:border-border'
         } ${isDragging && 'cursor-grabbing opacity-70'} ${isResizing && 'opacity-70'}`}
         style={{
           width: `${mmToPx(field.size.width, scale)}px`,
@@ -214,8 +222,19 @@ export function FieldElement({
         }}
         onClick={handleClick}
         onMouseDown={handleMouseDown}
+        title={hasOverflow ? `⚠️ Content overflow: ${overflowPercentage.toFixed(0)}%\nIncrease field height or reduce font size` : ''}
       >
         {renderFieldContent()}
+
+        {/* Overflow warning badge */}
+        {hasOverflow && (
+          <div 
+            className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold shadow-md z-20"
+            title={`Content overflow: ${overflowPercentage.toFixed(0)}%`}
+          >
+            !
+          </div>
+        )}
 
         {/* Selected state actions */}
         {isSelected && (

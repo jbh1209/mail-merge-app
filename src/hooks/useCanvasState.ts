@@ -19,13 +19,24 @@ export interface CanvasSettings {
 interface UseCanvasStateProps {
   templateSize: Size;
   initialFields: string[];
+  initialDesignConfig?: any;
 }
 
-export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStateProps) => {
-  const [fields, setFields] = useState<FieldConfig[]>(() => 
-    autoLayoutFields(initialFields, templateSize)
-  );
+export const useCanvasState = ({ 
+  templateSize, 
+  initialFields, 
+  initialDesignConfig 
+}: UseCanvasStateProps) => {
+  // Initialize fields from existing design or create new
+  const [fields, setFields] = useState<FieldConfig[]>(() => {
+    if (initialDesignConfig?.fields) {
+      return initialDesignConfig.fields;
+    }
+    return autoLayoutFields(initialFields, templateSize);
+  });
+  
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  
   // Calculate smart default scale based on template size
   const calculateDefaultScale = () => {
     if (templateSize.width <= 100) return 2.5;
@@ -33,14 +44,20 @@ export const useCanvasState = ({ templateSize, initialFields }: UseCanvasStatePr
     return 1.5;
   };
 
-  const [settings, setSettings] = useState<CanvasSettings>({
-    scale: calculateDefaultScale(),
-    showGrid: true,
-    snapToGrid: true,
-    gridSize: 1,
-    backgroundColor: '#ffffff',
-    showAllLabels: false,
-    defaultLabelFontSize: 6
+  // Initialize settings from existing design or create new
+  const [settings, setSettings] = useState<CanvasSettings>(() => {
+    if (initialDesignConfig?.canvasSettings) {
+      return initialDesignConfig.canvasSettings;
+    }
+    return {
+      scale: calculateDefaultScale(),
+      showGrid: true,
+      snapToGrid: true,
+      gridSize: 1,
+      backgroundColor: '#ffffff',
+      showAllLabels: false,
+      defaultLabelFontSize: 6
+    };
   });
   const [history, setHistory] = useState<FieldConfig[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);

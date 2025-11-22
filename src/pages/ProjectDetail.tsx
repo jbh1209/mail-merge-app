@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Upload, FileText, Play, Plus, Home } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Play, Plus, Home, Edit } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +16,7 @@ import { TemplateWizard } from "@/components/TemplateWizard";
 import { FieldMappingWizard } from "@/components/FieldMappingWizard";
 import { MergeJobRunner } from "@/components/MergeJobRunner";
 import { MergeJobsList } from "@/components/MergeJobsList";
+import { TemplateDesignEditor } from "@/components/TemplateDesignEditor";
 import { useSubscription } from "@/hooks/useSubscription";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -34,6 +35,8 @@ export default function ProjectDetail() {
   const [selectedDataSource, setSelectedDataSource] = useState<any>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("data-sources");
+  const [editingTemplate, setEditingTemplate] = useState<any>(null);
+  const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
 
   // Handle URL params for auto-navigation to merge jobs tab
   useEffect(() => {
@@ -179,6 +182,30 @@ export default function ProjectDetail() {
     setFieldMappingOpen(true);
   };
 
+  const handleEditTemplate = (template: any) => {
+    setEditingTemplate(template);
+    setTemplateEditorOpen(true);
+  };
+
+  const handleSaveDesign = async (updatedConfig: any) => {
+    if (!editingTemplate) return;
+    
+    const { error } = await supabase
+      .from('templates')
+      .update({ design_config: updatedConfig })
+      .eq('id', editingTemplate.id);
+    
+    if (error) {
+      toast.error("Failed to update template design");
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["templates", id] });
+    toast.success("Template design updated");
+    setTemplateEditorOpen(false);
+    setEditingTemplate(null);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -307,9 +334,21 @@ export default function ProjectDetail() {
                             )}
                           </div>
                         </div>
-                        <Badge variant="secondary">
-                          {new Date(template.created_at).toLocaleDateString()}
-                        </Badge>
+                        <div className="flex gap-2 items-center">
+                          <Badge variant="secondary">
+                            {new Date(template.created_at).toLocaleDateString()}
+                          </Badge>
+                          {template.design_config && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleEditTemplate(template)}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit Design
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -524,6 +563,16 @@ export default function ProjectDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      {editingTemplate && (
+        <TemplateDesignEditor
+          open={templateEditorOpen}
+          onOpenChange={setTemplateEditorOpen}
+          template={editingTemplate}
+          projectId={id!}
+          onSave={handleSaveDesign}
+        />
+      )}
     </div>
   );
 }

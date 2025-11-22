@@ -16,6 +16,7 @@ interface TemplateDesignCanvasProps {
   templateName: string;
   fieldNames: string[];
   sampleData?: Record<string, any>[];
+  initialDesignConfig?: any;
   onSave: (designConfig: any) => void;
   onCancel: () => void;
   stepInfo?: { current: number; total: number };
@@ -29,6 +30,7 @@ export function TemplateDesignCanvas({
   templateName,
   fieldNames,
   sampleData,
+  initialDesignConfig,
   onSave,
   onCancel,
   stepInfo,
@@ -61,9 +63,10 @@ export function TemplateDesignCanvas({
     canUndo,
     canRedo,
     finalizeFieldPositions
-  } = useCanvasState({
-    templateSize,
-    initialFields: fieldNames
+  } = useCanvasState({ 
+    templateSize, 
+    initialFields: fieldNames,
+    initialDesignConfig 
   });
 
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;

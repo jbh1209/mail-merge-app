@@ -206,15 +206,18 @@ export const useCanvasState = ({
   }, [saveToHistory, updateSettings]);
 
   const finalizeFieldPositions = useCallback(() => {
-    console.log('💾 FINALIZING FIELD POSITIONS:', fields.map(f => ({
-      name: f.templateField,
-      position: f.position,
-      size: f.size,
-      fontSize: f.style.fontSize
-    })));
-    // Save final positions to history
-    saveToHistory(fields);
-  }, [fields, saveToHistory]);
+    // Use callback to get the LATEST fields state
+    setFields(currentFields => {
+      console.log('💾 FINALIZING FIELD POSITIONS:', currentFields.map(f => ({
+        name: f.templateField,
+        position: f.position,
+        size: f.size,
+        fontSize: f.style.fontSize
+      })));
+      saveToHistory(currentFields);
+      return currentFields; // Return same state but save to history
+    });
+  }, [saveToHistory]);
 
   return {
     fields,

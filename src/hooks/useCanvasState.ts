@@ -196,6 +196,15 @@ export const useCanvasState = ({
       if (error) throw error;
       
       if (data?.fields) {
+        console.log('📐 RAW AI RESPONSE:', {
+          fields: data.fields.map((f: any) => ({
+            name: f.templateField,
+            pos: `${f.position.x},${f.position.y}`,
+            size: `${f.size.width}×${f.size.height}`,
+            fontSize: f.style.fontSize
+          }))
+        });
+        
         const newFields = data.fields.map((field: any) => ({
           id: `field-${field.templateField}`,
           templateField: field.templateField,
@@ -211,6 +220,15 @@ export const useCanvasState = ({
           showLabel: settings.showAllLabels,
           fieldType: 'text' as const
         }));
+        
+        console.log('🎨 APPLIED TO CANVAS:', {
+          fields: newFields.map((f: any) => ({
+            name: f.templateField,
+            pos: `${f.position.x},${f.position.y}`,
+            size: `${f.size.width}×${f.size.height}`,
+            fontSize: f.style.fontSize
+          }))
+        });
         
         setFields(newFields);
         saveToHistory(newFields);

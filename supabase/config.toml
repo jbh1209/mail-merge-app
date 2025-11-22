@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.get-download-url]
 verify_jwt = true
+
+[functions.suggest-layout]
+verify_jwt = true

@@ -24,28 +24,6 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    // Check subscription tier
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('workspace_id')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.workspace_id) {
-      const { data: workspace } = await supabase
-        .from('workspaces')
-        .select('subscription_tier')
-        .eq('id', profile.workspace_id)
-        .single();
-
-      if (workspace?.subscription_tier === 'starter') {
-        return new Response(
-          JSON.stringify({ error: 'AI layout suggestions require Pro or Business tier' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-
     const { templateSize, fieldNames, sampleData, templateType } = await req.json();
 
     console.log('Generating AI layout for:', { templateSize, fieldNames, templateType });

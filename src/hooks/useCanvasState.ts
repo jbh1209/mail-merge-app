@@ -220,7 +220,12 @@ export const useCanvasState = ({
       
       throw new Error('Invalid AI response');
     } catch (error) {
-      console.error('AI layout failed:', error);
+      console.error('❌ AI LAYOUT FAILED:', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        type: typeof error,
+        details: error
+      });
       
       // Fallback to simple grid layout
       const fieldNames = fields.map(f => f.templateField);
@@ -230,6 +235,12 @@ export const useCanvasState = ({
         6,
         settings.showAllLabels
       );
+      
+      console.log('📋 Using fallback layout:', {
+        fieldCount: fallbackFields.length,
+        fields: fallbackFields.map(f => ({ name: f.templateField, position: f.position }))
+      });
+      
       setFields(fallbackFields);
       saveToHistory(fallbackFields);
       

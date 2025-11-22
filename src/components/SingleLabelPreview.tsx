@@ -22,6 +22,18 @@ export function SingleLabelPreview({
   const labelWidthMm = template.width_mm || 101.6;
   const labelHeightMm = template.height_mm || 50.8;
 
+  // VERIFICATION: Log received field positions to compare with design
+  console.log('🔍 PREVIEW VERIFICATION - Received field positions:', {
+    labelIndex,
+    fieldCount: fields.length,
+    fields: fields.map(f => ({
+      name: f.templateField,
+      positionMm: f.position,
+      sizeMm: f.size,
+      fontSize: f.style.fontSize
+    }))
+  });
+
   // Calculate viewport-aware scale for preview
   const calculatePreviewScale = (): number => {
     const viewportWidth = window.innerWidth;

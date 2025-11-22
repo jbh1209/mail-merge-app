@@ -43,6 +43,9 @@ export function TemplateDesignCanvas({
   
   const [previewMode, setPreviewMode] = useState(false);
   const [currentLabelIndex, setCurrentLabelIndex] = useState(0);
+  
+  // CRITICAL: Snapshot ref to capture exact field state for preview
+  const fieldsSnapshotRef = useRef<any[]>([]);
 
   const {
     fields,
@@ -127,23 +130,28 @@ export function TemplateDesignCanvas({
       return;
     }
     
-    // CRITICAL: Finalize field positions before preview
+    console.log('📸 Preview button clicked - Capturing field snapshot');
+    
+    // Finalize positions first
     finalizeFieldPositions();
     
-    // Use setTimeout to ensure React has flushed state updates
-    setTimeout(() => {
-      console.log('🎨 ENTERING PREVIEW MODE');
-      console.log('Canvas Scale:', settings.scale);
-      console.log('Fields to preview:', fields.map(f => ({
+    // CRITICAL: Synchronously capture deep clone of current fields state
+    // This ensures preview gets exact field positions, not stale state
+    fieldsSnapshotRef.current = JSON.parse(JSON.stringify(fields));
+    
+    console.log('📸 SNAPSHOT CAPTURED:', {
+      fieldCount: fieldsSnapshotRef.current.length,
+      fields: fieldsSnapshotRef.current.map(f => ({
         name: f.templateField,
         position: f.position,
         size: f.size,
         fontSize: f.style.fontSize
-      })));
-      
-      setPreviewMode(true);
-      setCurrentLabelIndex(0);
-    }, 50); // Small delay to ensure state is synced
+      }))
+    });
+    
+    // Enter preview mode immediately (no setTimeout needed)
+    setPreviewMode(true);
+    setCurrentLabelIndex(0);
   };
 
   // Create mappings from current field positions (1:1 mapping during design)
@@ -196,7 +204,7 @@ export function TemplateDesignCanvas({
   }, [previewMode, currentLabelIndex, sampleData, fields, currentMappings]);
 
   if (previewMode) {
-    // Show inline preview mode
+    // Show inline preview mode using SNAPSHOT (not live state)
     return (
       <div className="flex flex-col h-full overflow-hidden">
         <InlinePreviewArea
@@ -204,7 +212,7 @@ export function TemplateDesignCanvas({
           totalLabels={sampleData?.length || 0}
           template={templateObj}
           designConfig={{ 
-            fields, 
+            fields: fieldsSnapshotRef.current, // Use snapshot instead of live state
             canvasSettings: { ...settings, scale: 1 } // Force scale=1 for 1:1 preview
           }}
           allDataRows={sampleData || []}

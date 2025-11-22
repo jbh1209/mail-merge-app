@@ -76,9 +76,23 @@ export function TemplateDesignCanvas({
   });
 
   const handleAutoLayout = async () => {
+    console.log('🎨 AI AUTO-LAYOUT TRIGGERED:', {
+      templateSize,
+      fieldCount: fields.length,
+      sampleDataAvailable: !!sampleData,
+      sampleRowCount: sampleData?.length || 0
+    });
+    
     setIsAutoLayoutLoading(true);
     const result = await autoLayoutFn();
     setIsAutoLayoutLoading(false);
+    
+    console.log('📊 AI LAYOUT RESULT:', {
+      success: result.success,
+      strategy: result.strategy,
+      error: result.error,
+      newFieldCount: fields.length
+    });
     
     if (result.success) {
       toast({

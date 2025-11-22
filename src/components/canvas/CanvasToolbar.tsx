@@ -25,6 +25,7 @@ interface CanvasToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   onAutoLayout: () => void;
+  isAutoLayoutLoading?: boolean;
   showAllLabels: boolean;
   onToggleAllLabels: () => void;
   selectedField: FieldConfig | null;
@@ -46,6 +47,7 @@ export function CanvasToolbar({
   onUndo,
   onRedo,
   onAutoLayout,
+  isAutoLayoutLoading = false,
   showAllLabels,
   onToggleAllLabels,
   selectedField,
@@ -121,9 +123,19 @@ export function CanvasToolbar({
       <Separator orientation="vertical" className="h-5" />
 
       {/* Auto Layout */}
-      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onAutoLayout}>
-        <Wand2 className="h-3.5 w-3.5 mr-1.5" />
-        <span className="text-xs">Auto</span>
+      <Button 
+        size="sm" 
+        variant="ghost" 
+        className="h-7 px-2" 
+        onClick={onAutoLayout}
+        disabled={isAutoLayoutLoading}
+      >
+        {isAutoLayoutLoading ? (
+          <div className="h-3.5 w-3.5 mr-1.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        ) : (
+          <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+        )}
+        <span className="text-xs">AI Layout</span>
       </Button>
 
       <Separator orientation="vertical" className="h-5" />

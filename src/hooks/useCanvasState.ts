@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { FieldConfig, autoLayoutFields, constrainToBounds, snapToGrid } from '@/lib/canvas-utils';
+import { FieldConfig, autoLayoutFieldsSimple, constrainToBounds, snapToGrid } from '@/lib/canvas-utils';
 
 interface Size {
   width: number;
@@ -34,7 +34,7 @@ export const useCanvasState = ({
     if (initialDesignConfig?.fields) {
       return initialDesignConfig.fields;
     }
-    return autoLayoutFields(initialFields, templateSize, sampleData);
+    return autoLayoutFieldsSimple(initialFields, templateSize, 6, false);
   });
   
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
@@ -178,16 +178,63 @@ export const useCanvasState = ({
     updateField(fieldId, { fieldType, typeConfig });
   }, [updateField]);
 
-  const autoLayout = useCallback(() => {
-    const newFields = autoLayoutFields(
-      fields.map(f => f.templateField),
-      templateSize,
-      sampleData,
-      5, // padding
-      settings.showAllLabels
-    );
-    setFields(newFields);
-    saveToHistory(newFields);
+  const autoLayout = useCallback(async () => {
+    const { supabase } = await import('@/integrations/supabase/client');
+    
+    try {
+      const fieldNames = fields.map(f => f.templateField);
+      
+      const { data, error } = await supabase.functions.invoke('suggest-layout', {
+        body: {
+          templateSize,
+          fieldNames,
+          sampleData: sampleData?.slice(0, 5) || [],
+          templateType: 'label'
+        }
+      });
+
+      if (error) throw error;
+      
+      if (data?.fields) {
+        const newFields = data.fields.map((field: any) => ({
+          id: `field-${field.templateField}`,
+          templateField: field.templateField,
+          position: { x: field.position.x, y: field.position.y },
+          size: { width: field.size.width, height: field.size.height },
+          style: {
+            fontSize: field.style.fontSize,
+            fontFamily: field.style.fontFamily || 'Arial',
+            fontWeight: field.style.fontWeight || 'normal',
+            textAlign: field.style.textAlign || 'left',
+            color: '#000000'
+          },
+          showLabel: settings.showAllLabels,
+          fieldType: 'text' as const
+        }));
+        
+        setFields(newFields);
+        saveToHistory(newFields);
+        
+        return { success: true, strategy: data.layoutStrategy };
+      }
+      
+      throw new Error('Invalid AI response');
+    } catch (error) {
+      console.error('AI layout failed:', error);
+      
+      // Fallback to simple grid layout
+      const fieldNames = fields.map(f => f.templateField);
+      const fallbackFields = autoLayoutFieldsSimple(
+        fieldNames,
+        templateSize,
+        6,
+        settings.showAllLabels
+      );
+      setFields(fallbackFields);
+      saveToHistory(fallbackFields);
+      
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   }, [fields, templateSize, sampleData, settings.showAllLabels, saveToHistory]);
 
   const updateSettings = useCallback((newSettings: Partial<CanvasSettings>) => {

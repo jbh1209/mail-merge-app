@@ -50,25 +50,32 @@ export function measureText(
     };
   }
 
-  // Multi-line measurement with wrapping
-  const words = text.split(' ');
+  // For long text with commas, split intelligently
+  const hasCommas = text.includes(',');
+  const segments = hasCommas ? text.split(',').map(s => s.trim()) : [text];
+  
   const lines: string[] = [];
-  let currentLine = '';
   
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
+  for (const segment of segments) {
+    // Wrap each segment by spaces
+    const words = segment.split(' ');
+    let currentLine = '';
     
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+      
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
     }
-  }
-  
-  if (currentLine) {
-    lines.push(currentLine);
+    
+    if (currentLine) {
+      lines.push(currentLine);
+    }
   }
 
   const maxLineWidth = Math.max(...lines.map(line => ctx.measureText(line).width));

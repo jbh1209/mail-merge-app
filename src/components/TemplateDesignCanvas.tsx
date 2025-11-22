@@ -208,7 +208,22 @@ export function TemplateDesignCanvas({
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden relative">
+      {/* AI Layout Loading Overlay */}
+      {isAutoLayoutLoading && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-card border rounded-lg p-6 shadow-lg flex flex-col items-center gap-4">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <div className="text-center">
+              <h3 className="font-semibold text-lg">AI is Optimizing Your Layout</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Analyzing {sampleData?.length || 0} labels...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Compact header with step indicator and navigation */}
       <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 border-b bg-background">
         <div className="flex items-center gap-3">

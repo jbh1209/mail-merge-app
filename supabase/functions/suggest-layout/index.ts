@@ -51,10 +51,24 @@ TEMPLATE:
 - Padding: 6mm on all sides
 - Usable area: ${templateSize.width - 12}mm × ${templateSize.height - 12}mm
 
-FIELDS TO LAYOUT:
-${dataAnalysis.map((d: any, i: number) => 
-  `${i + 1}. ${d.field}: avg ${d.avgLength} chars, max ${d.maxLength} chars${d.samples ? ` (e.g., "${d.samples[0]}")` : ''}`
-).join('\n')}
+FIELD ANALYSIS:
+${dataAnalysis.map((d: any, i: number) => {
+  const isAddress = d.field.toLowerCase().includes('address') || 
+                    d.field.toLowerCase().includes('street') ||
+                    d.field.toLowerCase().includes('location') ||
+                    (d.samples && d.samples[0] && (
+                      d.samples[0].includes(',') && d.samples[0].split(',').length >= 2
+                    ));
+  const hasCommas = d.samples && d.samples[0] && d.samples[0].includes(',');
+  const commaCount = hasCommas ? d.samples[0].split(',').length - 1 : 0;
+  
+  return `${i + 1}. ${d.field}: 
+     - Type: ${isAddress ? '🏠 ADDRESS (multi-line)' : '📝 Regular text'}
+     - Length: avg ${d.avgLength} chars, max ${d.maxLength} chars
+     - Commas: ${commaCount} (each comma = natural line break)
+     - Sample: "${d.samples ? d.samples[0] : 'N/A'}"
+     ${isAddress ? '   ⚠️ REQUIRES: Height for 3-4 lines, font 10-11pt' : ''}`;
+}).join('\n')}
 
 CRITICAL REQUIREMENTS (in priority order):
 
@@ -71,11 +85,20 @@ CRITICAL REQUIREMENTS (in priority order):
    - Increase field dimensions to use available space
    - Larger fields = larger fonts = better readability
 
-3. PREVENT OVERFLOW WITH BUFFERS:
-   - Add 10% height buffer for text fields
-   - Address fields need at least 3 lines worth of height
-   - Use actual sample data to estimate required space
-   - Test with longest sample values
+3. PREVENT OVERFLOW WITH SMART HEIGHT ALLOCATION:
+   - ADDRESS FIELDS (contain commas or keywords like "street", "road"):
+     * Calculate: (number of commas + 1) × line height
+     * Minimum 3 lines of height, 4 lines if >100 chars
+     * Use font size 10-11pt (smaller for multi-line readability)
+     * Width: Use most of label width (don't split addresses into columns)
+   
+   - REGULAR FIELDS:
+     * Add 10% height buffer
+     * Use larger fonts (12-14pt)
+     * Can be arranged in columns if space allows
+   
+   - ALWAYS test against LONGEST sample value
+   - Height calculation: (fontSize × 1.2 × estimatedLineCount) + 10% buffer
 
 4. SMART MULTI-COLUMN LAYOUT:
    - Use 2-column layout for 5+ fields when width > 50mm

@@ -306,6 +306,7 @@ ${dataAnalysis.map((d: any) =>
 
 FIELD TYPE DESIGN PRINCIPLES:
 - ADDRESS: Multi-line content with comma breaks, needs clear line spacing, typically smaller fonts (9-12pt), middle/bottom placement
+  **CRITICAL: ADDRESS fields MUST use whiteSpace: 'pre-line' and transformCommas: true to enable semantic line breaks**
 - NAME: Primary identifier, should be prominent and eye-catching (12-16pt), top placement preferred
 - CODE: Machine-readable emphasis, often monospace consideration, compact but scannable (10-14pt), high visibility area
 - PROVINCE/CITY: Secondary location info, medium prominence (10-13pt), often grouped with address
@@ -355,12 +356,13 @@ YOUR DESIGN PROCESS:
 
 5. RENDERING PROPERTIES:
    For each field, choose CSS properties that match your design:
-   - whiteSpace: "normal" (multi-line wrapping) or "nowrap" (single line)
+   - whiteSpace: "pre-line" (ADDRESS fields - preserves newlines) | "normal" (multi-line wrapping) | "nowrap" (single line)
    - wordWrap: "break-word" (if multi-line) or "normal" (if single line)
    - lineHeight: "1.2" (multi-line readability) or "1" (compact single line)
    - display: "block" (for multi-line) or "inline" (for compact single line)
    - fontWeight: "normal" or "bold" (for emphasis)
    - textAlign: "left", "center", or "right" (for layout balance)
+   - transformCommas: true (ADDRESS fields ONLY - converts commas to newlines for semantic breaks)
 
 TECHNICAL CONSTRAINTS (Only Physical Limits):
 - All positions/sizes in MILLIMETERS (mm)
@@ -382,15 +384,17 @@ Return JSON with your complete design and explain your reasoning:
         "fontWeight": "normal" | "bold",
         "textAlign": "left" | "center" | "right",
         "color": "#000000",
-        "whiteSpace": "normal" | "nowrap",
+        "whiteSpace": "pre-line" | "normal" | "nowrap",
         "wordWrap": "break-word" | "normal",
         "lineHeight": "1.2" | "1",
-        "display": "block" | "inline"
+        "display": "block" | "inline",
+        "transformCommas": true | false  // SET TO true FOR ADDRESS FIELDS ONLY
       }
     }
   ],
   "layoutStrategy": "Explain your design thinking: What did you make prominent? Why? How did you handle the address? What was your spatial strategy?",
   "confidence": <0-100>
+}
 }`;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -446,7 +450,7 @@ Return JSON with your complete design and explain your reasoning:
         const y = Math.max(0, Math.min(templateSize.height - height, field.position.y));
         
         // Validate CSS rendering properties
-        const validWhiteSpace = ['normal', 'nowrap'];
+        const validWhiteSpace = ['normal', 'nowrap', 'pre-line'];
         const validWordWrap = ['break-word', 'normal'];
         const validDisplay = ['block', 'inline', 'flex'];
         const validFontWeight = ['normal', 'bold'];
@@ -458,11 +462,12 @@ Return JSON with your complete design and explain your reasoning:
         const display = validDisplay.includes(field.style.display) ? field.style.display : 'block';
         const fontWeight = validFontWeight.includes(field.style.fontWeight) ? field.style.fontWeight : 'normal';
         const textAlign = validTextAlign.includes(field.style.textAlign) ? field.style.textAlign : 'left';
+        const transformCommas = Boolean(field.style.transformCommas);
         
         console.log(`Validated ${field.templateField}:`, {
           original: { x: field.position.x, y: field.position.y, w: field.size.width, h: field.size.height, fontSize: field.style.fontSize },
           constrained: { x, y, width, height, fontSize },
-          cssProps: { whiteSpace, wordWrap, lineHeight, display, fontWeight, textAlign }
+          cssProps: { whiteSpace, wordWrap, lineHeight, display, fontWeight, textAlign, transformCommas }
         });
         
         return {
@@ -477,7 +482,8 @@ Return JSON with your complete design and explain your reasoning:
             lineHeight,
             display,
             fontWeight,
-            textAlign
+            textAlign,
+            transformCommas
           }
         };
       });

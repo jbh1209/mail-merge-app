@@ -401,8 +401,12 @@ FIELDS: ${fieldNames.join(', ')}
 DATA ANALYSIS:
 ${dataAnalysis.map((d: any) => `${d.field}: ${d.fieldType}, max ${d.maxLength} chars, suggest ${d.suggestedFontSize}pt`).join('\n')}
 
-${addressFieldName ? `ADDRESS (FIXED): ${addressFontSize}pt font, ${addressHeight}mm height, ${Math.ceil(addressHeight / (addressFontSize * 1.1 * 0.35))} lines
-⚠️ DO NOT change ADDRESS font/height. Focus on other fields.
+${addressFieldName ? `ADDRESS (FIXED): 
+- Font: ${addressFontSize}pt (EXACT)
+- Height: ${addressHeight}mm (EXACT)
+- Lines: ${Math.ceil(addressHeight / (addressFontSize * 1.1 * 0.35))}
+- Rendering: whiteSpace='pre-line', transformCommas=true (for multi-line display)
+⚠️ DO NOT modify these values. Use exact font/height.
 ` : ''}
 
 SPACE:
@@ -424,7 +428,8 @@ ${addressFieldName ? `6. ADDRESS: ${addressFontSize}pt, ${addressHeight}mm (EXAC
 Return ONLY valid JSON:
 {
   "fields": [
-    {"templateField": "FIELD", "position": {"x": 3, "y": 3}, "size": {"width": 50, "height": 8}, "style": {"fontSize": 14, "fontWeight": "bold", "textAlign": "left", "color": "#000000", "whiteSpace": "nowrap", "lineHeight": "1"}}
+    {"templateField": "ADDRESS", "position": {"x": 3, "y": 29}, "size": {"width": 95.6, "height": 16}, "style": {"fontSize": 8, "fontWeight": "normal", "textAlign": "left", "whiteSpace": "pre-line", "lineHeight": "1.1", "transformCommas": true}},
+    {"templateField": "OTHER", "position": {"x": 3, "y": 3}, "size": {"width": 50, "height": 8}, "style": {"fontSize": 14, "fontWeight": "bold", "textAlign": "left", "whiteSpace": "nowrap", "lineHeight": "1"}}
   ]
 }`
 
@@ -517,13 +522,18 @@ Return ONLY valid JSON:
         const validFontWeight = ['normal', 'bold'];
         const validTextAlign = ['left', 'center', 'right'];
         
-        const whiteSpace = validWhiteSpace.includes(field.style.whiteSpace) ? field.style.whiteSpace : 'normal';
+        // Force multi-line rendering for ADDRESS fields (comma-separated data needs line breaks)
+        const isAddressField = field.templateField === addressFieldName || 
+                               field.templateField.toUpperCase().includes('ADDRESS');
+        
+        const whiteSpace = isAddressField ? 'pre-line' : 
+                           (validWhiteSpace.includes(field.style.whiteSpace) ? field.style.whiteSpace : 'normal');
         const wordWrap = validWordWrap.includes(field.style.wordWrap) ? field.style.wordWrap : 'normal';
         const lineHeight = field.style.lineHeight || '1.2';
         const display = validDisplay.includes(field.style.display) ? field.style.display : 'block';
         const fontWeight = validFontWeight.includes(field.style.fontWeight) ? field.style.fontWeight : 'normal';
         const textAlign = validTextAlign.includes(field.style.textAlign) ? field.style.textAlign : 'left';
-        const transformCommas = Boolean(field.style.transformCommas);
+        const transformCommas = isAddressField ? true : Boolean(field.style.transformCommas);
         
         console.log(`Validated ${field.templateField}:`, {
           original: { x: field.position.x, y: field.position.y, w: field.size.width, h: field.size.height, fontSize: field.style.fontSize },

@@ -1,10 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, X, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { SimpleLabelPreview } from './SimpleLabelPreview';
-import { detectTextOverflow } from '@/lib/text-measurement-utils';
-import { mmToPx } from '@/lib/canvas-utils';
 
 interface LabelFullPagePreviewProps {
   open: boolean;
@@ -28,42 +26,6 @@ export function LabelFullPagePreview({
   // Single label preview mode: 1 label per page
   const totalPages = allDataRows.length;
   const currentLabel = allDataRows[currentPage];
-
-  // Count overset fields for current label
-  const oversetCount = useMemo(() => {
-    if (!currentLabel || !designConfig?.fields) return 0;
-    
-    const fields = designConfig.fields;
-    let count = 0;
-    
-    fields.forEach((field: any) => {
-      if (field.fieldType !== 'text') return;
-      
-      const dataColumn = fieldMappings[field.templateField];
-      if (!dataColumn) return;
-      
-      const text = String(currentLabel[dataColumn] || '');
-      if (!text) return;
-
-      const containerWidth = mmToPx(field.size.width, 1);
-      const containerHeight = mmToPx(field.size.height, 1);
-      
-      const overflow = detectTextOverflow(
-        text,
-        containerWidth,
-        containerHeight,
-        field.style.fontSize,
-        field.style.fontFamily,
-        field.style.fontWeight
-      );
-
-      if (overflow.hasOverflow) {
-        count++;
-      }
-    });
-
-    return count;
-  }, [currentLabel, designConfig, fieldMappings]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -100,14 +62,6 @@ export function LabelFullPagePreview({
           <div className="text-white text-lg font-semibold">
             Label {currentPage + 1} of {totalPages}
           </div>
-          {oversetCount > 0 && (
-            <div className="flex items-center gap-2 bg-destructive/20 border border-destructive/40 px-3 py-1 rounded-full">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              <span className="text-destructive text-sm font-medium">
-                {oversetCount} field{oversetCount !== 1 ? 's' : ''} overflow
-              </span>
-            </div>
-          )}
         </div>
         <Button
           variant="ghost"

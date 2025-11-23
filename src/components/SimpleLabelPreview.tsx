@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { mmToPx } from '@/lib/canvas-utils';
-import { detectTextOverflow } from '@/lib/text-measurement-utils';
 
 interface SimpleLabelPreviewProps {
   template: any;
@@ -38,45 +37,9 @@ export function SimpleLabelPreview({
   const labelWidthPx = mmToPx(labelWidthMm, previewScale);
   const labelHeightPx = mmToPx(labelHeightMm, previewScale);
 
-  // Detect overset fields
-  const oversetFields = useMemo(() => {
-    const oversets = new Set<string>();
-    
-    fields.forEach((field: any) => {
-      if (field.fieldType !== 'text') return;
-      
-      const dataColumn = fieldMappings[field.templateField];
-      if (!dataColumn) return;
-      
-      const text = String(dataRow[dataColumn] || '');
-      if (!text) return;
-
-      const containerWidth = mmToPx(field.size.width, 1);
-      const containerHeight = mmToPx(field.size.height, 1);
-      
-      const overflow = detectTextOverflow(
-        text,
-        containerWidth,
-        containerHeight,
-        field.style.fontSize,
-        field.style.fontFamily,
-        field.style.fontWeight,
-        4  // Account for 2px padding on each side
-      );
-
-      if (overflow.hasOverflow) {
-        oversets.add(field.id);
-      }
-    });
-    
-    return oversets;
-  }, [fields, dataRow, fieldMappings]);
-
   const renderField = (field: any) => {
     const dataColumn = fieldMappings[field.templateField];
     const dataValue = dataRow[dataColumn] || field.templateField;
-    
-    const isOverset = oversetFields.has(field.id);
     
     const scaledX = mmToPx(field.position.x, previewScale);
     const scaledY = mmToPx(field.position.y, previewScale);
@@ -90,16 +53,17 @@ export function SimpleLabelPreview({
     return (
       <div
         key={field.id}
-        className={`absolute overflow-hidden flex items-start ${isOverset ? 'border-2 border-red-500' : ''}`}
+        className="absolute overflow-hidden"
         style={{
           left: `${scaledX}px`,
           top: `${scaledY}px`,
           width: `${scaledWidth}px`,
           height: `${scaledHeight}px`,
           padding: '2px',
+          boxSizing: 'border-box'
         }}
       >
-        <span
+        <div
           style={{
             fontSize: `${scaledFontSize}px`,
             fontFamily: field.style.fontFamily,
@@ -107,15 +71,16 @@ export function SimpleLabelPreview({
             textAlign: field.style.textAlign,
             color: field.style.color,
             whiteSpace: field.style.whiteSpace || 'normal',
-            wordWrap: field.style.wordWrap || 'normal',
+            wordWrap: field.style.wordWrap || 'break-word',
             lineHeight: field.style.lineHeight || '1.2',
-            display: field.style.display || 'block',
+            display: 'block',
             width: '100%',
+            height: '100%',
             boxSizing: 'border-box'
           }}
         >
           {String(dataValue)}
-        </span>
+        </div>
       </div>
     );
   };

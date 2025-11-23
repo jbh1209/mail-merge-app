@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { FieldConfig, mmToPx, generateSampleText } from '@/lib/canvas-utils';
 import { calculateLayout, getLabelPosition } from '@/lib/label-layout-utils';
-import { detectTextOverflow } from '@/lib/text-measurement-utils';
 
 interface LabelPagePreviewProps {
   template: any;
@@ -32,45 +31,6 @@ export function LabelPagePreview({
 }: LabelPagePreviewProps) {
   const layout = useMemo(() => calculateLayout(template), [template]);
   const fields: FieldConfig[] = designConfig?.fields || [];
-
-  // Detect overset labels
-  const oversetLabels = useMemo<LabelOverset[]>(() => {
-    const oversets: LabelOverset[] = [];
-    
-    dataRows.forEach((row, labelIndex) => {
-      fields.forEach(field => {
-        if (field.fieldType !== 'text') return;
-        
-        const dataColumn = fieldMappings[field.templateField];
-        if (!dataColumn) return;
-        
-        const text = String(row[dataColumn] || '');
-        if (!text) return;
-
-        const containerWidth = mmToPx(field.size.width, 1);
-        const containerHeight = mmToPx(field.size.height, 1);
-        
-        const overflow = detectTextOverflow(
-          text,
-          containerWidth,
-          containerHeight,
-          field.style.fontSize,
-          field.style.fontFamily,
-          field.style.fontWeight
-        );
-
-        if (overflow.hasOverflow) {
-          oversets.push({
-            labelIndex,
-            fieldName: field.templateField,
-            overflowPercentage: overflow.overflowPercentage
-          });
-        }
-      });
-    });
-
-    return oversets;
-  }, [dataRows, fields, fieldMappings]);
 
   const renderField = (field: FieldConfig, dataRow: any, offsetX: number, offsetY: number) => {
     const dataColumn = fieldMappings[field.templateField];
@@ -118,17 +78,14 @@ export function LabelPagePreview({
     const labelWidth = mmToPx(layout.labelWidth, scale);
     const labelHeight = mmToPx(layout.labelHeight, scale);
 
-    const hasOverset = oversetLabels.some(o => o.labelIndex === labelIndex);
     const isHighlighted = labelIndex === highlightedLabelIndex;
 
     return (
       <div
         key={labelIndex}
-        className={`absolute border transition-all ${
-          hasOverset ? 'border-destructive bg-destructive/5' : 'border-border'
-        } ${isHighlighted ? 'ring-2 ring-primary shadow-lg' : ''} ${
-          onLabelClick ? 'cursor-pointer hover:border-primary' : ''
-        }`}
+        className={`absolute border transition-all border-border ${
+          isHighlighted ? 'ring-2 ring-primary shadow-lg' : ''
+        } ${onLabelClick ? 'cursor-pointer hover:border-primary' : ''}`}
         style={{
           left: `${offsetX}px`,
           top: `${offsetY}px`,
@@ -137,11 +94,6 @@ export function LabelPagePreview({
         }}
         onClick={() => onLabelClick?.(labelIndex)}
       >
-        {hasOverset && (
-          <div className="absolute top-1 right-1 bg-destructive text-destructive-foreground text-[8px] px-1 rounded">
-            ⚠️
-          </div>
-        )}
         {fields.map(field => renderField(field, dataRow, 0, 0))}
       </div>
     );

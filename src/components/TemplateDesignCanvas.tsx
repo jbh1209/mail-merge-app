@@ -1,15 +1,13 @@
-import { useRef, useState, useMemo, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FieldElement } from './canvas/FieldElement';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx } from '@/lib/canvas-utils';
-import { CheckCircle2, Info, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { detectTextOverflow } from '@/lib/text-measurement-utils';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
@@ -114,64 +112,6 @@ export function TemplateDesignCanvas({
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
   const sampleRow = sampleData?.[currentDataIndex];
 
-  // Real-time overset detection for design canvas
-  const fieldOversets = useMemo(() => {
-    if (!sampleRow) return fields.map(() => ({ hasOverflow: false, overflowPercentage: 0 }));
-    
-    return fields.map(field => {
-      if (field.fieldType !== 'text') return { hasOverflow: false, overflowPercentage: 0 };
-      
-      const text = String(sampleRow[field.templateField] || '');
-      if (!text) return { hasOverflow: false, overflowPercentage: 0 };
-      
-      const containerWidth = mmToPx(field.size.width, 1); // Use scale=1 for accurate measurement
-      const containerHeight = mmToPx(field.size.height, 1);
-      
-      return detectTextOverflow(
-        text,
-        containerWidth,
-        containerHeight,
-        field.style.fontSize,
-        field.style.fontFamily,
-        field.style.fontWeight,
-        6 // Match auto-layout padding
-      );
-    });
-  }, [fields, sampleRow]);
-
-  // Calculate overset count for current label (used in header badge)
-  const oversetCount = useMemo(() => {
-    if (!sampleData || sampleData.length === 0 || !sampleRow) return 0;
-
-    let count = 0;
-    fields.forEach((field) => {
-      if (field.fieldType !== 'text') return;
-      
-      const dataValue = sampleRow[field.templateField] || field.templateField;
-      const text = String(dataValue);
-      if (!text) return;
-
-      const containerWidth = mmToPx(field.size.width, 1);
-      const containerHeight = mmToPx(field.size.height, 1);
-
-      const hasOverflow = detectTextOverflow(
-        text,
-        containerWidth,
-        containerHeight,
-        field.style.fontSize,
-        field.style.fontFamily,
-        field.style.fontWeight,
-        6
-      );
-
-      if (hasOverflow.hasOverflow) {
-        count++;
-      }
-    });
-
-    return count;
-  }, [fields, sampleRow, currentDataIndex]);
-
   // Keyboard navigation for sample data
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -266,14 +206,6 @@ export function TemplateDesignCanvas({
               </Button>
             </div>
           )}
-          
-          {/* Overset warning badge */}
-          {oversetCount > 0 && (
-            <Badge variant="destructive" className="gap-1.5 ml-2">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              {oversetCount} overflow{oversetCount !== 1 ? 's' : ''}
-            </Badge>
-          )}
         </div>
         <Button
           variant="ghost"
@@ -351,7 +283,7 @@ export function TemplateDesignCanvas({
                 }}
                 onClick={handleCanvasClick}
               >
-                {fields.map((field, index) => (
+                {fields.map((field) => (
                   <FieldElement
                     key={field.id}
                     field={field}
@@ -359,8 +291,6 @@ export function TemplateDesignCanvas({
                     isSelected={field.id === selectedFieldId}
                     sampleData={sampleRow}
                     showAllLabels={settings.showAllLabels}
-                    hasOverflow={fieldOversets[index]?.hasOverflow}
-                    overflowPercentage={fieldOversets[index]?.overflowPercentage || 0}
                     onSelect={() => setSelectedFieldId(field.id)}
                     onMove={(position) => moveField(field.id, position)}
                     onResize={(size) => resizeField(field.id, size)}

@@ -2,6 +2,84 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.1";
 import { corsHeaders } from "../_shared/cors.ts";
 
+// Text measurement utility for AI to calculate precise dimensions
+interface TextMeasurement {
+  width: number;
+  height: number;
+  lineCount: number;
+}
+
+function measureText(
+  text: string,
+  fontSizePx: number,
+  maxWidthPx?: number
+): TextMeasurement {
+  // Character width estimation (based on typical Arial metrics)
+  const avgCharWidthRatio = 0.55; // Average character is ~55% of font size
+  const charWidth = fontSizePx * avgCharWidthRatio;
+  const lineHeight = fontSizePx * 1.2;
+  
+  if (!maxWidthPx) {
+    // Single line
+    return {
+      width: text.length * charWidth,
+      height: lineHeight,
+      lineCount: 1
+    };
+  }
+  
+  // Multi-line with wrapping
+  const hasCommas = text.includes(',');
+  const segments = hasCommas ? text.split(',').map(s => s.trim()) : [text];
+  
+  let lineCount = 0;
+  let maxLineWidth = 0;
+  
+  for (const segment of segments) {
+    const words = segment.split(' ');
+    let currentLineWidth = 0;
+    
+    for (const word of words) {
+      const wordWidth = word.length * charWidth;
+      const spaceWidth = charWidth;
+      
+      if (currentLineWidth > 0 && currentLineWidth + spaceWidth + wordWidth > maxWidthPx) {
+        // Word doesn't fit, wrap to next line
+        maxLineWidth = Math.max(maxLineWidth, currentLineWidth);
+        lineCount++;
+        currentLineWidth = wordWidth;
+      } else {
+        // Add word to current line
+        currentLineWidth += (currentLineWidth > 0 ? spaceWidth : 0) + wordWidth;
+      }
+    }
+    
+    if (currentLineWidth > 0) {
+      maxLineWidth = Math.max(maxLineWidth, currentLineWidth);
+      lineCount++;
+    }
+  }
+  
+  return {
+    width: maxLineWidth,
+    height: lineCount * lineHeight,
+    lineCount
+  };
+}
+
+function mmToPx(mm: number): number {
+  // 96 DPI standard: 1 inch = 25.4mm = 96px
+  return (mm / 25.4) * 96;
+}
+
+function pxToMm(px: number): number {
+  return (px / 96) * 25.4;
+}
+
+function pointsToPx(points: number): number {
+  return (points / 72) * 96;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -28,57 +106,76 @@ serve(async (req) => {
 
     console.log('Generating AI layout for:', { templateSize, fieldNames, templateType });
 
-    // Analyze sample data
+    // Analyze sample data with actual measurements
     const dataAnalysis = fieldNames.map((field: string) => {
       const samples = sampleData?.slice(0, 5).map((row: any) => row[field] || '').filter(Boolean);
-      if (!samples || samples.length === 0) return { field, avgLength: 0, maxLength: 0 };
+      if (!samples || samples.length === 0) return { 
+        field, 
+        avgLength: 0, 
+        maxLength: 0, 
+        sampleText: '',
+        hasCommas: false
+      };
       
       const lengths = samples.map((s: string) => String(s).length);
+      const sampleText = String(samples[0] || '');
+      
       return {
         field,
         avgLength: Math.round(lengths.reduce((a: number, b: number) => a + b, 0) / lengths.length),
         maxLength: Math.max(...lengths),
+        sampleText,
+        hasCommas: sampleText.includes(','),
         samples: samples.slice(0, 2)
       };
     });
 
-    const prompt = `You are an expert label designer with deep understanding of typography and layout.
+    const prompt = `You are an AI layout calculator with precise text measurement capabilities.
 
 LABEL SPECIFICATIONS:
 - Dimensions: ${templateSize.width}mm × ${templateSize.height}mm
 - Usable area (after 6mm padding): ${templateSize.width - 12}mm × ${templateSize.height - 12}mm
 - Total area: ${Math.round(templateSize.width * templateSize.height)} mm²
 
-DATA TO LAYOUT:
+ACTUAL DATA WITH MEASUREMENTS:
 ${dataAnalysis.map((d: any, i: number) => {
+  const text = d.sampleText || 'N/A';
+  // Calculate measurements at different font sizes
+  const measurements10pt = measureText(text, pointsToPx(10), mmToPx(templateSize.width - 12));
+  const measurements12pt = measureText(text, pointsToPx(12), mmToPx(templateSize.width - 12));
+  
   return `${i + 1}. Field: "${d.field}"
-   - Sample data: "${d.samples?.[0] || 'N/A'}"
-   - Content length: avg ${d.avgLength} chars, max ${d.maxLength} chars`;
+   - Actual text: "${text}"
+   - Length: ${d.avgLength} chars (max: ${d.maxLength})
+   - Has commas: ${d.hasCommas ? 'YES - will wrap naturally' : 'NO'}
+   - At 10pt: ${pxToMm(measurements10pt.width).toFixed(1)}mm wide × ${pxToMm(measurements10pt.height).toFixed(1)}mm tall (${measurements10pt.lineCount} lines)
+   - At 12pt: ${pxToMm(measurements12pt.width).toFixed(1)}mm wide × ${pxToMm(measurements12pt.height).toFixed(1)}mm tall (${measurements12pt.lineCount} lines)`;
 }).join('\n\n')}
 
-YOUR MISSION:
-Create a professional label layout that maximizes readability and uses space efficiently.
+CRITICAL: YOUR MEASUREMENTS ARE PRE-CALCULATED
+I have measured each field at different font sizes for you (shown above).
+Use these measurements to allocate PRECISE dimensions. Do not guess.
 
-Design Principles:
-• Maximize font sizes while ensuring all text fits comfortably
-• Addresses with commas should display across multiple lines (split naturally at commas)
-• Balance visual hierarchy - important fields should be prominent
-• Use available space wisely - don't leave large empty areas
-• Ensure proper spacing and alignment for professional appearance
+YOUR TASK:
+1. Review the measurements above - these are ACTUAL rendered dimensions
+2. Choose appropriate font sizes based on:
+   - Short fields (< 20 chars): 12-14pt for prominence
+   - Medium fields (20-50 chars): 10-12pt for balance
+   - Long fields (> 50 chars): 9-10pt to fit comfortably
+3. Allocate field height = measured height + 2mm buffer
+4. Allocate field width = measured width (text will wrap naturally)
+5. Position fields with 2mm gaps - NO OVERLAPS
 
-CRITICAL SPATIAL RULES:
-• Fields MUST NOT overlap - check that no field's bounding box intersects with another
-• For adjacent fields, space them with gaps: minimum 2mm between fields
-• Example: If field A ends at x=40mm, field B should start at x=42mm minimum
-• Always verify: field1.x + field1.width + 2mm < field2.x for horizontally adjacent fields
-• For vertically stacked fields: field1.y + field1.height + 2mm < field2.y
+SPATIAL RULES (CRITICAL):
+• Use the measurements provided - they are pre-calculated and accurate
+• Add 2mm buffer to measured dimensions for comfortable spacing
+• Verify no overlaps: field1.x + field1.width + 2mm <= field2.x
+• Multi-line text (with commas) needs vertical space - use the line count from measurements
 
-Think through:
-1. What type of content is each field? (address, name, ID, etc.)
-2. What dimensions would make each field readable?
-3. What font size works best for each type of content?
-4. How should fields be arranged spatially?
-5. How should each field's text render? (single line vs multi-line)
+LAYOUT STRATEGY:
+• Top section: Short, important fields (names, IDs) - larger fonts
+• Middle section: Medium content - balanced sizing
+• Bottom section: Long fields (addresses) - smaller fonts but adequate height for multiple lines
 
 TECHNICAL REQUIREMENTS (CRITICAL):
 • ALL positions and sizes MUST be in MILLIMETERS (mm)
@@ -248,7 +345,7 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
       throw new Error(`Layout has overlapping fields: ${overlaps.join(', ')}. Please try regenerating the layout.`);
     }
 
-    console.log('AI layout generated:', {
+    console.log('AI-calculated layout (with measurements):', {
       fieldsCount: layout.fields?.length, 
       strategy: layout.layoutStrategy,
       confidence: layout.confidence,
@@ -256,7 +353,8 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
         name: f.templateField,
         position: `${f.position.x}mm, ${f.position.y}mm`,
         size: `${f.size.width}mm × ${f.size.height}mm`,
-        fontSize: `${f.style.fontSize}pt`
+        fontSize: `${f.style.fontSize}pt`,
+        rendering: `${f.style.whiteSpace}, ${f.style.display}`
       }))
     });
 

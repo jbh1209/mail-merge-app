@@ -292,6 +292,27 @@ serve(async (req) => {
     const availableWidth = templateSize.width - 6; // 3mm margins left+right
     const availableHeight = templateSize.height - 6; // 3mm margins top+bottom
     
+    // Identify horizontal pairing opportunities FIRST (before font calculations)
+    const pairings = [
+      { fields: ['STORE NAME', 'A0 POSTER'] },
+      { fields: ['STORE CODE', 'PROVINCE'] },
+      { fields: ['STORE AREA', 'AREA MANAGER'] }
+    ];
+    
+    const validPairings = pairings.filter(p => 
+      p.fields.every(f => fieldNames.includes(f))
+    );
+    
+    const pairedFields = new Set(validPairings.flatMap(p => p.fields));
+    const widthPerPairedField = (availableWidth - 2) / 2; // Split width with 2mm gap
+    
+    console.log('🔗 PAIRINGS IDENTIFIED:', validPairings.map(p => p.fields.join(' + ')));
+    console.log('📏 WIDTH ALLOCATION:', {
+      availableWidth,
+      widthPerPairedField,
+      pairedFields: Array.from(pairedFields)
+    });
+    
     // 1A. Analyze ADDRESS field FIRST (highest priority, multi-line)
     const addressField = dataAnalysis.find((d: any) => 
       d.fieldType === 'ADDRESS' || d.field.toUpperCase().includes('ADDRESS')
@@ -350,21 +371,24 @@ serve(async (req) => {
         const fieldType = d.fieldType;
         const maxLength = d.maxLineLength; // Use post-split length
         
-        // Determine font size based on field type and data length
+        // Determine available width for THIS field (pairing-aware)
+        const fieldWidth = pairedFields.has(d.field) ? widthPerPairedField : availableWidth;
+        
+        // Determine font size based on field type, data length, and ACTUAL available width
         let fontSize: number;
         let fontWeight: 'normal' | 'bold';
         
         if (fieldType === 'CODE' || fieldType === 'BARCODE') {
-          // Codes: Large, bold, prominent
-          fontSize = 18;
+          // Codes: Calculate based on actual width available
+          fontSize = Math.min(18, Math.max(12, Math.floor(fieldWidth / (maxLength * 0.6))));
           fontWeight = 'bold';
         } else if (fieldType === 'NAME') {
-          // Names: Medium-large, bold
-          fontSize = Math.min(17, Math.max(14, Math.floor(availableWidth / (maxLength * 0.55))));
+          // Names: Calculate based on actual width available
+          fontSize = Math.min(16, Math.max(11, Math.floor(fieldWidth / (maxLength * 0.55))));
           fontWeight = 'bold';
         } else {
-          // General: Medium, normal weight
-          fontSize = Math.min(15, Math.max(12, Math.floor(availableWidth / (maxLength * 0.55))));
+          // General: Calculate based on actual width available
+          fontSize = Math.min(14, Math.max(9, Math.floor(fieldWidth / (maxLength * 0.55))));
           fontWeight = 'normal';
         }
         
@@ -425,43 +449,54 @@ serve(async (req) => {
       
       console.log('✅ PERFECT FIT - Using calculated dimensions');
     } else {
-      // Need to scale down proportionally
-      const scaleFactor = (availableHeight - (fieldNames.length - 1) * 2) / 
-                         (totalNeeded - (fieldNames.length - 1) * 2);
+      // Priority-based allocation: ADDRESS > NAME/CODE > GENERAL
+      const priorities = new Map<string, number>();
       
+      // Assign priorities based on field type
       if (addressRequirements) {
+        priorities.set(addressRequirements.fieldName, 3); // Highest - multi-line address
+      }
+      
+      for (const field of otherFieldRequirements) {
+        if (field.fieldType === 'NAME' || field.fieldType === 'CODE') {
+          priorities.set(field.fieldName, 2.5); // High - important identifiers
+        } else {
+          priorities.set(field.fieldName, 1); // Normal - general fields
+        }
+      }
+      
+      // Calculate weighted allocation
+      const totalPriority = Array.from(priorities.values()).reduce((sum, p) => sum + p, 0);
+      const gaps = (fieldNames.length - 1) * 2;
+      const spacePerPriority = (availableHeight - gaps) / totalPriority;
+      
+      // Allocate based on priority
+      if (addressRequirements) {
+        const priority = priorities.get(addressRequirements.fieldName) || 1;
+        const allocatedHeight = Math.ceil(priority * spacePerPriority);
         finalAllocations.set(addressRequirements.fieldName, {
-          fontSize: Math.max(8, Math.floor(addressRequirements.fontSize * scaleFactor)),
-          height: Math.ceil(addressRequirements.height * scaleFactor),
+          fontSize: Math.max(8, addressRequirements.fontSize),
+          height: allocatedHeight,
           fontWeight: addressRequirements.fontWeight
         });
       }
       
       for (const field of otherFieldRequirements) {
+        const priority = priorities.get(field.fieldName) || 1;
+        const allocatedHeight = Math.ceil(priority * spacePerPriority);
         finalAllocations.set(field.fieldName, {
-          fontSize: Math.max(8, Math.floor(field.fontSize * scaleFactor)),
-          height: Math.ceil(field.height * scaleFactor),
+          fontSize: Math.max(8, Math.floor(field.fontSize * 0.9)), // Slight reduction for fit
+          height: allocatedHeight,
           fontWeight: field.fontWeight
         });
       }
       
-      console.log(`⚖️ SCALED DOWN by ${(scaleFactor * 100).toFixed(0)}% to fit`, {
-        scaleFactor: scaleFactor.toFixed(2)
+      console.log('⚖️ PRIORITY-BASED ALLOCATION', {
+        priorities: Object.fromEntries(priorities),
+        spacePerPriority: spacePerPriority.toFixed(1)
       });
     }
     
-    // Identify horizontal pairing opportunities
-    const pairings = [
-      { fields: ['STORE NAME', 'A0 POSTER'] },
-      { fields: ['STORE CODE', 'PROVINCE'] },
-      { fields: ['STORE AREA', 'AREA MANAGER'] }
-    ];
-    
-    const validPairings = pairings.filter(p => 
-      p.fields.every(f => fieldNames.includes(f))
-    );
-    
-    console.log('🔗 VALID PAIRINGS:', validPairings.map(p => p.fields.join(' + ')));
 
     // ========================================================================
     // STEP 3: BUILD PROMPT - Tell AI exact dimensions to use

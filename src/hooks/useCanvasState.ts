@@ -179,12 +179,35 @@ export const useCanvasState = ({
   }, [updateField]);
 
   const getFieldData = useCallback(() => {
-    return fields.map(f => ({
-      field: f.templateField,
-      sampleValue: sampleData?.[0]?.[f.templateField] || '',
-      fieldType: f.fieldType,
-      priority: 'MEDIUM'
-    }));
+    return fields.map(f => {
+      const sampleValue = sampleData?.[0]?.[f.templateField] || '';
+      const fieldName = f.templateField.toUpperCase();
+      
+      // Intelligent priority detection based on field semantics
+      let priority = 'MEDIUM';
+      if (fieldName.includes('ADDRESS') || fieldName.includes('LOCATION')) {
+        priority = 'HIGHEST'; // Multi-line fields need 50-60% vertical space
+      } else if ((fieldName.includes('NAME') || fieldName.includes('STORE')) && !fieldName.includes('CODE')) {
+        priority = 'HIGH'; // Names need visual prominence
+      } else if (sampleValue.length <= 10 || fieldName.includes('CODE') || fieldName.includes('ID') || fieldName.includes('SKU')) {
+        priority = 'LOW'; // Short codes/IDs are compact
+      }
+      
+      // Calculate additional metadata
+      const maxCharacters = sampleValue.length;
+      const lineCount = fieldName.includes('ADDRESS') 
+        ? (sampleValue.match(/,/g) || []).length + 1 
+        : undefined;
+      
+      return {
+        field: f.templateField,
+        sampleValue,
+        fieldType: f.fieldType,
+        priority,
+        maxCharacters,
+        lineCount
+      };
+    });
   }, [fields, sampleData]);
 
   const autoLayout = useCallback(async () => {

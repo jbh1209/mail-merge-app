@@ -276,13 +276,13 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
         // Constrain font sizes to reasonable range (9-16pt)
         const fontSize = Math.max(9, Math.min(16, field.style.fontSize));
         
-        // Constrain widths to usable area
+        // Constrain widths to template bounds only, trust AI's calculated dimensions
         const maxWidth = templateSize.width - 12; // 6mm padding each side
-        const width = Math.max(15, Math.min(maxWidth, field.size.width));
+        const width = Math.min(maxWidth, field.size.width);
         
-        // Constrain heights (min 6mm for readability)
+        // Constrain heights to template bounds only
         const maxHeight = templateSize.height - 12;
-        const height = Math.max(6, Math.min(maxHeight, field.size.height));
+        const height = Math.min(maxHeight, field.size.height);
         
         // Constrain positions to label bounds
         const x = Math.max(6, Math.min(templateSize.width - width - 6, field.position.x));

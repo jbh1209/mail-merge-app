@@ -71,6 +71,7 @@ Think through:
 2. What dimensions would make each field readable?
 3. What font size works best for each type of content?
 4. How should fields be arranged spatially?
+5. How should each field's text render? (single line vs multi-line)
 
 TECHNICAL REQUIREMENTS (CRITICAL):
 • ALL positions and sizes MUST be in MILLIMETERS (mm)
@@ -79,6 +80,30 @@ TECHNICAL REQUIREMENTS (CRITICAL):
 • Field heights: Minimum 6mm, allow 8-15mm for multi-line content
 • Field widths: Leave margins, don't use full label width
 • Positions: All x,y coordinates are from top-left in mm
+
+CSS RENDERING INSTRUCTIONS (CRITICAL):
+For EACH field, you MUST specify complete CSS rendering properties:
+
+• whiteSpace: 
+  - "normal" for multi-line text (addresses, long descriptions)
+  - "nowrap" for single-line text (IDs, short codes, names)
+
+• wordWrap:
+  - "break-word" when whiteSpace is "normal"
+  - "normal" when whiteSpace is "nowrap"
+
+• lineHeight:
+  - "1.2" for multi-line text (better readability)
+  - "1" for single-line text (compact)
+
+• display:
+  - "block" for multi-line text
+  - "inline" for single-line text
+
+EXAMPLES:
+- Address field (long, has commas): whiteSpace "normal", wordWrap "break-word", lineHeight "1.2", display "block"
+- Product code (short): whiteSpace "nowrap", wordWrap "normal", lineHeight "1", display "inline"
+- Name (medium): depends on length - analyze the sample data
 
 Return a JSON layout with your reasoning documented in "layoutStrategy".
 
@@ -93,7 +118,12 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
         "fontSize": <points, 9-14 range>,
         "fontFamily": "Arial",
         "fontWeight": "normal",
-        "textAlign": "left"
+        "textAlign": "left",
+        "color": "#000000",
+        "whiteSpace": "normal" | "nowrap",
+        "wordWrap": "break-word" | "normal",
+        "lineHeight": "1.2" | "1",
+        "display": "block" | "inline"
       }
     }
   ],
@@ -154,9 +184,20 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
         const x = Math.max(6, Math.min(templateSize.width - width - 6, field.position.x));
         const y = Math.max(6, Math.min(templateSize.height - height - 6, field.position.y));
         
+        // Validate CSS rendering properties
+        const validWhiteSpace = ['normal', 'nowrap'];
+        const validWordWrap = ['break-word', 'normal'];
+        const validDisplay = ['block', 'inline', 'flex'];
+        
+        const whiteSpace = validWhiteSpace.includes(field.style.whiteSpace) ? field.style.whiteSpace : 'normal';
+        const wordWrap = validWordWrap.includes(field.style.wordWrap) ? field.style.wordWrap : 'normal';
+        const lineHeight = field.style.lineHeight || '1.2';
+        const display = validDisplay.includes(field.style.display) ? field.style.display : 'block';
+        
         console.log(`Validated ${field.templateField}:`, {
           original: { x: field.position.x, y: field.position.y, w: field.size.width, h: field.size.height, fontSize: field.style.fontSize },
-          constrained: { x, y, width, height, fontSize }
+          constrained: { x, y, width, height, fontSize },
+          cssProps: { whiteSpace, wordWrap, lineHeight, display }
         });
         
         return {
@@ -165,7 +206,11 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
           size: { width, height },
           style: {
             ...field.style,
-            fontSize
+            fontSize,
+            whiteSpace,
+            wordWrap,
+            lineHeight,
+            display
           }
         };
       });

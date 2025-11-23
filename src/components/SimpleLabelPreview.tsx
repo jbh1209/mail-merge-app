@@ -74,11 +74,6 @@ export function SimpleLabelPreview({
   const renderField = (field: any) => {
     const dataColumn = fieldMappings[field.templateField];
     const dataValue = dataRow[dataColumn] || field.templateField;
-    const displayText = String(dataValue);
-    
-    // Detect if text should wrap (respect AI's multi-line intention)
-    const isLongText = displayText.length > 50;
-    const shouldWrap = isLongText || displayText.includes(',');
     
     const isOverset = oversetFields.has(field.id);
     
@@ -90,34 +85,34 @@ export function SimpleLabelPreview({
     // Convert font size from points to pixels, then scale
     const fontSizeInPixels = (field.style.fontSize / 72) * 96;
     const scaledFontSize = fontSizeInPixels * previewScale;
-    
-    const style = {
-      fontSize: `${scaledFontSize}px`,
-      fontFamily: field.style.fontFamily,
-      fontWeight: field.style.fontWeight,
-      textAlign: field.style.textAlign,
-      color: field.style.color,
-      whiteSpace: shouldWrap ? 'normal' : 'nowrap',
-      wordWrap: shouldWrap ? 'break-word' : 'normal',
-      lineHeight: '1.2',
-      display: 'flex',
-      alignItems: 'flex-start',
-    } as React.CSSProperties;
 
     return (
       <div
         key={field.id}
-        className={`absolute overflow-hidden ${isOverset ? 'border-2 border-red-500' : ''}`}
+        className={`absolute overflow-hidden flex items-start ${isOverset ? 'border-2 border-red-500' : ''}`}
         style={{
           left: `${scaledX}px`,
           top: `${scaledY}px`,
           width: `${scaledWidth}px`,
           height: `${scaledHeight}px`,
-          padding: '4px',
-          ...style
+          padding: '2px',
         }}
       >
-        {String(dataValue)}
+        <span
+          style={{
+            fontSize: `${scaledFontSize}px`,
+            fontFamily: field.style.fontFamily,
+            fontWeight: field.style.fontWeight,
+            textAlign: field.style.textAlign,
+            color: field.style.color,
+            whiteSpace: field.style.whiteSpace || 'normal',
+            wordWrap: field.style.wordWrap || 'normal',
+            lineHeight: field.style.lineHeight || '1.2',
+            display: field.style.display || 'block',
+          }}
+        >
+          {String(dataValue)}
+        </span>
       </div>
     );
   };

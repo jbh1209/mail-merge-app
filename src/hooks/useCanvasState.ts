@@ -188,7 +188,7 @@ export const useCanvasState = ({
         body: {
           templateSize,
           fieldNames,
-          sampleData: sampleData?.slice(0, 5) || [],
+          sampleData: sampleData || [], // Send ALL data rows for accurate analysis
           templateType: 'label'
         }
       });

@@ -104,31 +104,102 @@ serve(async (req) => {
 
     const { templateSize, fieldNames, sampleData, templateType } = await req.json();
 
-    console.log('Generating AI layout for:', { templateSize, fieldNames, templateType });
+    console.log('Generating AI layout for:', { templateSize, fieldNames, templateType, totalRows: sampleData?.length });
 
-    // Analyze sample data with actual measurements
-    const dataAnalysis = fieldNames.map((field: string) => {
-      const samples = sampleData?.slice(0, 5).map((row: any) => row[field] || '').filter(Boolean);
-      if (!samples || samples.length === 0) return { 
-        field, 
-        avgLength: 0, 
-        maxLength: 0, 
-        sampleText: '',
-        hasCommas: false
-      };
+    // Helper: Get longest line length after splitting by commas
+    function getMaxLineLength(text: string): number {
+      if (text.includes(',')) {
+        const segments = text.split(',').map(s => s.trim());
+        return Math.max(...segments.map(s => s.length));
+      }
+      return text.length;
+    }
+
+    // Helper: Calculate optimal font size based on character length
+    function calculateOptimalFontSize(
+      maxLineLength: number,
+      availableWidthMm: number,
+      minSize: number = 8,
+      maxSize: number = 18
+    ): number {
+      let low = minSize;
+      let high = maxSize;
+      let bestFit = minSize;
       
-      const lengths = samples.map((s: string) => String(s).length);
-      const sampleText = String(samples[0] || '');
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const testText = "W".repeat(maxLineLength);
+        const measured = measureText(testText, pointsToPx(mid));
+        const measuredMm = pxToMm(measured.width);
+        
+        if (measuredMm <= availableWidthMm) {
+          bestFit = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      
+      return bestFit;
+    }
+
+    // Analyze ALL data rows for accurate character counts
+    const dataAnalysis = fieldNames.map((field: string) => {
+      // Get ALL values for this field across ALL rows
+      const allValues = sampleData?.map((row: any) => String(row[field] || '')).filter(Boolean) || [];
+      
+      if (allValues.length === 0) {
+        return { 
+          field, 
+          maxLength: 0,
+          maxLineLength: 0,
+          avgLength: 0, 
+          sampleText: '',
+          hasCommas: false,
+          suggestedFontSize: 12
+        };
+      }
+      
+      // Find max length BEFORE splitting (for reference)
+      const maxLength = Math.max(...allValues.map((v: string) => v.length));
+      
+      // Find max LINE length AFTER splitting (for font sizing)
+      const maxLineLength = Math.max(...allValues.map((v: string) => getMaxLineLength(v)));
+      
+      const avgLength = Math.round(
+        allValues.reduce((sum: number, v: string) => sum + v.length, 0) / allValues.length
+      );
+      
+      const sampleText = allValues[0];
+      const hasCommas = sampleText.includes(',');
+      
+      // Calculate optimal font size based on post-split line length
+      const usableWidth = templateSize.width * 0.8;
+      const suggestedFontSize = calculateOptimalFontSize(
+        maxLineLength,
+        usableWidth,
+        hasCommas ? 8 : 9,
+        hasCommas ? 14 : 18
+      );
       
       return {
         field,
-        avgLength: Math.round(lengths.reduce((a: number, b: number) => a + b, 0) / lengths.length),
-        maxLength: Math.max(...lengths),
+        maxLength,           // Full string length (e.g., 68 chars for full address)
+        maxLineLength,       // Longest segment after comma-split (e.g., 14 chars)
+        avgLength,
         sampleText,
-        hasCommas: sampleText.includes(','),
-        samples: samples.slice(0, 2)
+        hasCommas,
+        suggestedFontSize,   // Pre-calculated font size
+        samples: allValues.slice(0, 2)
       };
     });
+
+    console.log('Data analysis complete:', dataAnalysis.map((d: any) => ({
+      field: d.field,
+      maxLength: d.maxLength,
+      maxLineLength: d.maxLineLength,
+      suggestedFontSize: d.suggestedFontSize
+    })));
 
     const prompt = `You are a professional label designer AI with text measurement capabilities.
 
@@ -139,20 +210,19 @@ LABEL CANVAS:
 YOUR DATA TO DESIGN WITH:
 ${dataAnalysis.map((d: any, i: number) => {
   const text = d.sampleText || 'N/A';
-  // Show measurements at multiple sizes so AI can explore options
-  const sizes = [8, 10, 12, 14, 16, 18];
-  const measurements = sizes.map(pt => {
-    const m = measureText(text, pointsToPx(pt), mmToPx(templateSize.width - 12));
-    return `${pt}pt: ${pxToMm(m.width).toFixed(1)}×${pxToMm(m.height).toFixed(1)}mm (${m.lineCount} lines)`;
-  });
   
   return `Field "${d.field}":
-   Text: "${text}"
-   Character count: ${d.maxLength}
-   Contains commas: ${d.hasCommas ? 'Yes (semantic line breaks possible)' : 'No'}
-   Measurements at different sizes:
-   ${measurements.join('\n   ')}`;
+   Sample text: "${text}"
+   ${d.hasCommas ? `Full character count: ${d.maxLength} chars
+   Longest line after comma-split: ${d.maxLineLength} chars ← USE THIS FOR SIZING` : `Character count: ${d.maxLength} chars`}
+   Contains commas: ${d.hasCommas ? 'Yes - will render as multi-line with semantic breaks' : 'No'}
+   **SUGGESTED FONT SIZE: ${d.suggestedFontSize}pt** (pre-calculated to fit ALL ${sampleData?.length || 0} data rows)`;
 }).join('\n\n')}
+
+FONT SIZE GUIDANCE:
+${dataAnalysis.map((d: any) => 
+  `- "${d.field}": ${d.suggestedFontSize}pt (calculated for ${d.hasCommas ? 'longest line (' + d.maxLineLength + ' chars)' : 'full text (' + d.maxLength + ' chars)'})`
+).join('\n')}
 
 YOUR DESIGN PROCESS:
 1. ANALYZE THE DATA

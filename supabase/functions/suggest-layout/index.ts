@@ -285,13 +285,118 @@ serve(async (req) => {
       suggestedFontSize: d.suggestedFontSize
     })));
 
-    const prompt = `You are a professional label designer AI with text measurement capabilities.
+    // Phase 1: Calculate Space Budget and Pairings
+    const availableHeight = templateSize.height - 6; // margins
+    const fieldCount = fieldNames.length;
+    
+    // Define base space allocation priorities
+    const baseAllocation: Record<string, { priority: string; minHeight: number; maxHeight: number }> = {
+      'STORE NAME': { priority: 'high', minHeight: 7, maxHeight: 10 },
+      'ADDRESS': { priority: 'critical', minHeight: 15, maxHeight: 25 },
+      'STORE CODE': { priority: 'high', minHeight: 6, maxHeight: 8 },
+      'PROVINCE': { priority: 'medium', minHeight: 6, maxHeight: 8 },
+      'A0 POSTER': { priority: 'medium', minHeight: 6, maxHeight: 8 },
+      'STORE AREA': { priority: 'low', minHeight: 5, maxHeight: 7 },
+      'AREA MANAGER': { priority: 'low', minHeight: 5, maxHeight: 7 }
+    };
+    
+    // Identify horizontal pairing opportunities
+    const pairings = [
+      { fields: ['STORE NAME', 'A0 POSTER'], saves: 8 },
+      { fields: ['STORE CODE', 'PROVINCE'], saves: 7 },
+      { fields: ['STORE AREA', 'AREA MANAGER'], saves: 6 }
+    ];
+    
+    // Filter pairings to only those where both fields exist
+    const validPairings = pairings.filter(p => 
+      p.fields.every(f => fieldNames.includes(f))
+    );
+    
+    // Calculate ideal space needed
+    let idealTotal = 0;
+    const fieldsInPairs = new Set(validPairings.flatMap(p => p.fields));
+    
+    for (const field of fieldNames) {
+      const allocation = baseAllocation[field] || { minHeight: 6, maxHeight: 8 };
+      idealTotal += allocation.maxHeight;
+    }
+    
+    const gapsNeeded = (fieldNames.length - validPairings.length) * 2;
+    const spaceSaved = validPairings.reduce((sum, p) => sum + p.saves, 0);
+    const adjustedTotal = idealTotal - spaceSaved + gapsNeeded;
+    
+    // Calculate if we need to scale down
+    const needsScaling = adjustedTotal > availableHeight;
+    const scaleFactor = needsScaling ? (availableHeight - gapsNeeded) / (idealTotal - spaceSaved) : 1.0;
+    
+    // Apply scaling to create final budgets
+    const calculatedBudgets: Record<string, number> = {};
+    for (const field of fieldNames) {
+      const allocation = baseAllocation[field] || { minHeight: 6, maxHeight: 8 };
+      const budget = Math.max(
+        allocation.minHeight,
+        Math.floor(allocation.maxHeight * scaleFactor)
+      );
+      calculatedBudgets[field] = budget;
+    }
+    
+    console.log('Space budget calculation:', {
+      availableHeight: `${availableHeight}mm`,
+      idealTotal: `${idealTotal}mm`,
+      adjustedTotal: `${adjustedTotal}mm`,
+      needsScaling,
+      scaleFactor: scaleFactor.toFixed(2),
+      validPairings: validPairings.map(p => p.fields.join(' + ')),
+      budgets: calculatedBudgets
+    });
 
-LABEL CANVAS:
-- Physical dimensions: ${templateSize.width}mm × ${templateSize.height}mm
-- Usable area: ${(templateSize.width - 12) * (templateSize.height - 12)} mm² (leave ~6mm margins)
+    const prompt = `You are an expert label designer solving a CONSTRAINT SATISFACTION PROBLEM.
 
-YOUR DATA TO DESIGN WITH:
+HARD CONSTRAINTS:
+- Label dimensions: ${templateSize.width}mm × ${templateSize.height}mm
+- Available vertical space: ${availableHeight}mm (after margins)
+- Number of fields to place: ${fieldCount}
+- ALL ${fieldCount} fields MUST appear - NO OMISSIONS ALLOWED
+- Coordinate system: (0,0) is top-left corner
+- 3mm margins required on all sides
+
+MANDATORY SPACE ALLOCATION:
+You have ${availableHeight}mm vertical space to allocate across ${fieldCount} fields.
+
+Each field has been assigned a MAXIMUM HEIGHT BUDGET (includes text + line spacing):
+${Object.entries(calculatedBudgets).map(([field, budget]) => 
+  `- ${field}: MAX ${budget}mm height`
+).join('\n')}
+
+${validPairings.length > 0 ? `
+HORIZONTAL PAIRING REQUIREMENTS (MANDATORY):
+The following field pairs MUST be placed side-by-side on the same row to save vertical space:
+${validPairings.map(p => 
+  `- ${p.fields.join(' + ')} on same row (y-coordinates must match, saves ~${p.saves}mm)`
+).join('\n')}
+
+By pairing these fields, you save approximately ${validPairings.reduce((s, p) => s + p.saves, 0)}mm of vertical space.
+` : ''}
+
+CONSTRAINT SATISFACTION RULES:
+1. ALL ${fieldCount} fields MUST appear in the layout
+2. Each field MUST fit within its allocated height budget
+3. Paired fields MUST share the same y-coordinate (same row)
+4. Total layout height MUST NOT exceed ${availableHeight}mm
+5. Minimum 2mm gap between all field edges (horizontal and vertical)
+6. Fields must not overlap
+7. All fields must be within label boundaries (3mm margins)
+
+TO ACHIEVE THIS YOU MUST:
+- Adjust font sizes DOWN if needed to fit within height budgets
+- Use lineHeight: 1.1 for multi-line ADDRESS fields to save space
+- Distribute horizontal space efficiently for paired fields (e.g., 60/40 split for NAME/POSTER)
+- Prioritize readability WITHIN the constraints, not at expense of constraints
+- Calculate positions carefully to respect all gaps and budgets
+
+THIS IS A HARD CONSTRAINT PROBLEM - you must make everything fit.
+
+FIELD DATA ANALYSIS:
 ${dataAnalysis.map((d: any, i: number) => {
   const text = d.sampleText || 'N/A';
   const estimatedLines = d.hasCommas ? (text.match(/,/g) || []).length + 1 : 1;
@@ -410,30 +515,18 @@ OR
 
 ✅ GOOD: NAME (x:3, w:95.6, y:4) on top row, POSTER (x:80, w:15, y:15) on different row
 
-STRATEGIES FOR TIGHT VERTICAL SPACE:
+MANDATORY SPACE ALLOCATION SYSTEM:
 
-If calculated field heights + gaps exceed label height, use these tactics IN ORDER:
+ALL fields MUST appear in the final layout - NO OMISSIONS ALLOWED.
 
-1. **Side-by-Side Placement**: Place shorter fields (< 8mm height) horizontally adjacent
-   Example: STORE CODE (left) | PROVINCE (right) on same row
-   Example: AREA MANAGER (left) | A0 POSTER (right) on same row
-   
-2. **Reduce Secondary Field Prominence**: 
-   - STORE AREA: Can use smaller font (12-13pt → 10-11pt)
-   - AREA MANAGER: Can use smaller font (18pt → 14-15pt)
-   - Keep NAME and ADDRESS prominence
+When vertical space is constrained, you MUST:
+1. Calculate exact space budget for each field
+2. Use horizontal pairing to save vertical space
+3. Adjust font sizes DOWN to fit within budgets
+4. Use compact line heights (1.1) for multi-line fields
 
-3. **Compact Multi-Line Spacing**:
-   - ADDRESS lineHeight: Use 1.1 instead of 1.2 if space tight
-   - Reduces 19mm → 17mm for 5-line addresses
-
-4. **Strategic Field Omission** (LAST RESORT):
-   - If still insufficient space, omit least critical field (typically STORE AREA or AREA MANAGER)
-   - Must include: NAME, CODE, PROVINCE, ADDRESS, POSTER
-   - Optional: STORE AREA, AREA MANAGER
-
-CRITICAL: Before finalizing layout, verify:
-sum(all field heights) + (field_count - 1) × 2mm gaps ≤ label height - 2mm margin
+The space budget and pairing requirements will be provided in the data section below.
+These are HARD CONSTRAINTS that must be satisfied.
 
 3. YOUR TOOLS:
    - Text measurements at multiple font sizes (shown above)
@@ -493,27 +586,6 @@ Return JSON with your complete design and explain your reasoning:
 }
 }`;
 
-    // Calculate if all fields can realistically fit
-    const estimatedTotalHeight = dataAnalysis.reduce((sum: number, field: any) => {
-      const baseHeight = field.fieldType === 'ADDRESS' && field.hasCommas 
-        ? Math.ceil((field.maxLength / field.maxLineLength) * field.suggestedFontSize * 1.1 * 0.35)
-        : Math.ceil(field.suggestedFontSize * 0.35 * 1.5);
-      return sum + baseHeight;
-    }, 0);
-
-    const requiredHeightWithGaps = estimatedTotalHeight + ((dataAnalysis.length - 1) * 2);
-    const spaceAvailable = templateSize.height - 4; // margins
-
-    console.log('Space analysis:', {
-      required: `${requiredHeightWithGaps}mm`,
-      available: `${spaceAvailable}mm`,
-      tight: requiredHeightWithGaps > spaceAvailable
-    });
-
-    // Add to prompt if tight
-    const spaceTightness = requiredHeightWithGaps > spaceAvailable 
-      ? `\n\n⚠️ SPACE CONSTRAINT: Vertical space is TIGHT (need ${requiredHeightWithGaps}mm, have ${spaceAvailable}mm). MUST use side-by-side placement and compact spacing strategies.`
-      : '';
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -535,7 +607,7 @@ Return JSON with your complete design and explain your reasoning:
           model: 'google/gemini-2.5-flash', // Faster model for 3-5x performance improvement
           messages: [
             { role: 'system', content: 'You are a professional label layout designer. Return only valid JSON.' },
-            { role: 'user', content: prompt + spaceTightness }
+            { role: 'user', content: prompt }
         ],
         temperature: 0.7,
       }),
@@ -614,8 +686,44 @@ Return JSON with your complete design and explain your reasoning:
       });
     }
 
+    // Phase 3: Enhanced Validation
+    const validationErrors: string[] = [];
+    
+    // Check all fields present
+    const presentFields = new Set(layout.fields.map((f: any) => f.templateField));
+    const missingFields = fieldNames.filter((f: string) => !presentFields.has(f));
+    if (missingFields.length > 0) {
+      validationErrors.push(`Missing fields: ${missingFields.join(', ')}`);
+    }
+    
+    // Check height budgets
+    for (const field of layout.fields) {
+      const budget = calculatedBudgets[field.templateField];
+      if (budget && field.size.height > budget + 1) { // 1mm tolerance
+        validationErrors.push(`${field.templateField} exceeds height budget: ${field.size.height.toFixed(1)}mm > ${budget}mm`);
+      }
+    }
+    
+    // Check required pairings
+    for (const pairing of validPairings) {
+      const field1 = layout.fields.find((f: any) => f.templateField === pairing.fields[0]);
+      const field2 = layout.fields.find((f: any) => f.templateField === pairing.fields[1]);
+      
+      if (field1 && field2) {
+        const yDiff = Math.abs(field1.position.y - field2.position.y);
+        if (yDiff > 1) { // 1mm tolerance
+          validationErrors.push(`Required pairing not on same row: ${pairing.fields.join(' + ')} (y-diff: ${yDiff.toFixed(1)}mm)`);
+        }
+      }
+    }
+    
+    // Check total height
+    const maxY = Math.max(...layout.fields.map((f: any) => f.position.y + f.size.height));
+    if (maxY > availableHeight + 3) { // +3mm for margin
+      validationErrors.push(`Total layout height ${maxY.toFixed(1)}mm exceeds available ${availableHeight}mm`);
+    }
+    
     // Check for overlapping fields
-    const overlaps: string[] = [];
     for (let i = 0; i < layout.fields.length; i++) {
       for (let j = i + 1; j < layout.fields.length; j++) {
         const field1 = layout.fields[i];
@@ -629,14 +737,19 @@ Return JSON with your complete design and explain your reasoning:
         );
         
         if (overlap) {
-          overlaps.push(`${field1.templateField} overlaps ${field2.templateField}`);
+          validationErrors.push(`${field1.templateField} overlaps ${field2.templateField}`);
         }
       }
     }
 
-    if (overlaps.length > 0) {
-      console.error('Field overlaps detected:', overlaps);
-      throw new Error(`Layout has overlapping fields: ${overlaps.join(', ')}. Please try regenerating the layout.`);
+    if (validationErrors.length > 0) {
+      console.error('Layout validation failed:', {
+        errors: validationErrors,
+        budgets: calculatedBudgets,
+        pairings: validPairings.map(p => p.fields.join(' + ')),
+        fieldHeights: layout.fields.map((f: any) => ({ field: f.templateField, height: f.size.height, y: f.position.y }))
+      });
+      throw new Error(`Layout validation failed: ${validationErrors.join('; ')}`);
     }
 
     console.log('AI-calculated layout (with measurements):', {

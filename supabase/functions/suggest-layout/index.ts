@@ -285,14 +285,55 @@ serve(async (req) => {
       suggestedFontSize: d.suggestedFontSize
     })));
 
-    // Phase 1: Calculate Space Budget and Pairings
+    // PRE-ANALYSIS: ADDRESS-FIRST LAYOUT CALCULATION
+    // Find ADDRESS field and calculate its optimal size BEFORE allocating budgets
+    const addressField = dataAnalysis.find((d: any) => d.fieldType === 'ADDRESS' || d.field.toUpperCase().includes('ADDRESS'));
+    let addressFontSize = 10; // default
+    let addressHeight = 18; // default
+    let addressFieldName = '';
+    
+    if (addressField) {
+      addressFieldName = addressField.field;
+      
+      // Calculate optimal font size for longest line
+      const availableWidth = templateSize.width - 6; // margins
+      const longestLine = addressField.maxLineLength;
+      const avgCharWidthRatio = 0.55; // pt to mm ratio for character width
+      
+      // Calculate font size to fit longest line
+      let calculatedFontSize = Math.floor(availableWidth / (longestLine * avgCharWidthRatio));
+      
+      // Clamp to readable range for addresses (8-12pt)
+      addressFontSize = Math.max(8, Math.min(12, calculatedFontSize));
+      
+      // Calculate line count (commas + 1)
+      const lineCount = (addressField.sampleText.match(/,/g) || []).length + 1;
+      const lineHeight = 1.1; // compact but readable
+      
+      // Calculate required height for ADDRESS: lineCount × fontSize × lineHeight × pt-to-mm conversion
+      addressHeight = Math.ceil(lineCount * addressFontSize * lineHeight * 0.35);
+      
+      console.log('📍 ADDRESS PRE-CALCULATION:', {
+        field: addressFieldName,
+        longestLine,
+        longestLineLength: longestLine,
+        calculatedFontSize,
+        clampedFontSize: addressFontSize,
+        lineCount,
+        lineHeight,
+        requiredHeight: addressHeight
+      });
+    }
+
+    // Phase 1: Calculate Space Budget and Pairings (accounting for fixed ADDRESS)
     const availableHeight = templateSize.height - 6; // margins
     const fieldCount = fieldNames.length;
     
     // Define base space allocation priorities
+    // ADDRESS height is now FIXED from pre-calculation, others share remaining space
     const baseAllocation: Record<string, { priority: string; minHeight: number; maxHeight: number }> = {
       'STORE NAME': { priority: 'high', minHeight: 7, maxHeight: 10 },
-      'ADDRESS': { priority: 'critical', minHeight: 15, maxHeight: 25 },
+      'ADDRESS': { priority: 'fixed', minHeight: addressHeight, maxHeight: addressHeight }, // FIXED from pre-calc
       'STORE CODE': { priority: 'high', minHeight: 6, maxHeight: 8 },
       'PROVINCE': { priority: 'medium', minHeight: 6, maxHeight: 8 },
       'A0 POSTER': { priority: 'medium', minHeight: 6, maxHeight: 8 },
@@ -389,32 +430,31 @@ CONSTRAINT SATISFACTION RULES:
 
 TO ACHIEVE THIS YOU MUST:
 - **MAXIMIZE font sizes to FILL the allocated height budget** - the budget is space you SHOULD use, not just a limit
-- For each field: Calculate the LARGEST font size that fits within its height budget
-- Example: ADDRESS with 18mm budget and 5 lines → use ~10-11pt with lineHeight 1.1 to utilize the full 18mm
+- For single-line fields: Calculate the LARGEST font size that fits within its height budget
 - Example: STORE NAME with 8mm budget → use ~14-16pt to fill that space
-- Use lineHeight: 1.1 for multi-line ADDRESS fields (compact but readable)
 - Distribute horizontal space efficiently for paired fields (e.g., 60/40 split for NAME/POSTER)
 - The goal is EFFICIENT SPACE UTILIZATION - fill your budgets with appropriately sized text
 - Calculate positions carefully to respect all gaps while maximizing text size
 
-FONT SIZE CALCULATION STRATEGY:
+CRITICAL: ADDRESS FIELD IS PRE-CALCULATED AND FIXED
+${addressFieldName ? `
+The "${addressFieldName}" field has been PRE-CALCULATED based on the longest line in the dataset:
+- Font size: ${addressFontSize}pt (FIXED - do not change)
+- Height: ${addressHeight}mm (FIXED - do not change)
+- Line height: 1.1 (FIXED - do not change)
+- Style: whiteSpace: 'pre-line', transformCommas: true
+
+YOU MUST USE THESE EXACT VALUES FOR THE ADDRESS FIELD.
+Do NOT recalculate or adjust the ADDRESS field - it is already optimized.
+Focus on optimizing the OTHER fields within their allocated budgets.
+` : ''}
+
+FONT SIZE CALCULATION STRATEGY FOR NON-ADDRESS FIELDS:
 
 For single-line fields:
 - Calculate: fontSize_pt = (height_budget_mm / 0.45) to fill the vertical space
 - Example: 8mm budget → 8 / 0.45 ≈ 17pt font
 - Adjust down slightly if needed for aesthetic balance (e.g., 17pt → 15-16pt)
-
-For multi-line fields (ADDRESS):
-- Calculate: fontSize_pt = (height_budget_mm / (line_count × lineHeight × 0.35))
-- Example: 18mm budget, 5 lines, lineHeight 1.1 → 18 / (5 × 1.1 × 0.35) ≈ 9.3pt → use 9-10pt
-- This ensures the text FILLS the allocated space, not just fits within it
-
-CRITICAL FOR ADDRESS FIELDS:
-- You have been allocated significant vertical space (typically 15-20mm)
-- This is meant to be FILLED with readable multi-line text
-- Don't use tiny 7-8pt fonts in a large container
-- Calculate the appropriate font size to utilize the full height budget
-- Use whiteSpace: 'pre-line', transformCommas: true, and lineHeight: 1.1
 
 THIS IS A HARD CONSTRAINT PROBLEM - you must make everything fit while maximizing readability.
 
@@ -718,11 +758,25 @@ Return JSON with your complete design and explain your reasoning:
       validationErrors.push(`Missing fields: ${missingFields.join(', ')}`);
     }
     
-    // Check height budgets
+    // Check height budgets (with special handling for ADDRESS)
     for (const field of layout.fields) {
-      const budget = calculatedBudgets[field.templateField];
-      if (budget && field.size.height > budget + 1) { // 1mm tolerance
-        validationErrors.push(`${field.templateField} exceeds height budget: ${field.size.height.toFixed(1)}mm > ${budget}mm`);
+      if (field.templateField === addressFieldName) {
+        // ADDRESS must match pre-calculated values
+        const heightDiff = Math.abs(field.size.height - addressHeight);
+        if (heightDiff > 1) {
+          validationErrors.push(`ADDRESS height ${field.size.height.toFixed(1)}mm doesn't match pre-calculated ${addressHeight}mm`);
+        }
+        
+        const fontDiff = Math.abs(field.style.fontSize - addressFontSize);
+        if (fontDiff > 1) {
+          validationErrors.push(`ADDRESS fontSize ${field.style.fontSize}pt doesn't match pre-calculated ${addressFontSize}pt`);
+        }
+      } else {
+        // Other fields checked against budgets
+        const budget = calculatedBudgets[field.templateField];
+        if (budget && field.size.height > budget + 1) { // 1mm tolerance
+          validationErrors.push(`${field.templateField} exceeds height budget: ${field.size.height.toFixed(1)}mm > ${budget}mm`);
+        }
       }
     }
     

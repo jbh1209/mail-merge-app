@@ -89,8 +89,8 @@ export function TemplateDesignCanvas({
     
     if (result.success) {
       toast({
-        title: "AI Layout Applied",
-        description: result.strategy,
+        title: "Layout Optimized",
+        description: "Field positions and sizes have been optimized successfully.",
       });
     } else {
       toast({

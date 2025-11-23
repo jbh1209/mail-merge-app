@@ -74,6 +74,11 @@ export function SimpleLabelPreview({
   const renderField = (field: any) => {
     const dataColumn = fieldMappings[field.templateField];
     const dataValue = dataRow[dataColumn] || field.templateField;
+    const displayText = String(dataValue);
+    
+    // Detect if text should wrap (respect AI's multi-line intention)
+    const isLongText = displayText.length > 50;
+    const shouldWrap = isLongText || displayText.includes(',');
     
     const isOverset = oversetFields.has(field.id);
     
@@ -92,7 +97,12 @@ export function SimpleLabelPreview({
       fontWeight: field.style.fontWeight,
       textAlign: field.style.textAlign,
       color: field.style.color,
-    };
+      whiteSpace: shouldWrap ? 'normal' : 'nowrap',
+      wordWrap: shouldWrap ? 'break-word' : 'normal',
+      lineHeight: '1.2',
+      display: 'flex',
+      alignItems: 'flex-start',
+    } as React.CSSProperties;
 
     return (
       <div

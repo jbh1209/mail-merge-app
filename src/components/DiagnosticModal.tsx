@@ -76,7 +76,7 @@ export function DiagnosticModal({ open, onOpenChange, diagnostic, isLoading }: D
             </div>
           </div>
         ) : diagnostic ? (
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 pr-4 max-h-[calc(90vh-200px)]">
             <div className="space-y-6">
               {/* Failures */}
               <div>

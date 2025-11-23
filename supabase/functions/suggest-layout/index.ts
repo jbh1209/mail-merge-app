@@ -290,13 +290,16 @@ LABEL CANVAS:
 YOUR DATA TO DESIGN WITH:
 ${dataAnalysis.map((d: any, i: number) => {
   const text = d.sampleText || 'N/A';
+  const estimatedLines = d.hasCommas ? (text.match(/,/g) || []).length + 1 : 1;
   
   return `Field "${d.field}" [Type: ${d.fieldType}]:
    Sample text: "${text}"
    ${d.hasCommas ? `Full character count: ${d.maxLength} chars
-   Longest line after comma-split: ${d.maxLineLength} chars ← USE THIS FOR SIZING` : `Character count: ${d.maxLength} chars`}
+   Longest line after comma-split: ${d.maxLineLength} chars ← USE THIS FOR SIZING
+   Estimated line count: ~${estimatedLines} lines ← ALLOCATE VERTICAL SPACE ACCORDINGLY` : `Character count: ${d.maxLength} chars`}
    Contains commas: ${d.hasCommas ? 'Yes - will render as multi-line with semantic breaks' : 'No'}
-   **SUGGESTED FONT SIZE: ${d.suggestedFontSize}pt** (pre-calculated to fit ALL ${sampleData?.length || 0} data rows)`;
+   **SUGGESTED FONT SIZE: ${d.suggestedFontSize}pt** (pre-calculated to fit ALL ${sampleData?.length || 0} data rows)
+   ${d.hasCommas ? `⚠️ MULTI-LINE FIELD: Requires ~${Math.ceil(estimatedLines * d.suggestedFontSize * 1.2 * 0.35)}mm vertical space` : ''}`;
 }).join('\n\n')}
 
 FONT SIZE & SEMANTIC GUIDANCE:
@@ -305,8 +308,11 @@ ${dataAnalysis.map((d: any) =>
 ).join('\n')}
 
 FIELD TYPE DESIGN PRINCIPLES:
-- ADDRESS: Multi-line content with comma breaks, needs clear line spacing, typically smaller fonts (9-12pt), middle/bottom placement
+- ADDRESS: Multi-line content with comma breaks (5+ lines common), requires SIGNIFICANT vertical space allocation
   **CRITICAL: ADDRESS fields MUST use whiteSpace: 'pre-line' and transformCommas: true to enable semantic line breaks**
+  Font size: 9-13pt (calculated per longest line, NOT artificially reduced)
+  Space priority: HIGH - allocate vertical space proportional to line count
+  Positioning: Middle area with clear breathing room above/below
 - NAME: Primary identifier, should be prominent and eye-catching (12-16pt), top placement preferred
 - CODE: Machine-readable emphasis, often monospace consideration, compact but scannable (10-14pt), high visibility area
 - PROVINCE/CITY: Secondary location info, medium prominence (10-13pt), often grouped with address
@@ -318,10 +324,19 @@ FIELD TYPE DESIGN PRINCIPLES:
 
 DESIGN PRIORITIES BY FIELD TYPE:
 1. NAME fields → Top third of label, largest font, maximum visibility
-2. CODE fields → Upper-middle, high contrast, easily scannable
-3. ADDRESS fields → Middle-to-lower, clear multi-line spacing with semantic comma breaks
+2. ADDRESS fields (if multi-line) → Significant vertical space allocation, middle placement, font size based on readability NOT space scarcity
+3. CODE fields → Upper-middle, high contrast, easily scannable
 4. PRICE/QUANTITY → Often grouped together, right side common for retail
 5. DATE/PROVINCE → Secondary info, less prominent placement
+
+SPACE ALLOCATION FOR MULTI-LINE FIELDS:
+When a field will render as multiple lines (e.g., ADDRESS with commas):
+1. Calculate required height: (line_count × fontSize × lineHeight) + padding
+2. Example: 5-line address at 11pt with lineHeight 1.2 = ~20mm height minimum
+3. Allocate proportionally MORE vertical space than single-line fields
+4. Do NOT compensate by reducing font size - maintain readability
+
+Multi-line fields are SPACE-INTENSIVE and should be treated as high-priority for area allocation.
 
 YOUR DESIGN PROCESS:
 1. ANALYZE THE DATA

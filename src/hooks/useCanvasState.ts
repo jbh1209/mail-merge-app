@@ -178,6 +178,15 @@ export const useCanvasState = ({
     updateField(fieldId, { fieldType, typeConfig });
   }, [updateField]);
 
+  const getFieldData = useCallback(() => {
+    return fields.map(f => ({
+      field: f.templateField,
+      sampleValue: sampleData?.[0]?.[f.templateField] || '',
+      fieldType: f.fieldType,
+      priority: 'MEDIUM'
+    }));
+  }, [fields, sampleData]);
+
   const autoLayout = useCallback(async () => {
     const { supabase } = await import('@/integrations/supabase/client');
     
@@ -188,7 +197,7 @@ export const useCanvasState = ({
         body: {
           templateSize,
           fieldNames,
-          sampleData: sampleData || [], // Send ALL data rows for accurate analysis
+          sampleData: sampleData || [],
           templateType: 'label'
         }
       });
@@ -240,7 +249,14 @@ export const useCanvasState = ({
         setFields(newFields);
         saveToHistory(newFields);
         
-        return { success: true, strategy: data.layoutStrategy };
+        return { 
+          success: true, 
+          strategy: data.layoutStrategy,
+          layoutData: {
+            fieldData: getFieldData(),
+            layout: data.fields
+          }
+        };
       }
       
       throw new Error('Invalid AI response');
@@ -269,9 +285,16 @@ export const useCanvasState = ({
       setFields(fallbackFields);
       saveToHistory(fallbackFields);
       
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        layoutData: {
+          fieldData: getFieldData(),
+          layout: null
+        }
+      };
     }
-  }, [fields, templateSize, sampleData, settings.showAllLabels, saveToHistory]);
+  }, [fields, templateSize, sampleData, settings.showAllLabels, saveToHistory, getFieldData]);
 
   const updateSettings = useCallback((newSettings: Partial<CanvasSettings>) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
@@ -323,6 +346,7 @@ export const useCanvasState = ({
     redo,
     canUndo: historyIndex > 0,
     canRedo: historyIndex < history.length - 1,
-    finalizeFieldPositions
+    finalizeFieldPositions,
+    getFieldData
   };
 };

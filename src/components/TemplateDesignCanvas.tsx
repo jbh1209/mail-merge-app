@@ -5,9 +5,12 @@ import { FieldElement } from './canvas/FieldElement';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx } from '@/lib/canvas-utils';
-import { CheckCircle2, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle2, Info, ChevronLeft, ChevronRight, Bug } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { DiagnosticModal } from './DiagnosticModal';
+import html2canvas from 'html2canvas';
+import { supabase } from '@/integrations/supabase/client';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
@@ -41,6 +44,10 @@ export function TemplateDesignCanvas({
   
   const [currentDataIndex, setCurrentDataIndex] = useState(0);
   const [isAutoLayoutLoading, setIsAutoLayoutLoading] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState<any>(null);
+  const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
+  const [isDiagnosticLoading, setIsDiagnosticLoading] = useState(false);
+  const [lastLayoutData, setLastLayoutData] = useState<any>(null);
 
   const {
     fields,
@@ -60,13 +67,72 @@ export function TemplateDesignCanvas({
     redo,
     canUndo,
     canRedo,
-    finalizeFieldPositions
+    finalizeFieldPositions,
+    getFieldData
   } = useCanvasState({ 
     templateSize, 
     initialFields: fieldNames,
     initialDesignConfig,
     sampleData
   });
+
+  const captureCanvasAsBase64 = async (): Promise<string> => {
+    if (!canvasRef.current) throw new Error('Canvas ref not available');
+    
+    const canvas = await html2canvas(canvasRef.current, {
+      backgroundColor: settings.backgroundColor,
+      scale: 2,
+      logging: false
+    });
+    
+    return canvas.toDataURL('image/png');
+  };
+
+  const runDiagnostic = async () => {
+    if (!lastLayoutData) {
+      toast({
+        title: "No Layout Data",
+        description: "Generate a layout first before running diagnostics.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsDiagnosticLoading(true);
+    setIsDiagnosticOpen(true);
+
+    try {
+      const failedLayoutImage = await captureCanvasAsBase64();
+
+      const { data, error } = await supabase.functions.invoke('diagnose-layout', {
+        body: {
+          failedLayoutImage,
+          fieldData: lastLayoutData.fieldData,
+          failedLayout: lastLayoutData.layout,
+          templateSize
+        }
+      });
+
+      if (error) throw error;
+
+      console.log('🔍 DIAGNOSTIC RESULT:', data);
+      setDiagnosticResult(data.diagnostic);
+      
+      toast({
+        title: "Diagnostic Complete",
+        description: "AI has analyzed the layout and provided recommendations.",
+      });
+    } catch (error) {
+      console.error('❌ DIAGNOSTIC ERROR:', error);
+      toast({
+        title: "Diagnostic Failed",
+        description: error instanceof Error ? error.message : "Failed to analyze layout",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDiagnosticLoading(false);
+    }
+  };
 
   const handleAutoLayout = async () => {
     console.log('🎨 AI AUTO-LAYOUT TRIGGERED:', {
@@ -79,6 +145,11 @@ export function TemplateDesignCanvas({
     setIsAutoLayoutLoading(true);
     const result = await autoLayoutFn();
     setIsAutoLayoutLoading(false);
+    
+    // Store layout data for diagnostic
+    if (result.success && result.layoutData) {
+      setLastLayoutData(result.layoutData);
+    }
     
     console.log('📊 AI LAYOUT RESULT:', {
       success: result.success,
@@ -98,6 +169,12 @@ export function TemplateDesignCanvas({
         description: `${result.error}. Using fallback layout.`,
         variant: "destructive"
       });
+      
+      // Auto-run diagnostic on failure if we have layout data
+      if (result.layoutData) {
+        setLastLayoutData(result.layoutData);
+        setTimeout(() => runDiagnostic(), 1000);
+      }
     }
   };
 
@@ -308,14 +385,35 @@ export function TemplateDesignCanvas({
 
       {/* Compact action buttons - fixed at bottom */}
       <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 border-t bg-background">
-        <Button variant="outline" size="sm" onClick={onCancel}>
-          Back
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Back
+          </Button>
+          {lastLayoutData && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={runDiagnostic}
+              disabled={isDiagnosticLoading}
+            >
+              <Bug className="h-4 w-4 mr-2" />
+              Diagnose Layout
+            </Button>
+          )}
+        </div>
         <Button size="sm" onClick={handleSave}>
           <CheckCircle2 className="h-4 w-4 mr-2" />
           Save Design
         </Button>
       </div>
+
+      {/* Diagnostic Modal */}
+      <DiagnosticModal
+        open={isDiagnosticOpen}
+        onOpenChange={setIsDiagnosticOpen}
+        diagnostic={diagnosticResult}
+        isLoading={isDiagnosticLoading}
+      />
     </div>
   );
 }

@@ -264,8 +264,13 @@ Design an optimal, balanced layout following this EXACT STRATEGY:
    ${addressInfo ? `⚠️ CRITICAL: "${addressInfo.field}" (ADDRESS field):
      * MUST occupy Y position: 12mm - 38mm (26mm vertical span)
      * This equals 58% of usable vertical space (${availableHeight}mm)
-     * Font size: 10-14pt (based on ${addressInfo.longestLineChars} char longest line)
-     * Line spacing: 1.2-1.4
+     * Font size calculation for ${addressInfo.lineCount} lines:
+       - Allocated height: 26-28mm
+       - Target space per line: ~5.2-5.6mm
+       - With line-height 1.3, font size should be: 13-15pt
+       - ⚠️ USE LARGER FONTS (13-15pt) to VISUALLY FILL the allocated 26-28mm space
+       - The address should FILL its bounding box, not leave huge gaps
+     * Line spacing: 1.3 (balance between readability and space utilization)
      * Expected vertical usage: ~25-30mm for ${addressInfo.lineCount} lines
      * MUST include: "whiteSpace": "pre-line" and "transformCommas": true
      * This is THE STAR of the label - allocate space first` : ''}
@@ -280,10 +285,16 @@ Design an optimal, balanced layout following this EXACT STRATEGY:
    STEP 4: Verify no wasted space >5mm exists
 
 3. **Intelligent Font Sizing**
-   - Analyze character count and available space
-   - Longer content = smaller fonts to fit
-   - Shorter content = larger fonts for readability
-   - All text MUST fit within allocated space
+   - For multi-line fields (ADDRESS):
+     * Formula: (allocated height in mm) / (number of lines) / (line-height) = target font size in mm
+     * Convert mm to pt: 1mm ≈ 2.83pt
+     * Example: 26mm / 5 lines / 1.3 = 4mm per line = ~11.3pt, but ROUND UP to 13-15pt to fill space
+     * ⚠️ ALWAYS round UP to fill allocated space, never down (no tiny text in huge boxes!)
+   - For single-line fields:
+     * Analyze character count vs available width
+     * Longer content = smaller fonts to fit
+     * Shorter content = larger fonts for readability
+   - All text MUST fit within allocated space without overflow
 
 4. **Spatial Optimization**
    - Pair short fields horizontally to save vertical space

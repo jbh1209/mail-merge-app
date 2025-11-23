@@ -130,88 +130,78 @@ serve(async (req) => {
       };
     });
 
-    const prompt = `You are an AI layout calculator with precise text measurement capabilities.
+    const prompt = `You are a professional label designer AI with text measurement capabilities.
 
-LABEL SPECIFICATIONS:
-- Dimensions: ${templateSize.width}mm × ${templateSize.height}mm
-- Usable area (after 6mm padding): ${templateSize.width - 12}mm × ${templateSize.height - 12}mm
-- Total area: ${Math.round(templateSize.width * templateSize.height)} mm²
+LABEL CANVAS:
+- Physical dimensions: ${templateSize.width}mm × ${templateSize.height}mm
+- Usable area: ${(templateSize.width - 12) * (templateSize.height - 12)} mm² (leave ~6mm margins)
 
-ACTUAL DATA WITH MEASUREMENTS:
+YOUR DATA TO DESIGN WITH:
 ${dataAnalysis.map((d: any, i: number) => {
   const text = d.sampleText || 'N/A';
-  // Calculate measurements at different font sizes
-  const measurements10pt = measureText(text, pointsToPx(10), mmToPx(templateSize.width - 12));
-  const measurements12pt = measureText(text, pointsToPx(12), mmToPx(templateSize.width - 12));
+  // Show measurements at multiple sizes so AI can explore options
+  const sizes = [8, 10, 12, 14, 16, 18];
+  const measurements = sizes.map(pt => {
+    const m = measureText(text, pointsToPx(pt), mmToPx(templateSize.width - 12));
+    return `${pt}pt: ${pxToMm(m.width).toFixed(1)}×${pxToMm(m.height).toFixed(1)}mm (${m.lineCount} lines)`;
+  });
   
-  return `${i + 1}. Field: "${d.field}"
-   - Actual text: "${text}"
-   - Length: ${d.avgLength} chars (max: ${d.maxLength})
-   - Has commas: ${d.hasCommas ? 'YES - will wrap naturally' : 'NO'}
-   - At 10pt: ${pxToMm(measurements10pt.width).toFixed(1)}mm wide × ${pxToMm(measurements10pt.height).toFixed(1)}mm tall (${measurements10pt.lineCount} lines)
-   - At 12pt: ${pxToMm(measurements12pt.width).toFixed(1)}mm wide × ${pxToMm(measurements12pt.height).toFixed(1)}mm tall (${measurements12pt.lineCount} lines)`;
+  return `Field "${d.field}":
+   Text: "${text}"
+   Character count: ${d.maxLength}
+   Contains commas: ${d.hasCommas ? 'Yes (semantic line breaks possible)' : 'No'}
+   Measurements at different sizes:
+   ${measurements.join('\n   ')}`;
 }).join('\n\n')}
 
-CRITICAL: YOUR MEASUREMENTS ARE PRE-CALCULATED
-I have measured each field at different font sizes for you (shown above).
-Use these measurements to allocate PRECISE dimensions. Do not guess.
+YOUR DESIGN PROCESS:
+1. ANALYZE THE DATA
+   - What is each field? (store name, address, code, identifier, etc.)
+   - What is most important to the user reading this label?
+   - What deserves visual prominence?
+   - What needs multi-line formatting (addresses with commas)?
 
-YOUR TASK:
-1. Review the measurements above - these are ACTUAL rendered dimensions
-2. Choose appropriate font sizes based on:
-   - Short fields (< 20 chars): 12-14pt for prominence
-   - Medium fields (20-50 chars): 10-12pt for balance
-   - Long fields (> 50 chars): 9-10pt to fit comfortably
-3. Allocate field height = measured height + 2mm buffer
-4. Allocate field width = measured width (text will wrap naturally)
-5. Position fields with 2mm gaps - NO OVERLAPS
+2. DESIGN PRINCIPLES (Your Goals - Not Rules):
+   • VISUAL HIERARCHY: Important information should be larger and more prominent
+   • READABILITY: Text must be legible - but size is relative to importance and space
+   • EFFICIENT SPACE USE: Use the canvas effectively - no cramping, no excessive gaps
+   • SEMANTIC LINE BREAKS: Addresses should break logically (not just wrap), parse comma-separated parts
+   • BALANCED LAYOUT: Distribute fields across the canvas, avoid clustering in one corner
+   • CLEAR RELATIONSHIPS: Group related information through proximity
+   • ZERO OVERLAPS: Fields must not overlap (you have measurements to verify this)
 
-SPATIAL RULES (CRITICAL):
-• Use the measurements provided - they are pre-calculated and accurate
-• Add 2mm buffer to measured dimensions for comfortable spacing
-• Verify no overlaps: field1.x + field1.width + 2mm <= field2.x
-• Multi-line text (with commas) needs vertical space - use the line count from measurements
+3. YOUR TOOLS:
+   - Text measurements at multiple font sizes (shown above)
+   - Complete freedom to choose ANY font size that works
+   - Complete freedom to position fields anywhere
+   - Complete freedom to allocate space as needed
+   - Overlap detection (ensure no fields touch)
 
-LAYOUT STRATEGY:
-• Top section: Short, important fields (names, IDs) - larger fonts
-• Middle section: Medium content - balanced sizing
-• Bottom section: Long fields (addresses) - smaller fonts but adequate height for multiple lines
+4. THINK THROUGH YOUR DESIGN:
+   - Start with importance ranking: What should catch the eye first?
+   - Calculate optimal font sizes: What size makes each field readable and proportional?
+   - For addresses: Parse by commas, create semantic line breaks (Shop/Building, Street, City/State/ZIP)
+   - Position for flow: Top-to-bottom, left-to-right reading pattern
+   - Verify measurements: Use the dimensions I provided to ensure nothing overlaps
+   - Balance whitespace: Leave breathing room, don't cluster or spread too thin
 
-TECHNICAL REQUIREMENTS (CRITICAL):
-• ALL positions and sizes MUST be in MILLIMETERS (mm)
-• ALL font sizes MUST be in POINTS (pt)
-• Font sizes: Use 9-14pt range (9pt for long text, 14pt for short important fields)
-• Field heights: Minimum 6mm, allow 8-15mm for multi-line content
-• Field widths: Leave margins, don't use full label width
-• Positions: All x,y coordinates are from top-left in mm
+5. RENDERING PROPERTIES:
+   For each field, choose CSS properties that match your design:
+   - whiteSpace: "normal" (multi-line wrapping) or "nowrap" (single line)
+   - wordWrap: "break-word" (if multi-line) or "normal" (if single line)
+   - lineHeight: "1.2" (multi-line readability) or "1" (compact single line)
+   - display: "block" (for multi-line) or "inline" (for compact single line)
+   - fontWeight: "normal" or "bold" (for emphasis)
+   - textAlign: "left", "center", or "right" (for layout balance)
 
-CSS RENDERING INSTRUCTIONS (CRITICAL):
-For EACH field, you MUST specify complete CSS rendering properties:
+TECHNICAL CONSTRAINTS (Only Physical Limits):
+- All positions/sizes in MILLIMETERS (mm)
+- Font sizes in POINTS (pt)
+- Stay within label bounds (0 to ${templateSize.width}mm × ${templateSize.height}mm)
+- No overlapping fields
+- That's it. You decide everything else.
 
-• whiteSpace: 
-  - "normal" for multi-line text (addresses, long descriptions)
-  - "nowrap" for single-line text (IDs, short codes, names)
-
-• wordWrap:
-  - "break-word" when whiteSpace is "normal"
-  - "normal" when whiteSpace is "nowrap"
-
-• lineHeight:
-  - "1.2" for multi-line text (better readability)
-  - "1" for single-line text (compact)
-
-• display:
-  - "block" for multi-line text
-  - "inline" for single-line text
-
-EXAMPLES:
-- Address field (long, has commas): whiteSpace "normal", wordWrap "break-word", lineHeight "1.2", display "block"
-- Product code (short): whiteSpace "nowrap", wordWrap "normal", lineHeight "1", display "inline"
-- Name (medium): depends on length - analyze the sample data
-
-Return a JSON layout with your reasoning documented in "layoutStrategy".
-
-Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
+Return JSON with your complete design and explain your reasoning:
 {
   "fields": [
     {
@@ -219,10 +209,10 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
       "position": { "x": <mm>, "y": <mm> },
       "size": { "width": <mm>, "height": <mm> },
       "style": {
-        "fontSize": <points, 9-14 range>,
+        "fontSize": <points - your choice>,
         "fontFamily": "Arial",
-        "fontWeight": "normal",
-        "textAlign": "left",
+        "fontWeight": "normal" | "bold",
+        "textAlign": "left" | "center" | "right",
         "color": "#000000",
         "whiteSpace": "normal" | "nowrap",
         "wordWrap": "break-word" | "normal",
@@ -231,8 +221,8 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
       }
     }
   ],
-  "layoutStrategy": "explain your design decisions in detail",
-  "confidence": number (0-100)
+  "layoutStrategy": "Explain your design thinking: What did you make prominent? Why? How did you handle the address? What was your spatial strategy?",
+  "confidence": <0-100>
 }`;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -270,38 +260,41 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
 
     const layout = JSON.parse(suggestions);
 
-    // Validate and constrain AI output
+    // Validate AI output (only check physical bounds, trust AI's design decisions)
     if (layout.fields) {
       layout.fields = layout.fields.map((field: any) => {
-        // Constrain font sizes to reasonable range (9-16pt)
-        const fontSize = Math.max(9, Math.min(16, field.style.fontSize));
+        // Only validate font size is reasonable (not specific range)
+        const fontSize = Math.max(5, Math.min(30, field.style.fontSize));
         
-        // Constrain widths to template bounds only, trust AI's calculated dimensions
-        const maxWidth = templateSize.width - 12; // 6mm padding each side
-        const width = Math.min(maxWidth, field.size.width);
+        // Only constrain to template bounds (trust AI's calculated dimensions)
+        const maxWidth = templateSize.width;
+        const width = Math.min(maxWidth, Math.max(0, field.size.width));
         
-        // Constrain heights to template bounds only
-        const maxHeight = templateSize.height - 12;
-        const height = Math.min(maxHeight, field.size.height);
+        const maxHeight = templateSize.height;
+        const height = Math.min(maxHeight, Math.max(0, field.size.height));
         
-        // Constrain positions to label bounds
-        const x = Math.max(6, Math.min(templateSize.width - width - 6, field.position.x));
-        const y = Math.max(6, Math.min(templateSize.height - height - 6, field.position.y));
+        // Only constrain positions to stay within label
+        const x = Math.max(0, Math.min(templateSize.width - width, field.position.x));
+        const y = Math.max(0, Math.min(templateSize.height - height, field.position.y));
         
         // Validate CSS rendering properties
         const validWhiteSpace = ['normal', 'nowrap'];
         const validWordWrap = ['break-word', 'normal'];
         const validDisplay = ['block', 'inline', 'flex'];
+        const validFontWeight = ['normal', 'bold'];
+        const validTextAlign = ['left', 'center', 'right'];
         
         const whiteSpace = validWhiteSpace.includes(field.style.whiteSpace) ? field.style.whiteSpace : 'normal';
         const wordWrap = validWordWrap.includes(field.style.wordWrap) ? field.style.wordWrap : 'normal';
         const lineHeight = field.style.lineHeight || '1.2';
         const display = validDisplay.includes(field.style.display) ? field.style.display : 'block';
+        const fontWeight = validFontWeight.includes(field.style.fontWeight) ? field.style.fontWeight : 'normal';
+        const textAlign = validTextAlign.includes(field.style.textAlign) ? field.style.textAlign : 'left';
         
         console.log(`Validated ${field.templateField}:`, {
           original: { x: field.position.x, y: field.position.y, w: field.size.width, h: field.size.height, fontSize: field.style.fontSize },
           constrained: { x, y, width, height, fontSize },
-          cssProps: { whiteSpace, wordWrap, lineHeight, display }
+          cssProps: { whiteSpace, wordWrap, lineHeight, display, fontWeight, textAlign }
         });
         
         return {
@@ -314,7 +307,9 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
             whiteSpace,
             wordWrap,
             lineHeight,
-            display
+            display,
+            fontWeight,
+            textAlign
           }
         };
       });

@@ -159,6 +159,10 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Declare timeout variables at function scope for catch block access
+  let controller: AbortController | null = null;
+  let timeoutId: number | null = null;
+
   try {
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
@@ -322,12 +326,20 @@ FIELD TYPE DESIGN PRINCIPLES:
 - EMAIL/PHONE: Contact details, small footer text (8-11pt), bottom placement typical
 - GENERAL: Balance readability with available context (10-13pt), flexible placement
 
-DESIGN PRIORITIES BY FIELD TYPE:
-1. NAME fields → Top third of label, largest font, maximum visibility
-2. ADDRESS fields (if multi-line) → Significant vertical space allocation, middle placement, font size based on readability NOT space scarcity
-3. CODE fields → Upper-middle, high contrast, easily scannable
-4. PRICE/QUANTITY → Often grouped together, right side common for retail
-5. DATE/PROVINCE → Secondary info, less prominent placement
+DESIGN PRIORITIES & PLACEMENT STRATEGY:
+1. **Top Row (y: 3-12mm)**: NAME field (largest, centered or left-aligned) + optional small CODE in top-right corner
+   - If both present, ensure: NAME_width + 2mm gap + CODE_width ≤ label width
+   
+2. **Upper-Middle Row (y: 13-22mm)**: Secondary codes (STORE CODE, PROVINCE) - left and right separation
+   
+3. **Middle Section (y: 23-40mm)**: ADDRESS field (if multi-line)
+   - Takes full width OR leaves room for side elements
+   - Height: Calculate based on line count (line_count × fontSize × 1.2 × 0.35mm)
+   
+4. **Lower Section (y: 41-48mm)**: Tertiary info (AREA, MANAGER, QUANTITY)
+   - Distribute horizontally with 2mm gaps
+
+5. **Use vertical stacking** when horizontal space is tight to avoid overlaps
 
 SPACE ALLOCATION FOR MULTI-LINE FIELDS:
 When a field will render as multiple lines (e.g., ADDRESS with commas):
@@ -353,6 +365,25 @@ YOUR DESIGN PROCESS:
    • BALANCED LAYOUT: Distribute fields across the canvas, avoid clustering in one corner
    • CLEAR RELATIONSHIPS: Group related information through proximity
    • ZERO OVERLAPS: Fields must not overlap (you have measurements to verify this)
+
+CRITICAL SPATIAL RULES:
+• MINIMUM SPACING: Leave at least 2mm gap between ALL field edges (horizontal and vertical)
+• OVERLAP DETECTION: Before finalizing, mentally verify:
+  - Does field A's right edge (x + width) stay 2mm left of field B's left edge?
+  - Does field A's bottom edge (y + height) stay 2mm above field B's top edge?
+  - Or are they vertically/horizontally separated?
+• LAYOUT STRATEGY:
+  - Use a visual grid: Imagine the label divided into rows (top, upper-middle, middle, lower-middle, bottom)
+  - Assign fields to different rows to avoid horizontal collisions
+  - For fields in the same row, ensure they don't exceed combined width: sum(widths) + gaps < label width
+  
+EXAMPLE COLLISION AVOIDANCE:
+❌ BAD: NAME (x:3, w:95.6) overlaps POSTER (x:83.6, w:15) → both at y:4, NAME extends to 98.6mm
+✅ GOOD: NAME (x:3, w:70) | 2mm gap | POSTER (x:75, w:15) → clear separation at y:4
+
+OR
+
+✅ GOOD: NAME (x:3, w:95.6, y:4) on top row, POSTER (x:80, w:15, y:15) on different row
 
 3. YOUR TOOLS:
    - Text measurements at multiple font sizes (shown above)
@@ -417,17 +448,22 @@ Return JSON with your complete design and explain your reasoning:
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
+    // Initialize timeout to prevent hanging
+    controller = new AbortController();
+    timeoutId = setTimeout(() => controller!.abort(), 45000); // 45 second max
+
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
-        messages: [
-          { role: 'system', content: 'You are a professional label layout designer. Return only valid JSON.' },
-          { role: 'user', content: prompt }
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash', // Faster model for 3-5x performance improvement
+          messages: [
+            { role: 'system', content: 'You are a professional label layout designer. Return only valid JSON.' },
+            { role: 'user', content: prompt }
         ],
         temperature: 0.7,
       }),
@@ -436,9 +472,11 @@ Return JSON with your complete design and explain your reasoning:
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error('AI API error:', aiResponse.status, errorText);
+      if (timeoutId) clearTimeout(timeoutId);
       throw new Error(`AI API returned ${aiResponse.status}`);
     }
 
+    if (timeoutId) clearTimeout(timeoutId);
     const aiData = await aiResponse.json();
     let suggestions = aiData.choices[0].message.content;
 
@@ -548,6 +586,14 @@ Return JSON with your complete design and explain your reasoning:
     );
 
   } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+      console.error('AI layout generation timed out after 45 seconds');
+      return new Response(
+        JSON.stringify({ error: 'AI layout generation timed out. Please try again or simplify the template.' }),
+        { status: 504, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     console.error('Error in suggest-layout:', error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),

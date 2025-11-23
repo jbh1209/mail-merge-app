@@ -291,6 +291,7 @@ serve(async (req) => {
     let addressFontSize = 10; // default
     let addressHeight = 18; // default
     let addressFieldName = '';
+    const availableWidth = templateSize.width - 6; // margins for width calculation
     
     if (addressField) {
       addressFieldName = addressField.field;
@@ -391,263 +392,41 @@ serve(async (req) => {
       budgets: calculatedBudgets
     });
 
-    const prompt = `You are an expert label designer solving a CONSTRAINT SATISFACTION PROBLEM.
+    const prompt = `Generate optimal layout for ${templateSize.width}×${templateSize.height}mm label.
 
-HARD CONSTRAINTS:
-- Label dimensions: ${templateSize.width}mm × ${templateSize.height}mm
-- Available vertical space: ${availableHeight}mm (after margins)
-- Number of fields to place: ${fieldCount}
-- ALL ${fieldCount} fields MUST appear - NO OMISSIONS ALLOWED
-- Coordinate system: (0,0) is top-left corner
-- 3mm margins required on all sides
+USABLE AREA: ${availableWidth}×${availableHeight}mm (3mm margins)
 
-MANDATORY SPACE ALLOCATION:
-You have ${availableHeight}mm vertical space to allocate across ${fieldCount} fields.
+FIELDS: ${fieldNames.join(', ')}
 
-Each field has been assigned a MAXIMUM HEIGHT BUDGET (includes text + line spacing):
-${Object.entries(calculatedBudgets).map(([field, budget]) => 
-  `- ${field}: MAX ${budget}mm height`
-).join('\n')}
+DATA ANALYSIS:
+${dataAnalysis.map((d: any) => `${d.field}: ${d.fieldType}, max ${d.maxLength} chars, suggest ${d.suggestedFontSize}pt`).join('\n')}
 
-${validPairings.length > 0 ? `
-HORIZONTAL PAIRING REQUIREMENTS (MANDATORY):
-The following field pairs MUST be placed side-by-side on the same row to save vertical space:
-${validPairings.map(p => 
-  `- ${p.fields.join(' + ')} on same row (y-coordinates must match, saves ~${p.saves}mm)`
-).join('\n')}
-
-By pairing these fields, you save approximately ${validPairings.reduce((s, p) => s + p.saves, 0)}mm of vertical space.
+${addressFieldName ? `ADDRESS (FIXED): ${addressFontSize}pt font, ${addressHeight}mm height, ${Math.ceil(addressHeight / (addressFontSize * 1.1 * 0.35))} lines
+⚠️ DO NOT change ADDRESS font/height. Focus on other fields.
 ` : ''}
 
-CONSTRAINT SATISFACTION RULES:
-1. ALL ${fieldCount} fields MUST appear in the layout
-2. Each field MUST fit within its allocated height budget
-3. Paired fields MUST share the same y-coordinate (same row)
-4. Total layout height MUST NOT exceed ${availableHeight}mm
-5. Minimum 2mm gap between all field edges (horizontal and vertical)
-6. Fields must not overlap
-7. All fields must be within label boundaries (3mm margins)
+SPACE:
+- Available: ${availableHeight}mm
+${addressFieldName ? `- ADDRESS: ${addressHeight}mm (FIXED)
+- Other ${fieldNames.length - 1} fields: ${(availableHeight - addressHeight - 4).toFixed(1)}mm
+` : `- Per field: ${Object.entries(calculatedBudgets).map(([f, b]) => `${f}=${b}mm`).join(', ')}`}
 
-TO ACHIEVE THIS YOU MUST:
-- **MAXIMIZE font sizes to FILL the allocated height budget** - the budget is space you SHOULD use, not just a limit
-- For single-line fields: Calculate the LARGEST font size that fits within its height budget
-- Example: STORE NAME with 8mm budget → use ~14-16pt to fill that space
-- Distribute horizontal space efficiently for paired fields (e.g., 60/40 split for NAME/POSTER)
-- The goal is EFFICIENT SPACE UTILIZATION - fill your budgets with appropriately sized text
-- Calculate positions carefully to respect all gaps while maximizing text size
+PAIRINGS: ${validPairings.map(p => `${p.fields.join('+')}}`).join(', ')}
 
-CRITICAL: ADDRESS FIELD IS PRE-CALCULATED AND FIXED
-${addressFieldName ? `
-The "${addressFieldName}" field has been PRE-CALCULATED based on the longest line in the dataset:
-- Font size: ${addressFontSize}pt (FIXED - do not change)
-- Height: ${addressHeight}mm (FIXED - do not change)
-- Line height: 1.1 (FIXED - do not change)
-- Style: whiteSpace: 'pre-line', transformCommas: true
+CONSTRAINTS:
+1. 3mm margins
+2. No overlap
+3. 2mm gaps between fields
+4. Use pairings to save space
+5. Total height ≤ ${availableHeight}mm
+${addressFieldName ? `6. ADDRESS: ${addressFontSize}pt, ${addressHeight}mm (EXACT)` : ''}
 
-YOU MUST USE THESE EXACT VALUES FOR THE ADDRESS FIELD.
-Do NOT recalculate or adjust the ADDRESS field - it is already optimized.
-Focus on optimizing the OTHER fields within their allocated budgets.
-` : ''}
-
-FONT SIZE CALCULATION STRATEGY FOR NON-ADDRESS FIELDS:
-
-For single-line fields:
-- Calculate: fontSize_pt = (height_budget_mm / 0.45) to fill the vertical space
-- Example: 8mm budget → 8 / 0.45 ≈ 17pt font
-- Adjust down slightly if needed for aesthetic balance (e.g., 17pt → 15-16pt)
-
-THIS IS A HARD CONSTRAINT PROBLEM - you must make everything fit while maximizing readability.
-
-FIELD DATA ANALYSIS:
-${dataAnalysis.map((d: any, i: number) => {
-  const text = d.sampleText || 'N/A';
-  const estimatedLines = d.hasCommas ? (text.match(/,/g) || []).length + 1 : 1;
-  
-  return `Field "${d.field}" [Type: ${d.fieldType}]:
-   Sample text: "${text}"
-   ${d.hasCommas ? `Full character count: ${d.maxLength} chars
-   Longest line after comma-split: ${d.maxLineLength} chars ← USE THIS FOR SIZING
-   Estimated line count: ~${estimatedLines} lines ← ALLOCATE VERTICAL SPACE ACCORDINGLY` : `Character count: ${d.maxLength} chars`}
-   Contains commas: ${d.hasCommas ? 'Yes - will render as multi-line with semantic breaks' : 'No'}
-   **SUGGESTED FONT SIZE: ${d.suggestedFontSize}pt** (pre-calculated to fit ALL ${sampleData?.length || 0} data rows)
-   ${d.hasCommas ? `⚠️ MULTI-LINE FIELD: Requires ~${Math.ceil(estimatedLines * d.suggestedFontSize * 1.2 * 0.35)}mm vertical space` : ''}`;
-}).join('\n\n')}
-
-FONT SIZE & SEMANTIC GUIDANCE:
-${dataAnalysis.map((d: any) => 
-  `- "${d.field}" [${d.fieldType}]: ${d.suggestedFontSize}pt (calculated for ${d.hasCommas ? 'longest line (' + d.maxLineLength + ' chars)' : 'full text (' + d.maxLength + ' chars)'})`
-).join('\n')}
-
-SPACE CONSTRAINT ANALYSIS:
-Label dimensions: ${templateSize.width}mm × ${templateSize.height}mm
-Total fields to place: ${fieldNames.length}
-Available vertical space: ${templateSize.height - 4}mm (after margins)
-Estimated minimum vertical space needed: Calculate sum of all field heights + gaps
-If total exceeds label height → Apply space-saving strategies below
-
-FIELD TYPE DESIGN PRINCIPLES:
-- ADDRESS: Multi-line content with comma breaks (5+ lines common), requires SIGNIFICANT vertical space allocation
-  **CRITICAL: ADDRESS fields MUST use whiteSpace: 'pre-line' and transformCommas: true to enable semantic line breaks**
-  Font size: 9-13pt (calculated per longest line, NOT artificially reduced)
-  Space priority: HIGH - allocate vertical space proportional to line count
-  Positioning: Middle area with clear breathing room above/below
-- NAME: Primary identifier, should be prominent and eye-catching (12-16pt), top placement preferred
-- CODE: Machine-readable emphasis, often monospace consideration, compact but scannable (10-14pt), high visibility area
-- PROVINCE/CITY: Secondary location info, medium prominence (10-13pt), often grouped with address
-- DATE: Compact format, typically corner/edge placement (9-12pt), less emphasis unless critical
-- PRICE: Bold/prominent for retail contexts, right-aligned common (11-14pt), high visibility
-- QUANTITY: Small but clear, paired with units (9-12pt), near related fields
-- EMAIL/PHONE: Contact details, small footer text (8-11pt), bottom placement typical
-- GENERAL: Balance readability with available context (10-13pt), flexible placement
-
-DESIGN PRIORITIES & PLACEMENT STRATEGY:
-
-**For labels with HEIGHT > 70mm (ample vertical space):**
-- Use clear row separation with 2-3mm gaps
-- Generous whitespace, larger fonts
-
-**For labels with HEIGHT 40-70mm (moderate space like 50.8mm labels):**
-
-Row 1 (y: 3-10mm): 
-  • STORE NAME (left, bold) + A0 POSTER (right corner, bold) [HORIZONTAL PAIR]
-  • Total width must fit: NAME_width + 3mm gap + POSTER_width ≤ label width
-
-Row 2 (y: 12-19mm):
-  • STORE CODE (left) + PROVINCE (right) [HORIZONTAL PAIR]
-  • Clear left-right separation
-
-Row 3 (y: 21-27mm):
-  • STORE AREA (full width OR omit if space critical)
-
-Row 4 (y: 29-46mm): **PRIORITY SPACE**
-  • ADDRESS (multi-line, significant height allocation)
-  • Calculate height: line_count × fontSize × 1.1 lineHeight × 0.35mm
-  • Font size: 9-11pt based on longest line length
-
-Row 5 (y: 47-50mm): **IF SPACE PERMITS**
-  • AREA MANAGER (compact, 14pt font)
-  • If ADDRESS + margins exceed y=45mm, consider omitting this row
-
-**Horizontal Pairing Rules:**
-- Two fields can share a row if: field1_width + 3mm + field2_width ≤ label_width
-- Always keep 3mm minimum horizontal gap
-- Typical pairing: short codes on same row (CODE + PROVINCE, MANAGER + POSTER)
-
-SPACE ALLOCATION FOR MULTI-LINE FIELDS:
-When a field will render as multiple lines (e.g., ADDRESS with commas):
-1. Calculate required height: (line_count × fontSize × lineHeight) + padding
-2. Example: 5-line address at 11pt with lineHeight 1.2 = ~20mm height minimum
-3. Allocate proportionally MORE vertical space than single-line fields
-4. Do NOT compensate by reducing font size - maintain readability
-
-Multi-line fields are SPACE-INTENSIVE and should be treated as high-priority for area allocation.
-
-YOUR DESIGN PROCESS:
-1. ANALYZE THE DATA
-   - What is each field? (store name, address, code, identifier, etc.)
-   - What is most important to the user reading this label?
-   - What deserves visual prominence?
-   - What needs multi-line formatting (addresses with commas)?
-
-2. DESIGN PRINCIPLES (Your Goals - Not Rules):
-   • VISUAL HIERARCHY: Important information should be larger and more prominent
-   • READABILITY: Text must be legible - but size is relative to importance and space
-   • EFFICIENT SPACE USE: Use the canvas effectively - no cramping, no excessive gaps
-   • SEMANTIC LINE BREAKS: Addresses should break logically (not just wrap), parse comma-separated parts
-   • BALANCED LAYOUT: Distribute fields across the canvas, avoid clustering in one corner
-   • CLEAR RELATIONSHIPS: Group related information through proximity
-   • ZERO OVERLAPS: Fields must not overlap (you have measurements to verify this)
-
-CRITICAL SPATIAL RULES:
-• MINIMUM SPACING: Leave at least 2mm gap between ALL field edges (horizontal and vertical)
-• OVERLAP DETECTION: Before finalizing, mentally verify:
-  - Does field A's right edge (x + width) stay 2mm left of field B's left edge?
-  - Does field A's bottom edge (y + height) stay 2mm above field B's top edge?
-  - Or are they vertically/horizontally separated?
-• LAYOUT STRATEGY:
-  - Use a visual grid: Imagine the label divided into rows (top, upper-middle, middle, lower-middle, bottom)
-  - Assign fields to different rows to avoid horizontal collisions
-  - For fields in the same row, ensure they don't exceed combined width: sum(widths) + gaps < label width
-  
-EXAMPLE COLLISION AVOIDANCE:
-❌ BAD: NAME (x:3, w:95.6) overlaps POSTER (x:83.6, w:15) → both at y:4, NAME extends to 98.6mm
-✅ GOOD: NAME (x:3, w:70) | 2mm gap | POSTER (x:75, w:15) → clear separation at y:4
-
-OR
-
-✅ GOOD: NAME (x:3, w:95.6, y:4) on top row, POSTER (x:80, w:15, y:15) on different row
-
-MANDATORY SPACE ALLOCATION SYSTEM:
-
-ALL fields MUST appear in the final layout - NO OMISSIONS ALLOWED.
-
-When vertical space is constrained, you MUST:
-1. Calculate exact space budget for each field
-2. Use horizontal pairing to save vertical space
-3. Adjust font sizes DOWN to fit within budgets
-4. Use compact line heights (1.1) for multi-line fields
-
-The space budget and pairing requirements will be provided in the data section below.
-These are HARD CONSTRAINTS that must be satisfied.
-
-3. YOUR TOOLS:
-   - Text measurements at multiple font sizes (shown above)
-   - Complete freedom to choose ANY font size that works
-   - Complete freedom to position fields anywhere
-   - Complete freedom to allocate space as needed
-   - Overlap detection (ensure no fields touch)
-
-4. THINK THROUGH YOUR DESIGN:
-   - Start with importance ranking: What should catch the eye first?
-   - Calculate optimal font sizes: What size makes each field readable and proportional?
-   - For addresses: Parse by commas, create semantic line breaks (Shop/Building, Street, City/State/ZIP)
-   - Position for flow: Top-to-bottom, left-to-right reading pattern
-   - Verify measurements: Use the dimensions I provided to ensure nothing overlaps
-   - Balance whitespace: Leave breathing room, don't cluster or spread too thin
-
-5. RENDERING PROPERTIES:
-   For each field, choose CSS properties that match your design:
-   - whiteSpace: "pre-line" (ADDRESS fields - preserves newlines) | "normal" (multi-line wrapping) | "nowrap" (single line)
-   - wordWrap: "break-word" (if multi-line) or "normal" (if single line)
-   - lineHeight: "1.2" (multi-line readability) or "1" (compact single line)
-   - display: "block" (for multi-line) or "inline" (for compact single line)
-   - fontWeight: "normal" or "bold" (for emphasis)
-   - textAlign: "left", "center", or "right" (for layout balance)
-   - transformCommas: true (ADDRESS fields ONLY - converts commas to newlines for semantic breaks)
-
-TECHNICAL CONSTRAINTS (Only Physical Limits):
-- All positions/sizes in MILLIMETERS (mm)
-- Font sizes in POINTS (pt)
-- Stay within label bounds (0 to ${templateSize.width}mm × ${templateSize.height}mm)
-- No overlapping fields
-- That's it. You decide everything else.
-
-Return JSON with your complete design and explain your reasoning:
+Return ONLY valid JSON:
 {
   "fields": [
-    {
-      "templateField": "field_name",
-      "position": { "x": <mm>, "y": <mm> },
-      "size": { "width": <mm>, "height": <mm> },
-      "style": {
-        "fontSize": <points - your choice>,
-        "fontFamily": "Arial",
-        "fontWeight": "normal" | "bold",
-        "textAlign": "left" | "center" | "right",
-        "color": "#000000",
-        "whiteSpace": "pre-line" | "normal" | "nowrap",
-        "wordWrap": "break-word" | "normal",
-        "lineHeight": "1.2" | "1",
-        "display": "block" | "inline",
-        "transformCommas": true | false  // SET TO true FOR ADDRESS FIELDS ONLY
-      }
-    }
-  ],
-  "layoutStrategy": "Explain your design thinking: What did you make prominent? Why? How did you handle the address? What was your spatial strategy?",
-  "confidence": <0-100>
-}
-}`;
-
+    {"templateField": "FIELD", "position": {"x": 3, "y": 3}, "size": {"width": 50, "height": 8}, "style": {"fontSize": 14, "fontWeight": "bold", "textAlign": "left", "color": "#000000", "whiteSpace": "nowrap", "lineHeight": "1"}}
+  ]
+}`
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -689,7 +468,30 @@ Return JSON with your complete design and explain your reasoning:
     // Clean markdown formatting if present
     suggestions = suggestions.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
-    const layout = JSON.parse(suggestions);
+    console.log('AI response length:', suggestions.length);
+
+    // Parse AI response with error recovery
+    let layout;
+    try {
+      layout = JSON.parse(suggestions);
+    } catch (parseError) {
+      console.error('JSON parse failed, attempting recovery:', parseError);
+      
+      // Attempt to clean common AI JSON errors
+      let cleaned = suggestions
+        .replace(/,(\s*[}\]])/g, '$1')           // Remove trailing commas
+        .replace(/'/g, '"')                      // Replace single quotes
+        .replace(/([{,]\s*)(\w+):/g, '$1"$2":'); // Quote unquoted keys
+      
+      try {
+        layout = JSON.parse(cleaned);
+        console.log('✅ JSON recovered successfully');
+      } catch (secondError) {
+        console.error('❌ Recovery failed. First 500 chars:', suggestions.substring(0, 500));
+        const errorMsg = parseError instanceof Error ? parseError.message : 'Unknown parse error';
+        throw new Error(`AI returned invalid JSON: ${errorMsg}`);
+      }
+    }
 
     // Validate AI output (only check physical bounds, trust AI's design decisions)
     if (layout.fields) {

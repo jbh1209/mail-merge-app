@@ -66,6 +66,13 @@ Design Principles:
 • Use available space wisely - don't leave large empty areas
 • Ensure proper spacing and alignment for professional appearance
 
+CRITICAL SPATIAL RULES:
+• Fields MUST NOT overlap - check that no field's bounding box intersects with another
+• For adjacent fields, space them with gaps: minimum 2mm between fields
+• Example: If field A ends at x=40mm, field B should start at x=42mm minimum
+• Always verify: field1.x + field1.width + 2mm < field2.x for horizontally adjacent fields
+• For vertically stacked fields: field1.y + field1.height + 2mm < field2.y
+
 Think through:
 1. What type of content is each field? (address, name, ID, etc.)
 2. What dimensions would make each field readable?
@@ -216,7 +223,32 @@ Required JSON structure (ALL NUMBERS IN MILLIMETERS EXCEPT fontSize IN POINTS):
       });
     }
 
-    console.log('AI layout generated:', { 
+    // Check for overlapping fields
+    const overlaps: string[] = [];
+    for (let i = 0; i < layout.fields.length; i++) {
+      for (let j = i + 1; j < layout.fields.length; j++) {
+        const field1 = layout.fields[i];
+        const field2 = layout.fields[j];
+        
+        const overlap = !(
+          field1.position.x + field1.size.width <= field2.position.x ||
+          field2.position.x + field2.size.width <= field1.position.x ||
+          field1.position.y + field1.size.height <= field2.position.y ||
+          field2.position.y + field2.size.height <= field1.position.y
+        );
+        
+        if (overlap) {
+          overlaps.push(`${field1.templateField} overlaps ${field2.templateField}`);
+        }
+      }
+    }
+
+    if (overlaps.length > 0) {
+      console.error('Field overlaps detected:', overlaps);
+      throw new Error(`Layout has overlapping fields: ${overlaps.join(', ')}. Please try regenerating the layout.`);
+    }
+
+    console.log('AI layout generated:', {
       fieldsCount: layout.fields?.length, 
       strategy: layout.layoutStrategy,
       confidence: layout.confidence,

@@ -155,16 +155,11 @@ export function FieldElement({
         );
       
       default: // text
-        const isLongText = displayText.length > 50;
-        const shouldWrap = isLongText || displayText.includes(',');
-        
         return (
           <div 
             className="flex items-start h-full px-2 py-1"
             style={{
               overflow: 'hidden',
-              wordWrap: shouldWrap ? 'break-word' : 'normal',
-              whiteSpace: shouldWrap ? 'normal' : 'nowrap'
             }}
           >
             {field.showLabel && field.labelStyle?.position === 'inline' && (
@@ -185,8 +180,10 @@ export function FieldElement({
                 fontWeight: field.style.fontWeight,
                 fontStyle: field.style.fontStyle,
                 color: field.style.color,
-                lineHeight: '1.2',
-                display: shouldWrap ? 'block' : 'inline'
+                whiteSpace: (field.style as any).whiteSpace || 'normal',
+                wordWrap: (field.style as any).wordWrap || 'normal',
+                lineHeight: (field.style as any).lineHeight || '1.2',
+                display: (field.style as any).display || 'block'
               }}
             >
               {displayText}

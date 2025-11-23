@@ -388,13 +388,35 @@ CONSTRAINT SATISFACTION RULES:
 7. All fields must be within label boundaries (3mm margins)
 
 TO ACHIEVE THIS YOU MUST:
-- Adjust font sizes DOWN if needed to fit within height budgets
-- Use lineHeight: 1.1 for multi-line ADDRESS fields to save space
+- **MAXIMIZE font sizes to FILL the allocated height budget** - the budget is space you SHOULD use, not just a limit
+- For each field: Calculate the LARGEST font size that fits within its height budget
+- Example: ADDRESS with 18mm budget and 5 lines → use ~10-11pt with lineHeight 1.1 to utilize the full 18mm
+- Example: STORE NAME with 8mm budget → use ~14-16pt to fill that space
+- Use lineHeight: 1.1 for multi-line ADDRESS fields (compact but readable)
 - Distribute horizontal space efficiently for paired fields (e.g., 60/40 split for NAME/POSTER)
-- Prioritize readability WITHIN the constraints, not at expense of constraints
-- Calculate positions carefully to respect all gaps and budgets
+- The goal is EFFICIENT SPACE UTILIZATION - fill your budgets with appropriately sized text
+- Calculate positions carefully to respect all gaps while maximizing text size
 
-THIS IS A HARD CONSTRAINT PROBLEM - you must make everything fit.
+FONT SIZE CALCULATION STRATEGY:
+
+For single-line fields:
+- Calculate: fontSize_pt = (height_budget_mm / 0.45) to fill the vertical space
+- Example: 8mm budget → 8 / 0.45 ≈ 17pt font
+- Adjust down slightly if needed for aesthetic balance (e.g., 17pt → 15-16pt)
+
+For multi-line fields (ADDRESS):
+- Calculate: fontSize_pt = (height_budget_mm / (line_count × lineHeight × 0.35))
+- Example: 18mm budget, 5 lines, lineHeight 1.1 → 18 / (5 × 1.1 × 0.35) ≈ 9.3pt → use 9-10pt
+- This ensures the text FILLS the allocated space, not just fits within it
+
+CRITICAL FOR ADDRESS FIELDS:
+- You have been allocated significant vertical space (typically 15-20mm)
+- This is meant to be FILLED with readable multi-line text
+- Don't use tiny 7-8pt fonts in a large container
+- Calculate the appropriate font size to utilize the full height budget
+- Use whiteSpace: 'pre-line', transformCommas: true, and lineHeight: 1.1
+
+THIS IS A HARD CONSTRAINT PROBLEM - you must make everything fit while maximizing readability.
 
 FIELD DATA ANALYSIS:
 ${dataAnalysis.map((d: any, i: number) => {

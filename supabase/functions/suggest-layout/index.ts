@@ -277,272 +277,153 @@ serve(async (req) => {
       };
     });
 
-    console.log('Data analysis complete:', dataAnalysis.map((d: any) => ({
+    console.log('Data analysis:', dataAnalysis.map((d: any) => ({
       field: d.field,
-      fieldType: d.fieldType,
-      maxLength: d.maxLength,
-      maxLineLength: d.maxLineLength,
-      suggestedFontSize: d.suggestedFontSize
+      type: d.fieldType,
+      maxLen: d.maxLength,
+      maxLinelen: d.maxLineLength
     })));
 
-    // ========================================================================
-    // STEP 1: DATA-FIRST ANALYSIS - Calculate ACTUAL space requirements
-    // ========================================================================
+    // ============================================================================
+    // STEP 1: MINIMAL DATA ANALYSIS - Let AI do the reasoning
+    // ============================================================================
     
-    const availableWidth = templateSize.width - 6; // 3mm margins left+right
-    const availableHeight = templateSize.height - 6; // 3mm margins top+bottom
+    console.log('\n=== STEP 1: MINIMAL DATA ANALYSIS ===');
     
-    // Identify horizontal pairing opportunities FIRST (before font calculations)
-    const pairings = [
-      { fields: ['STORE NAME', 'A0 POSTER'] },
-      { fields: ['STORE CODE', 'PROVINCE'] },
-      { fields: ['STORE AREA', 'AREA MANAGER'] }
-    ];
+    const availableWidth = templateSize.width - 6; // 3mm margins
+    const availableHeight = templateSize.height - 6;
     
-    const validPairings = pairings.filter(p => 
-      p.fields.every(f => fieldNames.includes(f))
-    );
-    
-    const pairedFields = new Set(validPairings.flatMap(p => p.fields));
-    const widthPerPairedField = (availableWidth - 2) / 2; // Split width with 2mm gap
-    
-    console.log('🔗 PAIRINGS IDENTIFIED:', validPairings.map(p => p.fields.join(' + ')));
-    console.log('📏 WIDTH ALLOCATION:', {
-      availableWidth,
-      widthPerPairedField,
-      pairedFields: Array.from(pairedFields)
-    });
-    
-    // 1A. Analyze ADDRESS field FIRST (highest priority, multi-line)
+    // Find ADDRESS field
     const addressField = dataAnalysis.find((d: any) => 
       d.fieldType === 'ADDRESS' || d.field.toUpperCase().includes('ADDRESS')
     );
     
-    let addressFieldName = '';
-    let addressRequirements = null;
-    
+    let addressInfo = null;
     if (addressField) {
-      addressFieldName = addressField.field;
-      
-      // Get all ADDRESS samples and split by commas to find longest LINE
       const addressSamples = sampleData?.map((row: any) => String(row[addressField.field] || '')) || [];
+      let maxLines = 0;
       let longestLine = '';
-      let maxLineCount = 0;
       
       for (const address of addressSamples) {
         const lines = address.split(',').map((s: string) => s.trim());
-        maxLineCount = Math.max(maxLineCount, lines.length);
-        
+        maxLines = Math.max(maxLines, lines.length);
         for (const line of lines) {
-          if (line.length > longestLine.length) {
-            longestLine = line;
-          }
+          if (line.length > longestLine.length) longestLine = line;
         }
       }
       
-      // Calculate font size to fit longest line in available width
-      const avgCharWidthRatio = 0.55; // pt to mm ratio
-      let calculatedFontSize = Math.floor(availableWidth / (longestLine.length * avgCharWidthRatio));
-      
-      // Clamp to readable range for addresses (8-12pt)
-      const addressFontSize = Math.max(8, Math.min(12, calculatedFontSize));
-      
-      // Calculate height needed: lines × fontSize × lineHeight × pt-to-mm
-      const lineHeight = 1.1; // compact but readable
-      const addressHeight = Math.ceil(maxLineCount * addressFontSize * lineHeight * 0.35);
-      
-      addressRequirements = {
-        fieldName: addressFieldName,
-        fontSize: addressFontSize,
-        height: addressHeight,
-        fontWeight: 'normal',
-        longestLine,
-        longestLineLength: longestLine.length,
-        lineCount: maxLineCount
+      addressInfo = {
+        field: addressField.field,
+        type: 'ADDRESS',
+        sampleValue: addressSamples[0],
+        lineCount: maxLines,
+        longestLine: longestLine.length
       };
       
-      console.log('📍 ADDRESS REQUIREMENTS:', addressRequirements);
+      console.log('📍 ADDRESS:', addressInfo);
     }
     
-    // 1B. Analyze OTHER fields (single-line, size based on data)
-    const otherFieldRequirements = dataAnalysis
-      .filter((d: any) => d.field !== addressFieldName)
-      .map((d: any) => {
-        const fieldType = d.fieldType;
-        const maxLength = d.maxLineLength; // Use post-split length
-        
-        // Determine available width for THIS field (pairing-aware)
-        const fieldWidth = pairedFields.has(d.field) ? widthPerPairedField : availableWidth;
-        
-        // Determine font size based on field type, data length, and ACTUAL available width
-        let fontSize: number;
-        let fontWeight: 'normal' | 'bold';
-        
-        if (fieldType === 'CODE' || fieldType === 'BARCODE') {
-          // Codes: Calculate based on actual width available
-          fontSize = Math.min(18, Math.max(12, Math.floor(fieldWidth / (maxLength * 0.6))));
-          fontWeight = 'bold';
-        } else if (fieldType === 'NAME') {
-          // Names: Calculate based on actual width available
-          fontSize = Math.min(16, Math.max(11, Math.floor(fieldWidth / (maxLength * 0.55))));
-          fontWeight = 'bold';
-        } else {
-          // General: Calculate based on actual width available
-          fontSize = Math.min(14, Math.max(9, Math.floor(fieldWidth / (maxLength * 0.55))));
-          fontWeight = 'normal';
-        }
-        
-        // Calculate height needed: fontSize × lineHeight × pt-to-mm
-        const lineHeight = 1.0; // single line
-        const requiredHeight = Math.ceil(fontSize * lineHeight * 0.35);
-        
-        return {
-          fieldName: d.field,
-          fieldType,
-          maxLength,
-          fontSize,
-          fontWeight,
-          height: requiredHeight
-        };
-      });
+    // Identify potential pairings (short complementary fields)
+    const shortFields = dataAnalysis.filter((d: any) => 
+      d.fieldType !== 'ADDRESS' && d.maxLength < 20
+    );
     
-    console.log('📊 OTHER FIELD REQUIREMENTS:', otherFieldRequirements);
-    
-    // ========================================================================
-    // STEP 2: ALLOCATE SPACE - Fit actual requirements or scale proportionally
-    // ========================================================================
-    
-    // Calculate total space needed
-    const totalNeeded = (addressRequirements?.height || 0) + 
-                        otherFieldRequirements.reduce((sum: number, f: any) => sum + f.height, 0) +
-                        (fieldNames.length - 1) * 2; // 2mm gaps between fields
-    
-    console.log('📐 SPACE ANALYSIS:', {
-      availableHeight,
-      totalNeeded,
-      addressHeight: addressRequirements?.height || 0,
-      otherFieldsHeight: otherFieldRequirements.reduce((sum: number, f: any) => sum + f.height, 0),
-      gaps: (fieldNames.length - 1) * 2,
-      fits: totalNeeded <= availableHeight
-    });
-    
-    // Allocate final dimensions
-    const finalAllocations = new Map<string, { fontSize: number; height: number; fontWeight: string }>();
-    
-    if (totalNeeded <= availableHeight) {
-      // Perfect fit - use calculated values as-is
-      if (addressRequirements) {
-        finalAllocations.set(addressRequirements.fieldName, {
-          fontSize: addressRequirements.fontSize,
-          height: addressRequirements.height,
-          fontWeight: addressRequirements.fontWeight
-        });
+    const pairingSuggestions = [];
+    for (let i = 0; i < shortFields.length - 1; i++) {
+      const f1 = shortFields[i];
+      const f2 = shortFields[i + 1];
+      if ((f1.field.includes('NAME') && f2.field.includes('CODE')) ||
+          (f1.field.includes('CODE') && f2.field.includes('PROVINCE')) ||
+          (f1.maxLength < 15 && f2.maxLength < 15)) {
+        pairingSuggestions.push([f1.field, f2.field]);
       }
-      
-      for (const field of otherFieldRequirements) {
-        finalAllocations.set(field.fieldName, {
-          fontSize: field.fontSize,
-          height: field.height,
-          fontWeight: field.fontWeight
-        });
-      }
-      
-      console.log('✅ PERFECT FIT - Using calculated dimensions');
-    } else {
-      // Priority-based allocation: ADDRESS > NAME/CODE > GENERAL
-      const priorities = new Map<string, number>();
-      
-      // Assign priorities based on field type
-      if (addressRequirements) {
-        priorities.set(addressRequirements.fieldName, 3); // Highest - multi-line address
-      }
-      
-      for (const field of otherFieldRequirements) {
-        if (field.fieldType === 'NAME' || field.fieldType === 'CODE') {
-          priorities.set(field.fieldName, 2.5); // High - important identifiers
-        } else {
-          priorities.set(field.fieldName, 1); // Normal - general fields
-        }
-      }
-      
-      // Calculate weighted allocation
-      const totalPriority = Array.from(priorities.values()).reduce((sum, p) => sum + p, 0);
-      const gaps = (fieldNames.length - 1) * 2;
-      const spacePerPriority = (availableHeight - gaps) / totalPriority;
-      
-      // Allocate based on priority
-      if (addressRequirements) {
-        const priority = priorities.get(addressRequirements.fieldName) || 1;
-        const allocatedHeight = Math.ceil(priority * spacePerPriority);
-        finalAllocations.set(addressRequirements.fieldName, {
-          fontSize: Math.max(8, addressRequirements.fontSize),
-          height: allocatedHeight,
-          fontWeight: addressRequirements.fontWeight
-        });
-      }
-      
-      for (const field of otherFieldRequirements) {
-        const priority = priorities.get(field.fieldName) || 1;
-        const allocatedHeight = Math.ceil(priority * spacePerPriority);
-        finalAllocations.set(field.fieldName, {
-          fontSize: Math.max(8, Math.floor(field.fontSize * 0.9)), // Slight reduction for fit
-          height: allocatedHeight,
-          fontWeight: field.fontWeight
-        });
-      }
-      
-      console.log('⚖️ PRIORITY-BASED ALLOCATION', {
-        priorities: Object.fromEntries(priorities),
-        spacePerPriority: spacePerPriority.toFixed(1)
-      });
     }
     
-
-    // ========================================================================
-    // STEP 3: BUILD PROMPT - Tell AI exact dimensions to use
-    // ========================================================================
+    console.log('🔗 PAIRING SUGGESTIONS:', pairingSuggestions);
     
-    const fieldSpecs = fieldNames.map((field: string) => {
-      const alloc = finalAllocations.get(field);
-      if (!alloc) return '';
-      
-      const isAddress = field === addressFieldName;
-      
-      return `- ${field}:
-  Type: ${dataAnalysis.find((d: any) => d.field === field)?.fieldType || 'GENERAL'}
-  Font: ${alloc.fontSize}pt ${alloc.fontWeight}
-  Height: ${alloc.height}mm
-  Rendering: ${isAddress ? 'MULTI-LINE (whiteSpace=pre-line, transformCommas=true)' : 'SINGLE-LINE (whiteSpace=nowrap)'}`;
-    }).join('\n');
+
+    // ============================================================================
+    // STEP 2: BUILD CONTEXT-RICH AI PROMPT
+    // ============================================================================
     
-    const prompt = `Generate optimal layout for ${templateSize.width}×${templateSize.height}mm label.
+    console.log('\n=== STEP 2: BUILDING AI PROMPT ===');
+    
+    // Build field descriptions with context
+    const fieldDescriptions = dataAnalysis.map((d: any) => {
+      const isAddress = d.field === addressInfo?.field;
+      const priority = isAddress ? 'HIGHEST' : 
+                       (d.fieldType === 'NAME' || d.fieldType === 'CODE') ? 'HIGH' :
+                       d.maxLength > 10 ? 'MEDIUM' : 'LOW';
+      
+      return `- ${d.field}
+  Type: ${d.fieldType}
+  Priority: ${priority}
+  Sample: "${d.sampleText}"
+  Max length: ${d.maxLength} chars${isAddress && addressInfo ? `, ${addressInfo.lineCount} lines` : ''}`;
+    }).join('\n\n');
+    
+    const systemPrompt = `You are an expert label designer with deep understanding of typography and visual hierarchy.
 
-TEMPLATE SIZE: ${templateSize.width}mm × ${templateSize.height}mm
-USABLE AREA: ${availableWidth}mm × ${availableHeight}mm (3mm margins on all sides)
+TEMPLATE SPECIFICATIONS:
+- Total size: ${templateSize.width}mm × ${templateSize.height}mm
+- Margins: 3mm all sides
+- Usable area: ${availableWidth}mm × ${availableHeight}mm
+- This is an ADDRESS LABEL - the address is the primary content
 
-FIELDS TO LAYOUT (${fieldNames.length} total):
-${fieldSpecs}
+FIELDS TO LAYOUT:
+${fieldDescriptions}
 
-HORIZONTAL PAIRINGS (place side-by-side on same Y):
-${validPairings.map(p => `- ${p.fields.join(' + ')}`).join('\n')}
+${pairingSuggestions.length > 0 ? `PAIRING OPPORTUNITIES:
+${pairingSuggestions.map(p => `- ${p[0]} + ${p[1]} could be side-by-side (each gets ~${((availableWidth-2)/2).toFixed(1)}mm width)`).join('\n')}
+` : ''}
+DESIGN REQUIREMENTS:
+1. ${addressInfo ? `The ${addressInfo.field} is CRITICAL - it has ${addressInfo.lineCount} lines
+   - Needs 50-60% of vertical space for readability
+   - Use "whiteSpace": "pre-line" and "transformCommas": true
+   - Font size: 8-10pt recommended` : 'No address field'}
 
-LAYOUT RULES:
-1. Use EXACT font sizes and heights provided above
-2. Start at Y=3mm (top margin), distribute vertically with 2mm gaps
-3. ${addressFieldName ? `${addressFieldName} MUST have: whiteSpace='pre-line', transformCommas=true, lineHeight='1.1'` : ''}
-4. Other fields MUST have: whiteSpace='nowrap', lineHeight='1.0'
-5. Paired fields share same Y position, split width ~50/50 with 2mm gap
-6. Single fields use full width (${availableWidth}mm)
-7. All positions constrained to 3mm margins
+2. Short fields (< 15 chars) can be paired horizontally to save space
 
-YOUR TASK: Return field positions and dimensions using the specifications above.
+3. Font sizes should reflect importance and content length:
+   - HIGH priority: 12-16pt
+   - MEDIUM: 10-14pt
+   - LOW: 8-12pt
+   - ADDRESS: 8-10pt (needs multiple lines)
 
-Return ONLY valid JSON (no markdown, no explanation):
+4. All text MUST fit - no overflow
+
+5. Create balanced, professional appearance
+
+Return ONLY valid JSON:
 {
   "fields": [
-    {"templateField": "FIELD_NAME", "position": {"x": 3, "y": 3}, "size": {"width": 60, "height": 8}, "style": {"fontSize": 14, "fontWeight": "bold", "textAlign": "left", "whiteSpace": "nowrap", "lineHeight": "1.0"}}
+    {
+      "templateField": "EXACT_FIELD_NAME",
+      "position": { "x": 3, "y": 3 },
+      "size": { "width": 60, "height": 10 },
+      "style": {
+        "fontSize": 12,
+        "fontWeight": "normal",
+        "whiteSpace": "pre-line",
+        "lineHeight": "1.0",
+        "textAlign": "left",
+        "transformCommas": false
+      }
+    }
   ]
-}`
+}`;
+
+    const userPrompt = `Design the optimal layout for this address label.
+
+Consider the data characteristics and priorities. Make intelligent decisions about:
+- Space allocation based on content importance
+- Which fields to pair horizontally vs stack vertically
+- Appropriate font sizes balancing readability with space
+- Vertical positioning creating visual hierarchy
+
+Remember: ${addressInfo ? `${addressInfo.field} is the star - it's an address with ${addressInfo.lineCount} lines needing substantial space.` : 'Focus on balanced layout.'}
+
+Provide a complete, production-ready layout.`;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -561,12 +442,11 @@ Return ONLY valid JSON (no markdown, no explanation):
         },
         signal: controller.signal,
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash', // Faster model for 3-5x performance improvement
+          model: 'google/gemini-2.5-flash',
           messages: [
-            { role: 'system', content: 'You are a professional label layout designer. Return only valid JSON.' },
-            { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ]
       }),
     });
 
@@ -609,71 +489,11 @@ Return ONLY valid JSON (no markdown, no explanation):
       }
     }
 
-    // Validate AI output (only check physical bounds, trust AI's design decisions)
-    if (layout.fields) {
-      layout.fields = layout.fields.map((field: any) => {
-        // Only validate font size is reasonable (not specific range)
-        const fontSize = Math.max(5, Math.min(30, field.style.fontSize));
-        
-        // Only constrain to template bounds (trust AI's calculated dimensions)
-        const maxWidth = templateSize.width;
-        const width = Math.min(maxWidth, Math.max(0, field.size.width));
-        
-        const maxHeight = templateSize.height;
-        const height = Math.min(maxHeight, Math.max(0, field.size.height));
-        
-        // Only constrain positions to stay within label
-        const x = Math.max(0, Math.min(templateSize.width - width, field.position.x));
-        const y = Math.max(0, Math.min(templateSize.height - height, field.position.y));
-        
-        // Validate CSS rendering properties
-        const validWhiteSpace = ['normal', 'nowrap', 'pre-line'];
-        const validWordWrap = ['break-word', 'normal'];
-        const validDisplay = ['block', 'inline', 'flex'];
-        const validFontWeight = ['normal', 'bold'];
-        const validTextAlign = ['left', 'center', 'right'];
-        
-        // Force multi-line rendering for ADDRESS fields (comma-separated data needs line breaks)
-        const isAddressField = field.templateField === addressFieldName || 
-                               field.templateField.toUpperCase().includes('ADDRESS');
-        
-        const whiteSpace = isAddressField ? 'pre-line' : 
-                           (validWhiteSpace.includes(field.style.whiteSpace) ? field.style.whiteSpace : 'normal');
-        const wordWrap = validWordWrap.includes(field.style.wordWrap) ? field.style.wordWrap : 'normal';
-        const lineHeight = field.style.lineHeight || '1.2';
-        const display = validDisplay.includes(field.style.display) ? field.style.display : 'block';
-        const fontWeight = validFontWeight.includes(field.style.fontWeight) ? field.style.fontWeight : 'normal';
-        const textAlign = validTextAlign.includes(field.style.textAlign) ? field.style.textAlign : 'left';
-        const transformCommas = isAddressField ? true : Boolean(field.style.transformCommas);
-        
-        console.log(`Validated ${field.templateField}:`, {
-          original: { x: field.position.x, y: field.position.y, w: field.size.width, h: field.size.height, fontSize: field.style.fontSize },
-          constrained: { x, y, width, height, fontSize },
-          cssProps: { whiteSpace, wordWrap, lineHeight, display, fontWeight, textAlign, transformCommas }
-        });
-        
-        return {
-          ...field,
-          position: { x, y },
-          size: { width, height },
-          style: {
-            ...field.style,
-            fontSize,
-            whiteSpace,
-            wordWrap,
-            lineHeight,
-            display,
-            fontWeight,
-            textAlign,
-            transformCommas
-          }
-        };
-      });
-    }
-
-    // ========================================================================
-    // STEP 4: VALIDATE - Check AI response against actual requirements
-    // ========================================================================
+    // ============================================================================
+    // STEP 3: MINIMAL VALIDATION - Trust AI, check basics only
+    // ============================================================================
+    
+    console.log('\n=== STEP 3: VALIDATING LAYOUT ===');
     
     const validationErrors: string[] = [];
     
@@ -684,100 +504,51 @@ Return ONLY valid JSON (no markdown, no explanation):
       validationErrors.push(`Missing fields: ${missingFields.join(', ')}`);
     }
     
-    // Validate against ACTUAL requirements (not arbitrary budgets)
-    for (const field of layout.fields) {
-      const expected = finalAllocations.get(field.templateField);
-      if (!expected) continue;
-      
-      // Check font size matches
-      const fontDiff = Math.abs(field.style.fontSize - expected.fontSize);
-      if (fontDiff > 1) {
-        validationErrors.push(
-          `${field.templateField} font size mismatch: got ${field.style.fontSize}pt, expected ${expected.fontSize}pt`
-        );
-      }
-      
-      // Check height matches
-      const heightDiff = Math.abs(field.size.height - expected.height);
-      if (heightDiff > 2) { // 2mm tolerance
-        validationErrors.push(
-          `${field.templateField} height mismatch: got ${field.size.height.toFixed(1)}mm, expected ${expected.height}mm`
-        );
-      }
-      
-      // Special validation for ADDRESS field
-      if (field.templateField === addressFieldName) {
-        if (!field.style.transformCommas) {
-          validationErrors.push(`${field.templateField} must have transformCommas=true for multi-line display`);
+    // Basic validation only
+    if (layout.fields) {
+      layout.fields = layout.fields.map((field: any) => {
+        // Check font size is reasonable
+        if (field.style.fontSize < 6 || field.style.fontSize > 20) {
+          validationErrors.push(`${field.templateField}: Font ${field.style.fontSize}pt out of range (6-20pt)`);
         }
-        if (field.style.whiteSpace !== 'pre-line') {
-          validationErrors.push(`${field.templateField} must have whiteSpace='pre-line' for multi-line display`);
-        }
-      }
-    }
-    
-    // Check required pairings
-    for (const pairing of validPairings) {
-      const field1 = layout.fields.find((f: any) => f.templateField === pairing.fields[0]);
-      const field2 = layout.fields.find((f: any) => f.templateField === pairing.fields[1]);
-      
-      if (field1 && field2) {
-        const yDiff = Math.abs(field1.position.y - field2.position.y);
-        if (yDiff > 1) { // 1mm tolerance
-          validationErrors.push(`Required pairing not on same row: ${pairing.fields.join(' + ')} (y-diff: ${yDiff.toFixed(1)}mm)`);
-        }
-      }
-    }
-    
-    // Check total height
-    const maxY = Math.max(...layout.fields.map((f: any) => f.position.y + f.size.height));
-    if (maxY > availableHeight + 3) { // +3mm for margin
-      validationErrors.push(`Total layout height ${maxY.toFixed(1)}mm exceeds available ${availableHeight}mm`);
-    }
-    
-    // Check for overlapping fields
-    for (let i = 0; i < layout.fields.length; i++) {
-      for (let j = i + 1; j < layout.fields.length; j++) {
-        const field1 = layout.fields[i];
-        const field2 = layout.fields[j];
         
-        const overlap = !(
-          field1.position.x + field1.size.width <= field2.position.x ||
-          field2.position.x + field2.size.width <= field1.position.x ||
-          field1.position.y + field1.size.height <= field2.position.y ||
-          field2.position.y + field2.size.height <= field1.position.y
-        );
-        
-        if (overlap) {
-          validationErrors.push(`${field1.templateField} overlaps ${field2.templateField}`);
+        // Check bounds
+        if (field.position.x + field.size.width > templateSize.width) {
+          validationErrors.push(`${field.templateField}: Exceeds right edge`);
         }
-      }
-    }
-
-    if (validationErrors.length > 0) {
-      console.error('Layout validation failed:', {
-        errors: validationErrors,
-        allocations: Array.from(finalAllocations.entries()).map(([field, alloc]) => ({
-          field,
-          expectedFontSize: alloc.fontSize,
-          expectedHeight: alloc.height
-        })),
-        pairings: validPairings.map(p => p.fields.join(' + ')),
-        fieldHeights: layout.fields.map((f: any) => ({ field: f.templateField, height: f.size.height, y: f.position.y }))
+        if (field.position.y + field.size.height > templateSize.height) {
+          validationErrors.push(`${field.templateField}: Exceeds bottom edge`);
+        }
+        
+        // Force ADDRESS properties
+        const isAddress = addressInfo && field.templateField === addressInfo.field;
+        if (isAddress) {
+          if (field.style.whiteSpace !== 'pre-line') {
+            validationErrors.push(`${field.templateField}: ADDRESS must use whiteSpace="pre-line"`);
+          }
+          if (!field.style.transformCommas) {
+            validationErrors.push(`${field.templateField}: ADDRESS should use transformCommas=true`);
+          }
+        }
+        
+        return field;
       });
-      throw new Error(`Layout validation failed: ${validationErrors.join('; ')}`);
     }
+    
+    if (validationErrors.length > 0) {
+      console.error('❌ Validation errors:', validationErrors);
+      throw new Error(`Layout validation failed:\n${validationErrors.join('\n')}`);
+    }
+    
+    console.log('✓ Layout validation passed');
 
-    console.log('AI-calculated layout (with measurements):', {
-      fieldsCount: layout.fields?.length, 
-      strategy: layout.layoutStrategy,
-      confidence: layout.confidence,
-      fieldsDetails: layout.fields?.map((f: any) => ({
+    console.log('AI-calculated layout:', {
+      fieldsCount: layout.fields?.length,
+      fields: layout.fields?.map((f: any) => ({
         name: f.templateField,
         position: `${f.position.x}mm, ${f.position.y}mm`,
         size: `${f.size.width}mm × ${f.size.height}mm`,
-        fontSize: `${f.style.fontSize}pt`,
-        rendering: `${f.style.whiteSpace}, ${f.style.display}`
+        fontSize: `${f.style.fontSize}pt`
       }))
     });
 

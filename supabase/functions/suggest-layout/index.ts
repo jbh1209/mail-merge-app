@@ -235,6 +235,19 @@ TEMPLATE SPECIFICATIONS:
 - Usable layout area: ${availableWidth}mm × ${availableHeight}mm
 - Label type: ${templateType.toUpperCase()}
 
+CRITICAL RULES (MUST FOLLOW):
+1. **Field Names - EXACT MATCHES ONLY**
+   Use ONLY these exact field names (do not create new fields, do not modify names):
+   ${fieldNames.map((f: string) => `   - "${f}"`).join('\n')}
+   
+2. **All ${fieldNames.length} fields MUST appear in your layout**
+   Missing fields = invalid layout
+
+3. **Physical Constraints**
+   - Every field must fit within ${availableWidth}mm × ${availableHeight}mm
+   - position.y + size.height must be ≤ ${templateSize.height - 3}mm
+   - Font sizes: 8-20pt (readable range)
+
 FIELDS TO LAYOUT:
 ${fieldDescriptions}
 
@@ -245,11 +258,13 @@ YOUR TASK:
 Design an optimal, balanced layout considering:
 
 1. **Priority-Based Space Allocation**
-   ${addressInfo ? `- ${addressInfo.field}: This is the PRIMARY CONTENT (${addressInfo.lineCount} lines)
-     Must allocate 50-60% of vertical space for readability
-     REQUIRES: "whiteSpace": "pre-line" and "transformCommas": true` : ''}
-   - HIGH priority fields need prominence and larger fonts
-   - LOW priority fields can be smaller
+   ${addressInfo ? `- ${addressInfo.field}: PRIMARY CONTENT (${addressInfo.lineCount} lines)
+     * Must occupy Y range: 15mm - 40mm (dominant vertical placement)
+     * Requires 50-60% of total vertical space
+     * MUST include: "whiteSpace": "pre-line" and "transformCommas": true` : ''}
+   - HIGH priority fields: 16-20pt fonts, prominent positioning (Y: 3-15mm)
+   - MEDIUM priority: 10-14pt fonts, secondary positioning
+   - LOW priority: 8-10pt fonts, minimal space (Y: 40-47mm)
 
 2. **Intelligent Font Sizing**
    - Analyze character count and available space
@@ -260,24 +275,26 @@ Design an optimal, balanced layout considering:
 3. **Spatial Optimization**
    - Pair short fields horizontally to save vertical space
    - Stack longer fields vertically for readability
-   - Use vertical space efficiently - all content must fit in ${availableHeight}mm
+   - Use vertical space efficiently - total height < ${availableHeight}mm
 
 4. **Visual Balance**
    - Create clear hierarchy through positioning and sizing
    - Professional, organized appearance
-   - Adequate spacing between elements
+   - Adequate spacing between elements (minimum 2mm between fields)
 
-CONSTRAINTS:
-- All positions and sizes in millimeters
-- All fields must fit within ${availableWidth}mm × ${availableHeight}mm
-- Font sizes between 6-24pt
-- No content overlap
+PRE-RETURN VALIDATION (YOU MUST VERIFY):
+☐ All ${fieldNames.length} field names are exact matches
+☐ No field position.y + size.height exceeds ${templateSize.height - 3}mm
+${addressInfo ? `☐ ${addressInfo.field} has whiteSpace: "pre-line" and transformCommas: true` : ''}
+☐ Total vertical space used < ${availableHeight}mm
+☐ Font sizes are 8-20pt range
+☐ No fields overlap (check x/y/width/height combinations)
 
 Return ONLY valid JSON in this exact format:
 {
   "fields": [
     {
-      "templateField": "EXACT_FIELD_NAME",
+      "templateField": "EXACT_FIELD_NAME_FROM_LIST",
       "position": { "x": 3, "y": 3 },
       "size": { "width": 60, "height": 10 },
       "style": {
@@ -298,11 +315,15 @@ Analyze the data and make intelligent design decisions:
 - How much space does each field need based on content length?
 - What font sizes balance readability with space constraints?
 - Which fields should be paired horizontally vs stacked?
-- How should vertical space be distributed?
+- How should vertical space be distributed to emphasize priority?
 
-${addressInfo ? `CRITICAL: ${addressInfo.field} contains ${addressInfo.lineCount} lines and needs substantial vertical space - this is an address label, so the address is the star of the show.` : ''}
+${addressInfo ? `CRITICAL: ${addressInfo.field} contains ${addressInfo.lineCount} lines and needs substantial vertical space (Y: 15-40mm).
+This is an address label - the address is the star of the show and must be dominant.` : ''}
 
-Design a complete, production-ready layout that fits all content within the ${availableWidth}mm × ${availableHeight}mm usable area.`;
+REMEMBER: Use ONLY the exact field names provided. Do not invent new fields or modify existing names.
+
+Design a complete, production-ready layout that fits all content within the ${availableWidth}mm × ${availableHeight}mm usable area.
+Verify all constraints before returning your JSON.`;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {

@@ -214,8 +214,15 @@ export const useCanvasState = ({
             fontSize: field.style.fontSize,
             fontFamily: field.style.fontFamily || 'Arial',
             fontWeight: field.style.fontWeight || 'normal',
+            fontStyle: field.style.fontStyle || 'normal',
             textAlign: field.style.textAlign || 'left',
-            color: '#000000'
+            color: field.style.color || '#000000',
+            // Pass through all CSS rendering properties from AI
+            whiteSpace: field.style.whiteSpace,
+            wordWrap: field.style.wordWrap,
+            lineHeight: field.style.lineHeight,
+            display: field.style.display,
+            transformCommas: field.style.transformCommas
           },
           showLabel: settings.showAllLabels,
           fieldType: 'text' as const

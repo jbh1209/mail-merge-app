@@ -2,84 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.1";
 import { corsHeaders } from "../_shared/cors.ts";
 
-// Text measurement utility for AI to calculate precise dimensions
-interface TextMeasurement {
-  width: number;
-  height: number;
-  lineCount: number;
-}
-
-function measureText(
-  text: string,
-  fontSizePx: number,
-  maxWidthPx?: number
-): TextMeasurement {
-  // Character width estimation (based on typical Arial metrics)
-  const avgCharWidthRatio = 0.55; // Average character is ~55% of font size
-  const charWidth = fontSizePx * avgCharWidthRatio;
-  const lineHeight = fontSizePx * 1.2;
-  
-  if (!maxWidthPx) {
-    // Single line
-    return {
-      width: text.length * charWidth,
-      height: lineHeight,
-      lineCount: 1
-    };
-  }
-  
-  // Multi-line with wrapping
-  const hasCommas = text.includes(',');
-  const segments = hasCommas ? text.split(',').map(s => s.trim()) : [text];
-  
-  let lineCount = 0;
-  let maxLineWidth = 0;
-  
-  for (const segment of segments) {
-    const words = segment.split(' ');
-    let currentLineWidth = 0;
-    
-    for (const word of words) {
-      const wordWidth = word.length * charWidth;
-      const spaceWidth = charWidth;
-      
-      if (currentLineWidth > 0 && currentLineWidth + spaceWidth + wordWidth > maxWidthPx) {
-        // Word doesn't fit, wrap to next line
-        maxLineWidth = Math.max(maxLineWidth, currentLineWidth);
-        lineCount++;
-        currentLineWidth = wordWidth;
-      } else {
-        // Add word to current line
-        currentLineWidth += (currentLineWidth > 0 ? spaceWidth : 0) + wordWidth;
-      }
-    }
-    
-    if (currentLineWidth > 0) {
-      maxLineWidth = Math.max(maxLineWidth, currentLineWidth);
-      lineCount++;
-    }
-  }
-  
-  return {
-    width: maxLineWidth,
-    height: lineCount * lineHeight,
-    lineCount
-  };
-}
-
-function mmToPx(mm: number): number {
-  // 96 DPI standard: 1 inch = 25.4mm = 96px
-  return (mm / 25.4) * 96;
-}
-
-function pxToMm(px: number): number {
-  return (px / 96) * 25.4;
-}
-
-function pointsToPx(points: number): number {
-  return (points / 72) * 96;
-}
-
+// Field type detection for semantic analysis
 function detectFieldType(fieldName: string, sampleValues: string[]): string {
   const name = fieldName.toLowerCase();
   const samples = sampleValues.map(v => String(v).toLowerCase());
@@ -184,46 +107,14 @@ serve(async (req) => {
 
     console.log('Generating AI layout for:', { templateSize, fieldNames, templateType, totalRows: sampleData?.length });
 
-    // Helper: Get longest line length after splitting by commas
-    function getMaxLineLength(text: string): number {
-      if (text.includes(',')) {
-        const segments = text.split(',').map(s => s.trim());
-        return Math.max(...segments.map(s => s.length));
-      }
-      return text.length;
-    }
-
-    // Helper: Calculate optimal font size based on character length
-    function calculateOptimalFontSize(
-      maxLineLength: number,
-      availableWidthMm: number,
-      minSize: number = 8,
-      maxSize: number = 18
-    ): number {
-      let low = minSize;
-      let high = maxSize;
-      let bestFit = minSize;
-      
-      while (low <= high) {
-        const mid = Math.floor((low + high) / 2);
-        const testText = "W".repeat(maxLineLength);
-        const measured = measureText(testText, pointsToPx(mid));
-        const measuredMm = pxToMm(measured.width);
-        
-        if (measuredMm <= availableWidthMm) {
-          bestFit = mid;
-          low = mid + 1;
-        } else {
-          high = mid - 1;
-        }
-      }
-      
-      return bestFit;
-    }
-
-    // Analyze ALL data rows for accurate character counts
+    // ============================================================================
+    // STEP 1: MINIMAL DATA ANALYSIS - Only semantics, no pre-calculations
+    // ============================================================================
+    
+    console.log('\n=== STEP 1: MINIMAL DATA ANALYSIS ===');
+    
+    // Analyze data for semantic context only
     const dataAnalysis = fieldNames.map((field: string) => {
-      // Get ALL values for this field across ALL rows
       const allValues = sampleData?.map((row: any) => String(row[field] || '')).filter(Boolean) || [];
       
       if (allValues.length === 0) {
@@ -231,69 +122,32 @@ serve(async (req) => {
           field,
           fieldType: 'GENERAL',
           maxLength: 0,
-          maxLineLength: 0,
-          avgLength: 0, 
-          sampleText: '',
-          hasCommas: false,
-          suggestedFontSize: 12
+          sampleText: ''
         };
       }
       
-      // Detect semantic field type
       const fieldType = detectFieldType(field, allValues);
-      
-      // Find max length BEFORE splitting (for reference)
       const maxLength = Math.max(...allValues.map((v: string) => v.length));
-      
-      // Find max LINE length AFTER splitting (for font sizing)
-      const maxLineLength = Math.max(...allValues.map((v: string) => getMaxLineLength(v)));
-      
-      const avgLength = Math.round(
-        allValues.reduce((sum: number, v: string) => sum + v.length, 0) / allValues.length
-      );
-      
       const sampleText = allValues[0];
-      const hasCommas = sampleText.includes(',');
-      
-      // Calculate optimal font size based on post-split line length
-      const usableWidth = templateSize.width * 0.8;
-      const suggestedFontSize = calculateOptimalFontSize(
-        maxLineLength,
-        usableWidth,
-        hasCommas ? 8 : 9,
-        hasCommas ? 14 : 18
-      );
       
       return {
         field,
-        fieldType,           // Semantic type (ADDRESS, NAME, CODE, etc.)
-        maxLength,           // Full string length (e.g., 68 chars for full address)
-        maxLineLength,       // Longest segment after comma-split (e.g., 14 chars)
-        avgLength,
-        sampleText,
-        hasCommas,
-        suggestedFontSize,   // Pre-calculated font size
-        samples: allValues.slice(0, 2)
+        fieldType,
+        maxLength,
+        sampleText
       };
     });
 
-    console.log('Data analysis:', dataAnalysis.map((d: any) => ({
+    console.log('📊 Field Analysis:', dataAnalysis.map((d: any) => ({
       field: d.field,
       type: d.fieldType,
-      maxLen: d.maxLength,
-      maxLinelen: d.maxLineLength
+      maxChars: d.maxLength
     })));
 
-    // ============================================================================
-    // STEP 1: MINIMAL DATA ANALYSIS - Let AI do the reasoning
-    // ============================================================================
-    
-    console.log('\n=== STEP 1: MINIMAL DATA ANALYSIS ===');
-    
     const availableWidth = templateSize.width - 6; // 3mm margins
     const availableHeight = templateSize.height - 6;
     
-    // Find ADDRESS field
+    // Find ADDRESS field and analyze line structure
     const addressField = dataAnalysis.find((d: any) => 
       d.fieldType === 'ADDRESS' || d.field.toUpperCase().includes('ADDRESS')
     );
@@ -314,13 +168,16 @@ serve(async (req) => {
       
       addressInfo = {
         field: addressField.field,
-        type: 'ADDRESS',
         sampleValue: addressSamples[0],
         lineCount: maxLines,
-        longestLine: longestLine.length
+        longestLineChars: longestLine.length
       };
       
-      console.log('📍 ADDRESS:', addressInfo);
+      console.log('📍 ADDRESS:', { 
+        field: addressInfo.field, 
+        lines: addressInfo.lineCount,
+        longestLine: addressInfo.longestLineChars 
+      });
     }
     
     // Identify potential pairings (short complementary fields)
@@ -343,58 +200,80 @@ serve(async (req) => {
     
 
     // ============================================================================
-    // STEP 2: BUILD CONTEXT-RICH AI PROMPT
+    // STEP 2: BUILD CONTEXT-RICH AI PROMPT - Let AI reason about design
     // ============================================================================
     
     console.log('\n=== STEP 2: BUILDING AI PROMPT ===');
     
-    // Build field descriptions with context
+    // Build field descriptions with raw data context only
     const fieldDescriptions = dataAnalysis.map((d: any) => {
       const isAddress = d.field === addressInfo?.field;
-      const priority = isAddress ? 'HIGHEST' : 
-                       (d.fieldType === 'NAME' || d.fieldType === 'CODE') ? 'HIGH' :
-                       d.maxLength > 10 ? 'MEDIUM' : 'LOW';
+      const priority = isAddress ? 'HIGHEST - Address labels need prominent address display' : 
+                       (d.fieldType === 'NAME' || d.fieldType === 'CODE') ? 'HIGH - Important identifiers' :
+                       d.maxLength > 20 ? 'MEDIUM - Longer content' : 'LOW - Short metadata';
       
-      return `- ${d.field}
+      let desc = `- ${d.field}
   Type: ${d.fieldType}
   Priority: ${priority}
   Sample: "${d.sampleText}"
-  Max length: ${d.maxLength} chars${isAddress && addressInfo ? `, ${addressInfo.lineCount} lines` : ''}`;
+  Max length: ${d.maxLength} characters`;
+      
+      if (isAddress && addressInfo) {
+        desc += `
+  Lines when split by commas: ${addressInfo.lineCount}
+  Longest line: ${addressInfo.longestLineChars} characters`;
+      }
+      
+      return desc;
     }).join('\n\n');
     
-    const systemPrompt = `You are an expert label designer with deep understanding of typography and visual hierarchy.
+    const systemPrompt = `You are an expert label layout designer with deep understanding of typography, visual hierarchy, and spatial reasoning.
 
 TEMPLATE SPECIFICATIONS:
-- Total size: ${templateSize.width}mm × ${templateSize.height}mm
-- Margins: 3mm all sides
-- Usable area: ${availableWidth}mm × ${availableHeight}mm
-- This is an ADDRESS LABEL - the address is the primary content
+- Physical size: ${templateSize.width}mm × ${templateSize.height}mm
+- Safe margins: 3mm on all sides
+- Usable layout area: ${availableWidth}mm × ${availableHeight}mm
+- Label type: ${templateType.toUpperCase()}
 
 FIELDS TO LAYOUT:
 ${fieldDescriptions}
 
-${pairingSuggestions.length > 0 ? `PAIRING OPPORTUNITIES:
-${pairingSuggestions.map(p => `- ${p[0]} + ${p[1]} could be side-by-side (each gets ~${((availableWidth-2)/2).toFixed(1)}mm width)`).join('\n')}
+${pairingSuggestions.length > 0 ? `\nPAIRING OPPORTUNITIES:
+${pairingSuggestions.map(p => `- ${p[0]} and ${p[1]} are both short - could be side-by-side`).join('\n')}
 ` : ''}
-DESIGN REQUIREMENTS:
-1. ${addressInfo ? `The ${addressInfo.field} is CRITICAL - it has ${addressInfo.lineCount} lines
-   - Needs 50-60% of vertical space for readability
-   - Use "whiteSpace": "pre-line" and "transformCommas": true
-   - Font size: 8-10pt recommended` : 'No address field'}
+YOUR TASK:
+Design an optimal, balanced layout considering:
 
-2. Short fields (< 15 chars) can be paired horizontally to save space
+1. **Priority-Based Space Allocation**
+   ${addressInfo ? `- ${addressInfo.field}: This is the PRIMARY CONTENT (${addressInfo.lineCount} lines)
+     Must allocate 50-60% of vertical space for readability
+     REQUIRES: "whiteSpace": "pre-line" and "transformCommas": true` : ''}
+   - HIGH priority fields need prominence and larger fonts
+   - LOW priority fields can be smaller
 
-3. Font sizes should reflect importance and content length:
-   - HIGH priority: 12-16pt
-   - MEDIUM: 10-14pt
-   - LOW: 8-12pt
-   - ADDRESS: 8-10pt (needs multiple lines)
+2. **Intelligent Font Sizing**
+   - Analyze character count and available space
+   - Longer content = smaller fonts to fit
+   - Shorter content = larger fonts for readability
+   - All text MUST fit within allocated space
 
-4. All text MUST fit - no overflow
+3. **Spatial Optimization**
+   - Pair short fields horizontally to save vertical space
+   - Stack longer fields vertically for readability
+   - Use vertical space efficiently - all content must fit in ${availableHeight}mm
 
-5. Create balanced, professional appearance
+4. **Visual Balance**
+   - Create clear hierarchy through positioning and sizing
+   - Professional, organized appearance
+   - Adequate spacing between elements
 
-Return ONLY valid JSON:
+CONSTRAINTS:
+- All positions and sizes in millimeters
+- All fields must fit within ${availableWidth}mm × ${availableHeight}mm
+- Font sizes between 6-24pt
+- No content overlap
+
+Return ONLY valid JSON in this exact format:
 {
   "fields": [
     {
@@ -404,7 +283,7 @@ Return ONLY valid JSON:
       "style": {
         "fontSize": 12,
         "fontWeight": "normal",
-        "whiteSpace": "pre-line",
+        "whiteSpace": "normal",
         "lineHeight": "1.0",
         "textAlign": "left",
         "transformCommas": false
@@ -413,17 +292,17 @@ Return ONLY valid JSON:
   ]
 }`;
 
-    const userPrompt = `Design the optimal layout for this address label.
+    const userPrompt = `Design the optimal layout for this ${templateType} label.
 
-Consider the data characteristics and priorities. Make intelligent decisions about:
-- Space allocation based on content importance
-- Which fields to pair horizontally vs stack vertically
-- Appropriate font sizes balancing readability with space
-- Vertical positioning creating visual hierarchy
+Analyze the data and make intelligent design decisions:
+- How much space does each field need based on content length?
+- What font sizes balance readability with space constraints?
+- Which fields should be paired horizontally vs stacked?
+- How should vertical space be distributed?
 
-Remember: ${addressInfo ? `${addressInfo.field} is the star - it's an address with ${addressInfo.lineCount} lines needing substantial space.` : 'Focus on balanced layout.'}
+${addressInfo ? `CRITICAL: ${addressInfo.field} contains ${addressInfo.lineCount} lines and needs substantial vertical space - this is an address label, so the address is the star of the show.` : ''}
 
-Provide a complete, production-ready layout.`;
+Design a complete, production-ready layout that fits all content within the ${availableWidth}mm × ${availableHeight}mm usable area.`;
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -490,57 +369,75 @@ Provide a complete, production-ready layout.`;
     }
 
     // ============================================================================
-    // STEP 3: MINIMAL VALIDATION - Trust AI, check basics only
+    // STEP 3: MINIMAL VALIDATION - Trust AI's reasoning, verify basics only
     // ============================================================================
     
     console.log('\n=== STEP 3: VALIDATING LAYOUT ===');
     
     const validationErrors: string[] = [];
     
-    // Check all fields present
+    // 1. Check all fields are present
     const presentFields = new Set(layout.fields.map((f: any) => f.templateField));
     const missingFields = fieldNames.filter((f: string) => !presentFields.has(f));
     if (missingFields.length > 0) {
       validationErrors.push(`Missing fields: ${missingFields.join(', ')}`);
     }
     
-    // Basic validation only
+    // 2. Validate physical constraints and ADDRESS requirements
     if (layout.fields) {
-      layout.fields = layout.fields.map((field: any) => {
-        // Check font size is reasonable
-        if (field.style.fontSize < 6 || field.style.fontSize > 20) {
-          validationErrors.push(`${field.templateField}: Font ${field.style.fontSize}pt out of range (6-20pt)`);
+      for (const field of layout.fields) {
+        // Check font size is sane (wider range to allow AI flexibility)
+        if (field.style.fontSize < 6 || field.style.fontSize > 24) {
+          validationErrors.push(
+            `${field.templateField}: Font size ${field.style.fontSize}pt out of reasonable range (6-24pt)`
+          );
         }
         
-        // Check bounds
-        if (field.position.x + field.size.width > templateSize.width) {
-          validationErrors.push(`${field.templateField}: Exceeds right edge`);
-        }
-        if (field.position.y + field.size.height > templateSize.height) {
-          validationErrors.push(`${field.templateField}: Exceeds bottom edge`);
+        // Check field fits within template bounds
+        const rightEdge = field.position.x + field.size.width;
+        const bottomEdge = field.position.y + field.size.height;
+        
+        if (rightEdge > templateSize.width) {
+          const overflow = (rightEdge - templateSize.width).toFixed(1);
+          validationErrors.push(
+            `${field.templateField}: Exceeds right edge by ${overflow}mm (position ${field.position.x}mm + width ${field.size.width}mm = ${rightEdge.toFixed(1)}mm > ${templateSize.width}mm)`
+          );
         }
         
-        // Force ADDRESS properties
+        if (bottomEdge > templateSize.height) {
+          const overflow = (bottomEdge - templateSize.height).toFixed(1);
+          validationErrors.push(
+            `${field.templateField}: Exceeds bottom edge by ${overflow}mm (position ${field.position.y}mm + height ${field.size.height}mm = ${bottomEdge.toFixed(1)}mm > ${templateSize.height}mm)`
+          );
+        }
+        
+        // Verify ADDRESS field has required formatting properties
         const isAddress = addressInfo && field.templateField === addressInfo.field;
         if (isAddress) {
           if (field.style.whiteSpace !== 'pre-line') {
-            validationErrors.push(`${field.templateField}: ADDRESS must use whiteSpace="pre-line"`);
+            validationErrors.push(
+              `${field.templateField}: ADDRESS field MUST use whiteSpace="pre-line" for multi-line rendering`
+            );
           }
           if (!field.style.transformCommas) {
-            validationErrors.push(`${field.templateField}: ADDRESS should use transformCommas=true`);
+            validationErrors.push(
+              `${field.templateField}: ADDRESS field should use transformCommas=true for comma-based line breaks`
+            );
           }
         }
-        
-        return field;
-      });
+      }
     }
     
     if (validationErrors.length > 0) {
-      console.error('❌ Validation errors:', validationErrors);
+      console.error('❌ Layout validation failed:', validationErrors);
+      console.error('📐 Debug - Total vertical space used:', 
+        Math.max(...layout.fields.map((f: any) => f.position.y + f.size.height)).toFixed(1) + 'mm',
+        'vs available:', availableHeight.toFixed(1) + 'mm'
+      );
       throw new Error(`Layout validation failed:\n${validationErrors.join('\n')}`);
     }
     
-    console.log('✓ Layout validation passed');
+    console.log('✅ Layout validation passed');
 
     console.log('AI-calculated layout:', {
       fieldsCount: layout.fields?.length,

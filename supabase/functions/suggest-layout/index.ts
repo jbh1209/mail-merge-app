@@ -80,6 +80,80 @@ function pointsToPx(points: number): number {
   return (points / 72) * 96;
 }
 
+function detectFieldType(fieldName: string, sampleValues: string[]): string {
+  const name = fieldName.toLowerCase();
+  const samples = sampleValues.map(v => String(v).toLowerCase());
+  
+  // ADDRESS detection
+  if (name.includes('address') || name.includes('location') || name.includes('street')) {
+    return 'ADDRESS';
+  }
+  if (samples.some(v => v.includes(',') && (v.includes('street') || v.includes('road') || v.includes('avenue') || v.includes('shop') || v.includes('building')))) {
+    return 'ADDRESS';
+  }
+  
+  // NAME detection
+  if (name.includes('name') || name.includes('customer') || name.includes('recipient') || name.includes('contact')) {
+    return 'NAME';
+  }
+  
+  // CODE detection (product code, barcode, SKU, etc.)
+  if (name.includes('code') || name.includes('sku') || name.includes('barcode') || name.includes('id') || name.includes('ref')) {
+    return 'CODE';
+  }
+  if (samples.every(v => /^[A-Z0-9-_]+$/i.test(v) && v.length < 20)) {
+    return 'CODE';
+  }
+  
+  // PROVINCE/STATE/CITY detection
+  if (name.includes('province') || name.includes('state') || name.includes('region') || name.includes('city') || name.includes('town')) {
+    return 'PROVINCE';
+  }
+  
+  // DATE detection
+  if (name.includes('date') || name.includes('time') || name.includes('expiry') || name.includes('created')) {
+    return 'DATE';
+  }
+  if (samples.some(v => /\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(v))) {
+    return 'DATE';
+  }
+  
+  // PRICE/AMOUNT detection
+  if (name.includes('price') || name.includes('amount') || name.includes('cost') || name.includes('total') || name.includes('value')) {
+    return 'PRICE';
+  }
+  if (samples.some(v => /^\$?\d+(\.\d{2})?$/.test(v.trim()))) {
+    return 'PRICE';
+  }
+  
+  // QUANTITY detection
+  if (name.includes('qty') || name.includes('quantity') || name.includes('count') || name.includes('units')) {
+    return 'QUANTITY';
+  }
+  if (samples.every(v => /^\d+$/.test(v.trim()) && parseInt(v) < 10000)) {
+    return 'QUANTITY';
+  }
+  
+  // EMAIL detection
+  if (name.includes('email') || name.includes('mail')) {
+    return 'EMAIL';
+  }
+  if (samples.some(v => /@/.test(v))) {
+    return 'EMAIL';
+  }
+  
+  // PHONE detection
+  if (name.includes('phone') || name.includes('tel') || name.includes('mobile') || name.includes('cell')) {
+    return 'PHONE';
+  }
+  if (samples.some(v => /[\d\s()+-]{8,}/.test(v))) {
+    return 'PHONE';
+  }
+  
+  // Default to GENERAL for anything else
+  return 'GENERAL';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -150,7 +224,8 @@ serve(async (req) => {
       
       if (allValues.length === 0) {
         return { 
-          field, 
+          field,
+          fieldType: 'GENERAL',
           maxLength: 0,
           maxLineLength: 0,
           avgLength: 0, 
@@ -159,6 +234,9 @@ serve(async (req) => {
           suggestedFontSize: 12
         };
       }
+      
+      // Detect semantic field type
+      const fieldType = detectFieldType(field, allValues);
       
       // Find max length BEFORE splitting (for reference)
       const maxLength = Math.max(...allValues.map((v: string) => v.length));
@@ -184,6 +262,7 @@ serve(async (req) => {
       
       return {
         field,
+        fieldType,           // Semantic type (ADDRESS, NAME, CODE, etc.)
         maxLength,           // Full string length (e.g., 68 chars for full address)
         maxLineLength,       // Longest segment after comma-split (e.g., 14 chars)
         avgLength,
@@ -196,6 +275,7 @@ serve(async (req) => {
 
     console.log('Data analysis complete:', dataAnalysis.map((d: any) => ({
       field: d.field,
+      fieldType: d.fieldType,
       maxLength: d.maxLength,
       maxLineLength: d.maxLineLength,
       suggestedFontSize: d.suggestedFontSize
@@ -211,7 +291,7 @@ YOUR DATA TO DESIGN WITH:
 ${dataAnalysis.map((d: any, i: number) => {
   const text = d.sampleText || 'N/A';
   
-  return `Field "${d.field}":
+  return `Field "${d.field}" [Type: ${d.fieldType}]:
    Sample text: "${text}"
    ${d.hasCommas ? `Full character count: ${d.maxLength} chars
    Longest line after comma-split: ${d.maxLineLength} chars ← USE THIS FOR SIZING` : `Character count: ${d.maxLength} chars`}
@@ -219,10 +299,28 @@ ${dataAnalysis.map((d: any, i: number) => {
    **SUGGESTED FONT SIZE: ${d.suggestedFontSize}pt** (pre-calculated to fit ALL ${sampleData?.length || 0} data rows)`;
 }).join('\n\n')}
 
-FONT SIZE GUIDANCE:
+FONT SIZE & SEMANTIC GUIDANCE:
 ${dataAnalysis.map((d: any) => 
-  `- "${d.field}": ${d.suggestedFontSize}pt (calculated for ${d.hasCommas ? 'longest line (' + d.maxLineLength + ' chars)' : 'full text (' + d.maxLength + ' chars)'})`
+  `- "${d.field}" [${d.fieldType}]: ${d.suggestedFontSize}pt (calculated for ${d.hasCommas ? 'longest line (' + d.maxLineLength + ' chars)' : 'full text (' + d.maxLength + ' chars)'})`
 ).join('\n')}
+
+FIELD TYPE DESIGN PRINCIPLES:
+- ADDRESS: Multi-line content with comma breaks, needs clear line spacing, typically smaller fonts (9-12pt), middle/bottom placement
+- NAME: Primary identifier, should be prominent and eye-catching (12-16pt), top placement preferred
+- CODE: Machine-readable emphasis, often monospace consideration, compact but scannable (10-14pt), high visibility area
+- PROVINCE/CITY: Secondary location info, medium prominence (10-13pt), often grouped with address
+- DATE: Compact format, typically corner/edge placement (9-12pt), less emphasis unless critical
+- PRICE: Bold/prominent for retail contexts, right-aligned common (11-14pt), high visibility
+- QUANTITY: Small but clear, paired with units (9-12pt), near related fields
+- EMAIL/PHONE: Contact details, small footer text (8-11pt), bottom placement typical
+- GENERAL: Balance readability with available context (10-13pt), flexible placement
+
+DESIGN PRIORITIES BY FIELD TYPE:
+1. NAME fields → Top third of label, largest font, maximum visibility
+2. CODE fields → Upper-middle, high contrast, easily scannable
+3. ADDRESS fields → Middle-to-lower, clear multi-line spacing with semantic comma breaks
+4. PRICE/QUANTITY → Often grouped together, right side common for retail
+5. DATE/PROVINCE → Secondary info, less prominent placement
 
 YOUR DESIGN PROCESS:
 1. ANALYZE THE DATA

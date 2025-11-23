@@ -60,7 +60,8 @@ export function SimpleLabelPreview({
         containerHeight,
         field.style.fontSize,
         field.style.fontFamily,
-        field.style.fontWeight
+        field.style.fontWeight,
+        4  // Account for 2px padding on each side
       );
 
       if (overflow.hasOverflow) {
@@ -109,6 +110,8 @@ export function SimpleLabelPreview({
             wordWrap: field.style.wordWrap || 'normal',
             lineHeight: field.style.lineHeight || '1.2',
             display: field.style.display || 'block',
+            width: '100%',
+            boxSizing: 'border-box'
           }}
         >
           {String(dataValue)}

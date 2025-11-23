@@ -311,6 +311,13 @@ ${dataAnalysis.map((d: any) =>
   `- "${d.field}" [${d.fieldType}]: ${d.suggestedFontSize}pt (calculated for ${d.hasCommas ? 'longest line (' + d.maxLineLength + ' chars)' : 'full text (' + d.maxLength + ' chars)'})`
 ).join('\n')}
 
+SPACE CONSTRAINT ANALYSIS:
+Label dimensions: ${templateSize.width}mm × ${templateSize.height}mm
+Total fields to place: ${fieldNames.length}
+Available vertical space: ${templateSize.height - 4}mm (after margins)
+Estimated minimum vertical space needed: Calculate sum of all field heights + gaps
+If total exceeds label height → Apply space-saving strategies below
+
 FIELD TYPE DESIGN PRINCIPLES:
 - ADDRESS: Multi-line content with comma breaks (5+ lines common), requires SIGNIFICANT vertical space allocation
   **CRITICAL: ADDRESS fields MUST use whiteSpace: 'pre-line' and transformCommas: true to enable semantic line breaks**
@@ -327,19 +334,37 @@ FIELD TYPE DESIGN PRINCIPLES:
 - GENERAL: Balance readability with available context (10-13pt), flexible placement
 
 DESIGN PRIORITIES & PLACEMENT STRATEGY:
-1. **Top Row (y: 3-12mm)**: NAME field (largest, centered or left-aligned) + optional small CODE in top-right corner
-   - If both present, ensure: NAME_width + 2mm gap + CODE_width ≤ label width
-   
-2. **Upper-Middle Row (y: 13-22mm)**: Secondary codes (STORE CODE, PROVINCE) - left and right separation
-   
-3. **Middle Section (y: 23-40mm)**: ADDRESS field (if multi-line)
-   - Takes full width OR leaves room for side elements
-   - Height: Calculate based on line count (line_count × fontSize × 1.2 × 0.35mm)
-   
-4. **Lower Section (y: 41-48mm)**: Tertiary info (AREA, MANAGER, QUANTITY)
-   - Distribute horizontally with 2mm gaps
 
-5. **Use vertical stacking** when horizontal space is tight to avoid overlaps
+**For labels with HEIGHT > 70mm (ample vertical space):**
+- Use clear row separation with 2-3mm gaps
+- Generous whitespace, larger fonts
+
+**For labels with HEIGHT 40-70mm (moderate space like 50.8mm labels):**
+
+Row 1 (y: 3-10mm): 
+  • STORE NAME (left, bold) + A0 POSTER (right corner, bold) [HORIZONTAL PAIR]
+  • Total width must fit: NAME_width + 3mm gap + POSTER_width ≤ label width
+
+Row 2 (y: 12-19mm):
+  • STORE CODE (left) + PROVINCE (right) [HORIZONTAL PAIR]
+  • Clear left-right separation
+
+Row 3 (y: 21-27mm):
+  • STORE AREA (full width OR omit if space critical)
+
+Row 4 (y: 29-46mm): **PRIORITY SPACE**
+  • ADDRESS (multi-line, significant height allocation)
+  • Calculate height: line_count × fontSize × 1.1 lineHeight × 0.35mm
+  • Font size: 9-11pt based on longest line length
+
+Row 5 (y: 47-50mm): **IF SPACE PERMITS**
+  • AREA MANAGER (compact, 14pt font)
+  • If ADDRESS + margins exceed y=45mm, consider omitting this row
+
+**Horizontal Pairing Rules:**
+- Two fields can share a row if: field1_width + 3mm + field2_width ≤ label_width
+- Always keep 3mm minimum horizontal gap
+- Typical pairing: short codes on same row (CODE + PROVINCE, MANAGER + POSTER)
 
 SPACE ALLOCATION FOR MULTI-LINE FIELDS:
 When a field will render as multiple lines (e.g., ADDRESS with commas):
@@ -384,6 +409,31 @@ EXAMPLE COLLISION AVOIDANCE:
 OR
 
 ✅ GOOD: NAME (x:3, w:95.6, y:4) on top row, POSTER (x:80, w:15, y:15) on different row
+
+STRATEGIES FOR TIGHT VERTICAL SPACE:
+
+If calculated field heights + gaps exceed label height, use these tactics IN ORDER:
+
+1. **Side-by-Side Placement**: Place shorter fields (< 8mm height) horizontally adjacent
+   Example: STORE CODE (left) | PROVINCE (right) on same row
+   Example: AREA MANAGER (left) | A0 POSTER (right) on same row
+   
+2. **Reduce Secondary Field Prominence**: 
+   - STORE AREA: Can use smaller font (12-13pt → 10-11pt)
+   - AREA MANAGER: Can use smaller font (18pt → 14-15pt)
+   - Keep NAME and ADDRESS prominence
+
+3. **Compact Multi-Line Spacing**:
+   - ADDRESS lineHeight: Use 1.1 instead of 1.2 if space tight
+   - Reduces 19mm → 17mm for 5-line addresses
+
+4. **Strategic Field Omission** (LAST RESORT):
+   - If still insufficient space, omit least critical field (typically STORE AREA or AREA MANAGER)
+   - Must include: NAME, CODE, PROVINCE, ADDRESS, POSTER
+   - Optional: STORE AREA, AREA MANAGER
+
+CRITICAL: Before finalizing layout, verify:
+sum(all field heights) + (field_count - 1) × 2mm gaps ≤ label height - 2mm margin
 
 3. YOUR TOOLS:
    - Text measurements at multiple font sizes (shown above)
@@ -443,6 +493,28 @@ Return JSON with your complete design and explain your reasoning:
 }
 }`;
 
+    // Calculate if all fields can realistically fit
+    const estimatedTotalHeight = dataAnalysis.reduce((sum: number, field: any) => {
+      const baseHeight = field.fieldType === 'ADDRESS' && field.hasCommas 
+        ? Math.ceil((field.maxLength / field.maxLineLength) * field.suggestedFontSize * 1.1 * 0.35)
+        : Math.ceil(field.suggestedFontSize * 0.35 * 1.5);
+      return sum + baseHeight;
+    }, 0);
+
+    const requiredHeightWithGaps = estimatedTotalHeight + ((dataAnalysis.length - 1) * 2);
+    const spaceAvailable = templateSize.height - 4; // margins
+
+    console.log('Space analysis:', {
+      required: `${requiredHeightWithGaps}mm`,
+      available: `${spaceAvailable}mm`,
+      tight: requiredHeightWithGaps > spaceAvailable
+    });
+
+    // Add to prompt if tight
+    const spaceTightness = requiredHeightWithGaps > spaceAvailable 
+      ? `\n\n⚠️ SPACE CONSTRAINT: Vertical space is TIGHT (need ${requiredHeightWithGaps}mm, have ${spaceAvailable}mm). MUST use side-by-side placement and compact spacing strategies.`
+      : '';
+
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY not configured');
@@ -463,7 +535,7 @@ Return JSON with your complete design and explain your reasoning:
           model: 'google/gemini-2.5-flash', // Faster model for 3-5x performance improvement
           messages: [
             { role: 'system', content: 'You are a professional label layout designer. Return only valid JSON.' },
-            { role: 'user', content: prompt }
+            { role: 'user', content: prompt + spaceTightness }
         ],
         temperature: 0.7,
       }),

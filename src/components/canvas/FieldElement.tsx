@@ -110,7 +110,13 @@ export function FieldElement({
     document.addEventListener('mouseup', handleMouseUp);
   };
 
-  const displayText = sampleData?.[field.templateField] || generateSampleText(field.templateField);
+  let displayText = sampleData?.[field.templateField] || generateSampleText(field.templateField);
+  
+  // Transform commas to newlines for ADDRESS fields (enables semantic line breaks with pre-line)
+  if ((field.style as any).transformCommas && typeof displayText === 'string') {
+    displayText = displayText.replace(/,\s*/g, '\n');
+  }
+  
   const shouldShowLabel = showAllLabels || field.showLabel;
 
   const handleClick = (e: React.MouseEvent) => {

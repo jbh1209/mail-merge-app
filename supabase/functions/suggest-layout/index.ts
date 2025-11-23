@@ -285,151 +285,227 @@ serve(async (req) => {
       suggestedFontSize: d.suggestedFontSize
     })));
 
-    // PRE-ANALYSIS: ADDRESS-FIRST LAYOUT CALCULATION
-    // Find ADDRESS field and calculate its optimal size BEFORE allocating budgets
-    const addressField = dataAnalysis.find((d: any) => d.fieldType === 'ADDRESS' || d.field.toUpperCase().includes('ADDRESS'));
-    let addressFontSize = 10; // default
-    let addressHeight = 18; // default
+    // ========================================================================
+    // STEP 1: DATA-FIRST ANALYSIS - Calculate ACTUAL space requirements
+    // ========================================================================
+    
+    const availableWidth = templateSize.width - 6; // 3mm margins left+right
+    const availableHeight = templateSize.height - 6; // 3mm margins top+bottom
+    
+    // 1A. Analyze ADDRESS field FIRST (highest priority, multi-line)
+    const addressField = dataAnalysis.find((d: any) => 
+      d.fieldType === 'ADDRESS' || d.field.toUpperCase().includes('ADDRESS')
+    );
+    
     let addressFieldName = '';
-    const availableWidth = templateSize.width - 6; // margins for width calculation
+    let addressRequirements = null;
     
     if (addressField) {
       addressFieldName = addressField.field;
       
-      // Calculate optimal font size for longest line
-      const availableWidth = templateSize.width - 6; // margins
-      const longestLine = addressField.maxLineLength;
-      const avgCharWidthRatio = 0.55; // pt to mm ratio for character width
+      // Get all ADDRESS samples and split by commas to find longest LINE
+      const addressSamples = sampleData?.map((row: any) => String(row[addressField.field] || '')) || [];
+      let longestLine = '';
+      let maxLineCount = 0;
       
-      // Calculate font size to fit longest line
-      let calculatedFontSize = Math.floor(availableWidth / (longestLine * avgCharWidthRatio));
+      for (const address of addressSamples) {
+        const lines = address.split(',').map((s: string) => s.trim());
+        maxLineCount = Math.max(maxLineCount, lines.length);
+        
+        for (const line of lines) {
+          if (line.length > longestLine.length) {
+            longestLine = line;
+          }
+        }
+      }
+      
+      // Calculate font size to fit longest line in available width
+      const avgCharWidthRatio = 0.55; // pt to mm ratio
+      let calculatedFontSize = Math.floor(availableWidth / (longestLine.length * avgCharWidthRatio));
       
       // Clamp to readable range for addresses (8-12pt)
-      addressFontSize = Math.max(8, Math.min(12, calculatedFontSize));
+      const addressFontSize = Math.max(8, Math.min(12, calculatedFontSize));
       
-      // Calculate line count (commas + 1)
-      const lineCount = (addressField.sampleText.match(/,/g) || []).length + 1;
+      // Calculate height needed: lines × fontSize × lineHeight × pt-to-mm
       const lineHeight = 1.1; // compact but readable
+      const addressHeight = Math.ceil(maxLineCount * addressFontSize * lineHeight * 0.35);
       
-      // Calculate required height for ADDRESS: lineCount × fontSize × lineHeight × pt-to-mm conversion
-      addressHeight = Math.ceil(lineCount * addressFontSize * lineHeight * 0.35);
-      
-      console.log('📍 ADDRESS PRE-CALCULATION:', {
-        field: addressFieldName,
+      addressRequirements = {
+        fieldName: addressFieldName,
+        fontSize: addressFontSize,
+        height: addressHeight,
+        fontWeight: 'normal',
         longestLine,
-        longestLineLength: longestLine,
-        calculatedFontSize,
-        clampedFontSize: addressFontSize,
-        lineCount,
-        lineHeight,
-        requiredHeight: addressHeight
+        longestLineLength: longestLine.length,
+        lineCount: maxLineCount
+      };
+      
+      console.log('📍 ADDRESS REQUIREMENTS:', addressRequirements);
+    }
+    
+    // 1B. Analyze OTHER fields (single-line, size based on data)
+    const otherFieldRequirements = dataAnalysis
+      .filter((d: any) => d.field !== addressFieldName)
+      .map((d: any) => {
+        const fieldType = d.fieldType;
+        const maxLength = d.maxLineLength; // Use post-split length
+        
+        // Determine font size based on field type and data length
+        let fontSize: number;
+        let fontWeight: 'normal' | 'bold';
+        
+        if (fieldType === 'CODE' || fieldType === 'BARCODE') {
+          // Codes: Large, bold, prominent
+          fontSize = 18;
+          fontWeight = 'bold';
+        } else if (fieldType === 'NAME') {
+          // Names: Medium-large, bold
+          fontSize = Math.min(17, Math.max(14, Math.floor(availableWidth / (maxLength * 0.55))));
+          fontWeight = 'bold';
+        } else {
+          // General: Medium, normal weight
+          fontSize = Math.min(15, Math.max(12, Math.floor(availableWidth / (maxLength * 0.55))));
+          fontWeight = 'normal';
+        }
+        
+        // Calculate height needed: fontSize × lineHeight × pt-to-mm
+        const lineHeight = 1.0; // single line
+        const requiredHeight = Math.ceil(fontSize * lineHeight * 0.35);
+        
+        return {
+          fieldName: d.field,
+          fieldType,
+          maxLength,
+          fontSize,
+          fontWeight,
+          height: requiredHeight
+        };
+      });
+    
+    console.log('📊 OTHER FIELD REQUIREMENTS:', otherFieldRequirements);
+    
+    // ========================================================================
+    // STEP 2: ALLOCATE SPACE - Fit actual requirements or scale proportionally
+    // ========================================================================
+    
+    // Calculate total space needed
+    const totalNeeded = (addressRequirements?.height || 0) + 
+                        otherFieldRequirements.reduce((sum: number, f: any) => sum + f.height, 0) +
+                        (fieldNames.length - 1) * 2; // 2mm gaps between fields
+    
+    console.log('📐 SPACE ANALYSIS:', {
+      availableHeight,
+      totalNeeded,
+      addressHeight: addressRequirements?.height || 0,
+      otherFieldsHeight: otherFieldRequirements.reduce((sum: number, f: any) => sum + f.height, 0),
+      gaps: (fieldNames.length - 1) * 2,
+      fits: totalNeeded <= availableHeight
+    });
+    
+    // Allocate final dimensions
+    const finalAllocations = new Map<string, { fontSize: number; height: number; fontWeight: string }>();
+    
+    if (totalNeeded <= availableHeight) {
+      // Perfect fit - use calculated values as-is
+      if (addressRequirements) {
+        finalAllocations.set(addressRequirements.fieldName, {
+          fontSize: addressRequirements.fontSize,
+          height: addressRequirements.height,
+          fontWeight: addressRequirements.fontWeight
+        });
+      }
+      
+      for (const field of otherFieldRequirements) {
+        finalAllocations.set(field.fieldName, {
+          fontSize: field.fontSize,
+          height: field.height,
+          fontWeight: field.fontWeight
+        });
+      }
+      
+      console.log('✅ PERFECT FIT - Using calculated dimensions');
+    } else {
+      // Need to scale down proportionally
+      const scaleFactor = (availableHeight - (fieldNames.length - 1) * 2) / 
+                         (totalNeeded - (fieldNames.length - 1) * 2);
+      
+      if (addressRequirements) {
+        finalAllocations.set(addressRequirements.fieldName, {
+          fontSize: Math.max(8, Math.floor(addressRequirements.fontSize * scaleFactor)),
+          height: Math.ceil(addressRequirements.height * scaleFactor),
+          fontWeight: addressRequirements.fontWeight
+        });
+      }
+      
+      for (const field of otherFieldRequirements) {
+        finalAllocations.set(field.fieldName, {
+          fontSize: Math.max(8, Math.floor(field.fontSize * scaleFactor)),
+          height: Math.ceil(field.height * scaleFactor),
+          fontWeight: field.fontWeight
+        });
+      }
+      
+      console.log(`⚖️ SCALED DOWN by ${(scaleFactor * 100).toFixed(0)}% to fit`, {
+        scaleFactor: scaleFactor.toFixed(2)
       });
     }
-
-    // Phase 1: Calculate Space Budget and Pairings (accounting for fixed ADDRESS)
-    const availableHeight = templateSize.height - 6; // margins
-    const fieldCount = fieldNames.length;
-    
-    // Define base space allocation priorities
-    // ADDRESS height is now FIXED from pre-calculation, others share remaining space
-    const baseAllocation: Record<string, { priority: string; minHeight: number; maxHeight: number }> = {
-      'STORE NAME': { priority: 'high', minHeight: 7, maxHeight: 10 },
-      'ADDRESS': { priority: 'fixed', minHeight: addressHeight, maxHeight: addressHeight }, // FIXED from pre-calc
-      'STORE CODE': { priority: 'high', minHeight: 6, maxHeight: 8 },
-      'PROVINCE': { priority: 'medium', minHeight: 6, maxHeight: 8 },
-      'A0 POSTER': { priority: 'medium', minHeight: 6, maxHeight: 8 },
-      'STORE AREA': { priority: 'low', minHeight: 5, maxHeight: 7 },
-      'AREA MANAGER': { priority: 'low', minHeight: 5, maxHeight: 7 }
-    };
     
     // Identify horizontal pairing opportunities
     const pairings = [
-      { fields: ['STORE NAME', 'A0 POSTER'], saves: 8 },
-      { fields: ['STORE CODE', 'PROVINCE'], saves: 7 },
-      { fields: ['STORE AREA', 'AREA MANAGER'], saves: 6 }
+      { fields: ['STORE NAME', 'A0 POSTER'] },
+      { fields: ['STORE CODE', 'PROVINCE'] },
+      { fields: ['STORE AREA', 'AREA MANAGER'] }
     ];
     
-    // Filter pairings to only those where both fields exist
     const validPairings = pairings.filter(p => 
       p.fields.every(f => fieldNames.includes(f))
     );
     
-    // Calculate ideal space needed
-    let idealTotal = 0;
-    const fieldsInPairs = new Set(validPairings.flatMap(p => p.fields));
-    
-    for (const field of fieldNames) {
-      const allocation = baseAllocation[field] || { minHeight: 6, maxHeight: 8 };
-      idealTotal += allocation.maxHeight;
-    }
-    
-    const gapsNeeded = (fieldNames.length - validPairings.length) * 2;
-    const spaceSaved = validPairings.reduce((sum, p) => sum + p.saves, 0);
-    const adjustedTotal = idealTotal - spaceSaved + gapsNeeded;
-    
-    // Calculate if we need to scale down
-    const needsScaling = adjustedTotal > availableHeight;
-    const scaleFactor = needsScaling ? (availableHeight - gapsNeeded) / (idealTotal - spaceSaved) : 1.0;
-    
-    // Apply scaling to create final budgets
-    const calculatedBudgets: Record<string, number> = {};
-    for (const field of fieldNames) {
-      const allocation = baseAllocation[field] || { minHeight: 6, maxHeight: 8 };
-      const budget = Math.max(
-        allocation.minHeight,
-        Math.floor(allocation.maxHeight * scaleFactor)
-      );
-      calculatedBudgets[field] = budget;
-    }
-    
-    console.log('Space budget calculation:', {
-      availableHeight: `${availableHeight}mm`,
-      idealTotal: `${idealTotal}mm`,
-      adjustedTotal: `${adjustedTotal}mm`,
-      needsScaling,
-      scaleFactor: scaleFactor.toFixed(2),
-      validPairings: validPairings.map(p => p.fields.join(' + ')),
-      budgets: calculatedBudgets
-    });
+    console.log('🔗 VALID PAIRINGS:', validPairings.map(p => p.fields.join(' + ')));
 
+    // ========================================================================
+    // STEP 3: BUILD PROMPT - Tell AI exact dimensions to use
+    // ========================================================================
+    
+    const fieldSpecs = fieldNames.map((field: string) => {
+      const alloc = finalAllocations.get(field);
+      if (!alloc) return '';
+      
+      const isAddress = field === addressFieldName;
+      
+      return `- ${field}:
+  Type: ${dataAnalysis.find((d: any) => d.field === field)?.fieldType || 'GENERAL'}
+  Font: ${alloc.fontSize}pt ${alloc.fontWeight}
+  Height: ${alloc.height}mm
+  Rendering: ${isAddress ? 'MULTI-LINE (whiteSpace=pre-line, transformCommas=true)' : 'SINGLE-LINE (whiteSpace=nowrap)'}`;
+    }).join('\n');
+    
     const prompt = `Generate optimal layout for ${templateSize.width}×${templateSize.height}mm label.
 
-USABLE AREA: ${availableWidth}×${availableHeight}mm (3mm margins)
+TEMPLATE SIZE: ${templateSize.width}mm × ${templateSize.height}mm
+USABLE AREA: ${availableWidth}mm × ${availableHeight}mm (3mm margins on all sides)
 
-FIELDS: ${fieldNames.join(', ')}
+FIELDS TO LAYOUT (${fieldNames.length} total):
+${fieldSpecs}
 
-DATA ANALYSIS:
-${dataAnalysis.map((d: any) => `${d.field}: ${d.fieldType}, max ${d.maxLength} chars, suggest ${d.suggestedFontSize}pt`).join('\n')}
+HORIZONTAL PAIRINGS (place side-by-side on same Y):
+${validPairings.map(p => `- ${p.fields.join(' + ')}`).join('\n')}
 
-${addressFieldName ? `ADDRESS (FIXED): 
-- Font: ${addressFontSize}pt (EXACT)
-- Height: ${addressHeight}mm (EXACT)
-- Lines: ${Math.ceil(addressHeight / (addressFontSize * 1.1 * 0.35))}
-- Rendering: whiteSpace='pre-line', transformCommas=true (for multi-line display)
-⚠️ DO NOT modify these values. Use exact font/height.
-` : ''}
+LAYOUT RULES:
+1. Use EXACT font sizes and heights provided above
+2. Start at Y=3mm (top margin), distribute vertically with 2mm gaps
+3. ${addressFieldName ? `${addressFieldName} MUST have: whiteSpace='pre-line', transformCommas=true, lineHeight='1.1'` : ''}
+4. Other fields MUST have: whiteSpace='nowrap', lineHeight='1.0'
+5. Paired fields share same Y position, split width ~50/50 with 2mm gap
+6. Single fields use full width (${availableWidth}mm)
+7. All positions constrained to 3mm margins
 
-SPACE:
-- Available: ${availableHeight}mm
-${addressFieldName ? `- ADDRESS: ${addressHeight}mm (FIXED)
-- Other ${fieldNames.length - 1} fields: ${(availableHeight - addressHeight - 4).toFixed(1)}mm
-` : `- Per field: ${Object.entries(calculatedBudgets).map(([f, b]) => `${f}=${b}mm`).join(', ')}`}
+YOUR TASK: Return field positions and dimensions using the specifications above.
 
-PAIRINGS: ${validPairings.map(p => `${p.fields.join('+')}}`).join(', ')}
-
-CONSTRAINTS:
-1. 3mm margins
-2. No overlap
-3. 2mm gaps between fields
-4. Use pairings to save space
-5. Total height ≤ ${availableHeight}mm
-${addressFieldName ? `6. ADDRESS: ${addressFontSize}pt, ${addressHeight}mm (EXACT)` : ''}
-
-Return ONLY valid JSON:
+Return ONLY valid JSON (no markdown, no explanation):
 {
   "fields": [
-    {"templateField": "ADDRESS", "position": {"x": 3, "y": 29}, "size": {"width": 95.6, "height": 16}, "style": {"fontSize": 8, "fontWeight": "normal", "textAlign": "left", "whiteSpace": "pre-line", "lineHeight": "1.1", "transformCommas": true}},
-    {"templateField": "OTHER", "position": {"x": 3, "y": 3}, "size": {"width": 50, "height": 8}, "style": {"fontSize": 14, "fontWeight": "bold", "textAlign": "left", "whiteSpace": "nowrap", "lineHeight": "1"}}
+    {"templateField": "FIELD_NAME", "position": {"x": 3, "y": 3}, "size": {"width": 60, "height": 8}, "style": {"fontSize": 14, "fontWeight": "bold", "textAlign": "left", "whiteSpace": "nowrap", "lineHeight": "1.0"}}
   ]
 }`
 
@@ -560,7 +636,10 @@ Return ONLY valid JSON:
       });
     }
 
-    // Phase 3: Enhanced Validation
+    // ========================================================================
+    // STEP 4: VALIDATE - Check AI response against actual requirements
+    // ========================================================================
+    
     const validationErrors: string[] = [];
     
     // Check all fields present
@@ -570,24 +649,34 @@ Return ONLY valid JSON:
       validationErrors.push(`Missing fields: ${missingFields.join(', ')}`);
     }
     
-    // Check height budgets (with special handling for ADDRESS)
+    // Validate against ACTUAL requirements (not arbitrary budgets)
     for (const field of layout.fields) {
+      const expected = finalAllocations.get(field.templateField);
+      if (!expected) continue;
+      
+      // Check font size matches
+      const fontDiff = Math.abs(field.style.fontSize - expected.fontSize);
+      if (fontDiff > 1) {
+        validationErrors.push(
+          `${field.templateField} font size mismatch: got ${field.style.fontSize}pt, expected ${expected.fontSize}pt`
+        );
+      }
+      
+      // Check height matches
+      const heightDiff = Math.abs(field.size.height - expected.height);
+      if (heightDiff > 2) { // 2mm tolerance
+        validationErrors.push(
+          `${field.templateField} height mismatch: got ${field.size.height.toFixed(1)}mm, expected ${expected.height}mm`
+        );
+      }
+      
+      // Special validation for ADDRESS field
       if (field.templateField === addressFieldName) {
-        // ADDRESS must match pre-calculated values
-        const heightDiff = Math.abs(field.size.height - addressHeight);
-        if (heightDiff > 1) {
-          validationErrors.push(`ADDRESS height ${field.size.height.toFixed(1)}mm doesn't match pre-calculated ${addressHeight}mm`);
+        if (!field.style.transformCommas) {
+          validationErrors.push(`${field.templateField} must have transformCommas=true for multi-line display`);
         }
-        
-        const fontDiff = Math.abs(field.style.fontSize - addressFontSize);
-        if (fontDiff > 1) {
-          validationErrors.push(`ADDRESS fontSize ${field.style.fontSize}pt doesn't match pre-calculated ${addressFontSize}pt`);
-        }
-      } else {
-        // Other fields checked against budgets
-        const budget = calculatedBudgets[field.templateField];
-        if (budget && field.size.height > budget + 1) { // 1mm tolerance
-          validationErrors.push(`${field.templateField} exceeds height budget: ${field.size.height.toFixed(1)}mm > ${budget}mm`);
+        if (field.style.whiteSpace !== 'pre-line') {
+          validationErrors.push(`${field.templateField} must have whiteSpace='pre-line' for multi-line display`);
         }
       }
     }
@@ -633,7 +722,11 @@ Return ONLY valid JSON:
     if (validationErrors.length > 0) {
       console.error('Layout validation failed:', {
         errors: validationErrors,
-        budgets: calculatedBudgets,
+        allocations: Array.from(finalAllocations.entries()).map(([field, alloc]) => ({
+          field,
+          expectedFontSize: alloc.fontSize,
+          expectedHeight: alloc.height
+        })),
         pairings: validPairings.map(p => p.fields.join(' + ')),
         fieldHeights: layout.fields.map((f: any) => ({ field: f.templateField, height: f.size.height, y: f.position.y }))
       });

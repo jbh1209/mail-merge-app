@@ -92,6 +92,7 @@ DESIGN PRINCIPLES:
 3. Less important fields (QUANTITY, PROVINCE types) go in footer
 4. Group short, related fields horizontally to save space
 5. Use vertical space efficiently - no large gaps
+6. FOOTER LAYOUT: Prefer "horizontal_split" or "three_column" for short fields (≤15 chars). Only use "stacked" if many fields (4+) or long content (>20 chars)
 
 OUTPUT FORMAT (JSON):
 {
@@ -129,8 +130,9 @@ CRITICAL RULES:
 - Allocate 50-60% to ADDRESS-type fields if present
 - Distribute remaining space proportionally
 - Use "horizontal_split" for 2 short fields side-by-side
-- Use "three_column" for 3 short fields in footer
-- Use "single_dominant" for ADDRESS-type or long text fields`;
+- Use "three_column" for 3 short fields in footer (preferred over stacked)
+- Use "single_dominant" for ADDRESS-type or long text fields
+- FOOTER: Default to horizontal layouts ("horizontal_split" or "three_column") unless 4+ fields or long text`;
 
     // Call Lovable AI
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');

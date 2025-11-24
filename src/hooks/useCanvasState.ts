@@ -51,13 +51,17 @@ export const useCanvasState = ({
     if (initialDesignConfig?.canvasSettings) {
       return initialDesignConfig.canvasSettings;
     }
+    
+    // Auto-enable labels for complex layouts (5+ fields)
+    const isComplexLayout = initialFields.length >= 5;
+    
     return {
       scale: calculateDefaultScale(),
       showGrid: true,
       snapToGrid: true,
       gridSize: 1,
       backgroundColor: '#ffffff',
-      showAllLabels: false,
+      showAllLabels: isComplexLayout,
       defaultLabelFontSize: 6
     };
   });

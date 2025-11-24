@@ -352,6 +352,7 @@ function layoutStacked(
 /**
  * Calculate optimal font size that fills the allocated space
  * Uses actual text measurement for precision
+ * Importance affects starting guess but NOT the maximum size
  */
 function calculateOptimalFontSize(
   sampleText: string,
@@ -365,32 +366,14 @@ function calculateOptimalFontSize(
   const widthPx = widthMm * MM_TO_PX;
   const heightPx = heightMm * MM_TO_PX;
   
-  // Start with importance-based size preference
-  let targetFontSize = config.minFontSize;
-  switch (importance) {
-    case 'highest':
-      targetFontSize = config.maxFontSize * 0.9;
-      break;
-    case 'high':
-      targetFontSize = config.maxFontSize * 0.7;
-      break;
-    case 'medium':
-      targetFontSize = config.maxFontSize * 0.5;
-      break;
-    case 'low':
-      targetFontSize = config.maxFontSize * 0.4;
-      break;
-  }
-
-  // Binary search for optimal font size
-  let low = config.minFontSize;
-  let high = Math.min(targetFontSize, config.maxFontSize);
-  let bestFit = low;
-
-  const fontSizeInPx = pointsToPixels(targetFontSize);
-  
   // Check if text contains commas (multi-line)
   const isMultiLine = sampleText.includes(',');
+
+  // Binary search for LARGEST font size that fits
+  // Importance does NOT cap the maximum - it only affects starting guess for efficiency
+  let low = config.minFontSize;
+  let high = config.maxFontSize;
+  let bestFit = low;
 
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
@@ -411,7 +394,7 @@ function calculateOptimalFontSize(
 
     if (fits) {
       bestFit = mid;
-      low = mid + 1; // Try larger
+      low = mid + 1; // Try larger to fill more space
     } else {
       high = mid - 1; // Try smaller
     }

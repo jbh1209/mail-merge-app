@@ -216,6 +216,73 @@ export const useCanvasState = ({
     try {
       const fieldNames = fields.map(f => f.templateField);
       
+      // Phase 1: Try hybrid layout system first
+      const { data: hybridData, error: hybridError } = await supabase.functions.invoke('generate-layout', {
+        body: {
+          fieldNames,
+          sampleData: sampleData.slice(0, 5) || [],
+          templateSize,
+          templateType: 'built_in_library'
+        }
+      });
+
+      if (!hybridError && hybridData?.designStrategy) {
+        console.log('🎨 Hybrid layout: AI strategy received');
+        
+        // Phase 2: Execute with rules engine
+        const { executeLayout, DEFAULT_LAYOUT_CONFIG } = await import('@/lib/layout-engine');
+        
+        const config = {
+          ...DEFAULT_LAYOUT_CONFIG,
+          templateSize
+        };
+
+        const result = executeLayout(
+          hybridData.designStrategy,
+          config,
+          sampleData[0] || {}
+        );
+
+        console.log('✓ Rules engine executed:', result);
+        
+        // Convert rules engine output to canvas field format
+        const newFields = result.fields.map(field => ({
+          id: `field-${field.templateField}`,
+          templateField: field.templateField,
+          position: { x: field.x, y: field.y },
+          size: { width: field.width, height: field.height },
+          style: {
+            fontSize: field.fontSize,
+            fontFamily: 'Arial',
+            fontWeight: field.fontWeight,
+            fontStyle: 'normal' as const,
+            textAlign: field.textAlign,
+            color: '#000000',
+            verticalAlign: field.verticalAlign,
+            ...(field.whiteSpace && { whiteSpace: field.whiteSpace }),
+            ...(field.transformCommas && { transformCommas: field.transformCommas })
+          },
+          showLabel: settings.showAllLabels,
+          fieldType: 'text' as const,
+          overflow: 'wrap' as const
+        }));
+        
+        setFields(newFields);
+        saveToHistory(newFields);
+        
+        return { 
+          success: true, 
+          strategy: 'hybrid_ai_rules',
+          layoutData: {
+            fieldData: getFieldData(),
+            layout: result.fields,
+            designStrategy: hybridData.designStrategy
+          }
+        };
+      }
+      
+      // Fallback to old AI system if hybrid fails
+      console.log('Hybrid system unavailable, using fallback AI...');
       const { data, error } = await supabase.functions.invoke('suggest-layout', {
         body: {
           templateSize,
@@ -228,15 +295,6 @@ export const useCanvasState = ({
       if (error) throw error;
       
       if (data?.fields) {
-        console.log('📐 RAW AI RESPONSE:', {
-          fields: data.fields.map((f: any) => ({
-            name: f.templateField,
-            pos: `${f.position.x},${f.position.y}`,
-            size: `${f.size.width}×${f.size.height}`,
-            fontSize: f.style.fontSize
-          }))
-        });
-        
         const newFields = data.fields.map((field: any) => ({
           id: `field-${field.templateField}`,
           templateField: field.templateField,
@@ -249,7 +307,6 @@ export const useCanvasState = ({
             fontStyle: field.style.fontStyle || 'normal',
             textAlign: field.style.textAlign || 'left',
             color: field.style.color || '#000000',
-            // Pass through all CSS rendering properties from AI
             whiteSpace: field.style.whiteSpace,
             wordWrap: field.style.wordWrap,
             lineHeight: field.style.lineHeight,
@@ -259,15 +316,6 @@ export const useCanvasState = ({
           showLabel: settings.showAllLabels,
           fieldType: 'text' as const
         }));
-        
-        console.log('🎨 APPLIED TO CANVAS:', {
-          fields: newFields.map((f: any) => ({
-            name: f.templateField,
-            pos: `${f.position.x},${f.position.y}`,
-            size: `${f.size.width}×${f.size.height}`,
-            fontSize: f.style.fontSize
-          }))
-        });
         
         setFields(newFields);
         saveToHistory(newFields);
@@ -284,12 +332,7 @@ export const useCanvasState = ({
       
       throw new Error('Invalid AI response');
     } catch (error) {
-      console.error('❌ AI LAYOUT FAILED:', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        type: typeof error,
-        details: error
-      });
+      console.error('❌ LAYOUT GENERATION FAILED:', error);
       
       // Fallback to simple grid layout
       const fieldNames = fields.map(f => f.templateField);
@@ -299,11 +342,6 @@ export const useCanvasState = ({
         6,
         settings.showAllLabels
       );
-      
-      console.log('📋 Using fallback layout:', {
-        fieldCount: fallbackFields.length,
-        fields: fallbackFields.map(f => ({ name: f.templateField, position: f.position }))
-      });
       
       setFields(fallbackFields);
       saveToHistory(fallbackFields);

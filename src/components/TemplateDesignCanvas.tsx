@@ -135,7 +135,7 @@ export function TemplateDesignCanvas({
   };
 
   const handleAutoLayout = async () => {
-    console.log('🎨 AI AUTO-LAYOUT TRIGGERED:', {
+    console.log('🎨 AUTO-LAYOUT TRIGGERED:', {
       templateSize,
       fieldCount: fields.length,
       sampleDataAvailable: !!sampleData,
@@ -151,7 +151,7 @@ export function TemplateDesignCanvas({
       setLastLayoutData(result.layoutData);
     }
     
-    console.log('📊 AI LAYOUT RESULT:', {
+    console.log('📊 LAYOUT RESULT:', {
       success: result.success,
       strategy: result.strategy,
       error: result.error,
@@ -160,12 +160,14 @@ export function TemplateDesignCanvas({
     
     if (result.success) {
       toast({
-        title: "Layout Optimized",
-        description: "Field positions and sizes have been optimized successfully.",
+        title: result.strategy === 'hybrid_ai_rules' ? "Hybrid Layout Complete" : "Layout Optimized",
+        description: result.strategy === 'hybrid_ai_rules' 
+          ? "AI designed strategy + rules engine executed precisely."
+          : "Field positions and sizes have been optimized successfully.",
       });
     } else {
       toast({
-        title: "AI Layout Failed",
+        title: "Layout Generation Failed",
         description: `${result.error}. Using fallback layout.`,
         variant: "destructive"
       });

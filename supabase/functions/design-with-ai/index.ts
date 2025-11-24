@@ -75,19 +75,21 @@ Output a JSON design strategy with:
 2. Regions (header, body, footer) with field allocations
 3. Typography hints (weight, importance)
 
+CRITICAL: You MUST use the EXACT field names provided. Do NOT change them, simplify them, or use generic labels.
+
 DO NOT output coordinates, font sizes, or measurements. The rules engine handles that.`;
 
     const userPrompt = `Design a professional label layout strategy:
 
 TEMPLATE SIZE: ${templateSize.width}mm × ${templateSize.height}mm
 
-FIELDS TO LAYOUT:
-${fieldAnalysis.map(f => `- ${f.fieldName} (${f.type}): "${f.sampleValue}" [avg: ${Math.round(f.avgLength)} chars]`).join('\n')}
+FIELDS TO LAYOUT (USE THESE EXACT NAMES):
+${fieldAnalysis.map(f => `- "${f.fieldName}" (type: ${f.type}): sample="${f.sampleValue}" [avg: ${Math.round(f.avgLength)} chars]`).join('\n')}
 
 DESIGN PRINCIPLES:
-1. ADDRESS fields should dominate (50-60% of vertical space)
-2. Important fields (NAME, CODE) should be prominent in header
-3. Less important fields (QUANTITY, PROVINCE) go in footer
+1. ADDRESS-type fields should dominate (50-60% of vertical space)
+2. Important fields (NAME, CODE types) should be prominent in header
+3. Less important fields (QUANTITY, PROVINCE types) go in footer
 4. Group short, related fields horizontally to save space
 5. Use vertical space efficiently - no large gaps
 
@@ -96,39 +98,39 @@ OUTPUT FORMAT (JSON):
   "strategy": "address_dominant_with_header" | "grid_layout" | "hierarchical",
   "regions": {
     "header": {
-      "fields": ["FIELD1", "FIELD2"],
+      "fields": ["EXACT_FIELD_NAME_1", "EXACT_FIELD_NAME_2"],
       "layout": "horizontal_split" | "single_dominant" | "stacked" | "two_column" | "three_column",
       "verticalAllocation": 0.15,
       "priority": "high" | "medium" | "low"
     },
     "body": {
-      "fields": ["ADDRESS"],
+      "fields": ["EXACT_FIELD_NAME_3"],
       "layout": "single_dominant",
       "verticalAllocation": 0.6,
       "priority": "highest"
     },
     "footer": {
-      "fields": ["FIELD3", "FIELD4", "FIELD5"],
+      "fields": ["EXACT_FIELD_NAME_4", "EXACT_FIELD_NAME_5"],
       "layout": "three_column",
       "verticalAllocation": 0.15,
       "priority": "low"
     }
   },
   "typography": {
-    "ADDRESS": { "weight": "normal", "importance": "highest" },
-    "STORE_NAME": { "weight": "bold", "importance": "high" },
-    "STORE_CODE": { "weight": "normal", "importance": "medium" },
-    "PROVINCE": { "weight": "normal", "importance": "low" }
+    "EXACT_FIELD_NAME_1": { "weight": "bold", "importance": "high" },
+    "EXACT_FIELD_NAME_2": { "weight": "normal", "importance": "medium" },
+    "EXACT_FIELD_NAME_3": { "weight": "normal", "importance": "highest" }
   }
 }
 
-RULES:
+CRITICAL RULES:
+- Use EXACT field names as provided above (e.g., "STORE NAME", not "NAME")
 - verticalAllocation values must sum to ≤ 1.0
-- Allocate 50-60% to ADDRESS if present
+- Allocate 50-60% to ADDRESS-type fields if present
 - Distribute remaining space proportionally
 - Use "horizontal_split" for 2 short fields side-by-side
 - Use "three_column" for 3 short fields in footer
-- Use "single_dominant" for ADDRESS or long text fields`;
+- Use "single_dominant" for ADDRESS-type or long text fields`;
 
     // Call Lovable AI
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -165,6 +167,23 @@ RULES:
     // Validate strategy
     if (!designStrategy.regions || !designStrategy.typography) {
       throw new Error('Invalid design strategy from AI');
+    }
+
+    // Validate that all fields in the strategy match the input field names
+    const inputFieldNames = new Set(fieldNames);
+    const strategyFieldNames = new Set<string>();
+    
+    Object.values(designStrategy.regions).forEach((region: any) => {
+      if (region.fields && Array.isArray(region.fields)) {
+        region.fields.forEach((fieldName: string) => strategyFieldNames.add(fieldName));
+      }
+    });
+
+    const invalidFields = Array.from(strategyFieldNames).filter(name => !inputFieldNames.has(name));
+    if (invalidFields.length > 0) {
+      console.error('AI returned invalid field names:', invalidFields);
+      console.error('Expected field names:', Array.from(inputFieldNames));
+      throw new Error(`AI used incorrect field names: ${invalidFields.join(', ')}. Must use exact names from input.`);
     }
 
     // Check vertical allocation sums

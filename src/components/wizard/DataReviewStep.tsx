@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight } from "lucide-react";
+import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopedAIChat } from "@/components/ScopedAIChat";
 
@@ -60,6 +60,9 @@ export function DataReviewStep({
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [editedColumns, setEditedColumns] = useState<Record<string, string>>({});
   const [dataValidated, setDataValidated] = useState(false);
+  const [needsStructuring, setNeedsStructuring] = useState(false);
+  const [isStructuring, setIsStructuring] = useState(false);
+  const [structuredData, setStructuredData] = useState<{ columns: string[], rows: any[] } | null>(null);
 
   const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
   const { columns, preview, rowCount, fileName } = parsedData;
@@ -72,6 +75,22 @@ export function DataReviewStep({
   };
 
   useEffect(() => {
+    // Detect if data needs structuring (single column with comma-separated values)
+    if (columns.length === 1 && preview.length > 0) {
+      const firstRow = preview[0];
+      const firstColumnValue = firstRow[columns[0]];
+      
+      if (typeof firstColumnValue === 'string' && firstColumnValue.includes(',')) {
+        const parts = firstColumnValue.split(',').length;
+        if (parts >= 4) {
+          console.log('Detected unstructured data that needs parsing');
+          setNeedsStructuring(true);
+          setAnalyzing(false);
+          return;
+        }
+      }
+    }
+    
     runInitialAnalysis();
   }, []);
 
@@ -136,17 +155,110 @@ export function DataReviewStep({
     }
   };
 
+  const handleStructureData = async () => {
+    setIsStructuring(true);
+    setAnalyzing(true);
+    try {
+      console.log('Calling structure-data-with-ai function...');
+      
+      const fullRows = (parsedData as any).rows || preview;
+      
+      const { data, error } = await supabase.functions.invoke('structure-data-with-ai', {
+        body: {
+          columns: columns,
+          rows: fullRows,
+          targetFields: null,
+          workspaceId: workspaceId
+        }
+      });
+
+      if (error) {
+        console.error('Structure data error:', error);
+        throw error;
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to structure data');
+      }
+
+      console.log('Successfully structured data:', {
+        originalColumns: columns.length,
+        newColumns: data.columns.length,
+        confidence: data.confidence
+      });
+
+      setStructuredData({
+        columns: data.columns,
+        rows: data.rows
+      });
+
+      setNeedsStructuring(false);
+      toast.success(`Structured ${columns.length} column into ${data.columns.length} fields`, {
+        description: `Confidence: ${data.confidence}%`
+      });
+
+      // Now run AI analysis on structured data
+      if (subscriptionFeatures.canUseAICleaning) {
+        setTimeout(() => {
+          runAnalysisOnStructuredData(data.columns, data.rows);
+        }, 500);
+      } else {
+        setAnalyzing(false);
+      }
+
+    } catch (error: any) {
+      console.error('Error structuring data:', error);
+      toast.error('Failed to structure data', {
+        description: error.message || 'Please try again or proceed with original data'
+      });
+      setAnalyzing(false);
+    } finally {
+      setIsStructuring(false);
+    }
+  };
+
+  const runAnalysisOnStructuredData = async (cols: string[], rows: any[]) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('clean-data-with-ai', {
+        body: {
+          columns: cols,
+          preview: rows.slice(0, 10),
+          rowCount: rows.length,
+          workspaceId,
+          emptyColumnsRemoved: 0
+        }
+      });
+
+      if (error) throw error;
+      setAnalysis(data as AnalysisResult);
+      toast.success("AI analysis complete!");
+      
+    } catch (error: any) {
+      console.error('Error analyzing structured data:', error);
+      toast.error('Analysis failed', {
+        description: error.message
+      });
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const handleAcceptAndContinue = async () => {
     if (!dataValidated) {
       toast.error("Please review the data quality checks before proceeding.");
       return;
     }
 
+    // Use structured data if available
+    const finalColumns = structuredData ? structuredData.columns : columns;
+    const finalRows = structuredData ? structuredData.rows : ((parsedData as any).rows || []);
+    const finalPreview = structuredData ? structuredData.rows.slice(0, 10) : preview;
+
     const finalRenameMap: Record<string, string> = { ...editedColumns };
-    const updatedColumns = columns.map(col => sanitize(finalRenameMap[col] || col));
-    const updatedPreview = preview.map(row => {
+    const updatedColumns = finalColumns.map(col => sanitize(finalRenameMap[col] || col));
+    const updatedPreview = finalPreview.map(row => {
       const newRow: Record<string, any> = {};
-      columns.forEach((oldCol) => {
+      finalColumns.forEach((oldCol) => {
         const newCol = sanitize(finalRenameMap[oldCol] || oldCol);
         newRow[newCol] = row[oldCol];
       });
@@ -155,7 +267,8 @@ export function DataReviewStep({
 
     console.debug('[DataReviewStep] Final corrections:', {
       renamedCount: Object.keys(finalRenameMap).length,
-      updatedColumns: updatedColumns.slice(0, 5)
+      updatedColumns: updatedColumns.slice(0, 5),
+      wasStructured: !!structuredData
     });
 
     try {
@@ -164,10 +277,10 @@ export function DataReviewStep({
         .update({
           parsed_fields: {
             columns: updatedColumns,
-            rows: (parsedData as any).rows || [],
-            rowCount: parsedData.rowCount || rowCount,
+            rows: finalRows,
+            rowCount: finalRows.length,
             preview: updatedPreview,
-            emptyColumnsRemoved
+            emptyColumnsRemoved: structuredData ? 0 : emptyColumnsRemoved
           }
         })
         .eq('id', dataSourceId);
@@ -208,9 +321,63 @@ export function DataReviewStep({
 
   const qualityScore = 100;
   const hasIssues = categorizedIssues.critical.length + categorizedIssues.warning.length > 0;
+  const currentColumns = structuredData ? structuredData.columns : columns;
+  const currentPreview = structuredData ? structuredData.rows.slice(0, 10) : preview;
+  const currentRowCount = structuredData ? structuredData.rows.length : rowCount;
 
   return (
     <div className="space-y-6 w-full max-w-6xl mx-auto">
+      {needsStructuring && !structuredData && (
+        <Alert className="border-orange-500 bg-orange-50 dark:bg-orange-950">
+          <Wand2 className="h-4 w-4 text-orange-500" />
+          <AlertTitle>Unstructured Data Detected</AlertTitle>
+          <AlertDescription className="space-y-3">
+            <p className="text-sm">
+              Your data appears to be in a single column with comma-separated values. 
+              AI can automatically parse this into proper structured columns.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleStructureData}
+                disabled={isStructuring}
+                size="sm"
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                {isStructuring ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Parsing...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="mr-2 h-4 w-4" />
+                    Parse with AI
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={() => setNeedsStructuring(false)}
+                variant="outline"
+                size="sm"
+                disabled={isStructuring}
+              >
+                Keep Original
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {structuredData && (
+        <Alert className="border-green-500 bg-green-50 dark:bg-green-950">
+          <Check className="h-4 w-4 text-green-500" />
+          <AlertTitle>Data Structured Successfully</AlertTitle>
+          <AlertDescription>
+            Parsed {columns.length} column into {structuredData.columns.length} structured fields
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Review & Clean Your Data</CardTitle>
@@ -231,7 +398,7 @@ export function DataReviewStep({
                     <CardTitle className="text-sm font-medium">Total Rows</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{rowCount.toLocaleString()}</div>
+                    <div className="text-2xl font-bold">{currentRowCount.toLocaleString()}</div>
                   </CardContent>
                 </Card>
                 <Card>
@@ -239,7 +406,12 @@ export function DataReviewStep({
                     <CardTitle className="text-sm font-medium">Columns</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{columns.length}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-2xl font-bold">{currentColumns.length}</div>
+                      {structuredData && (
+                        <Badge variant="secondary" className="text-xs">AI Structured</Badge>
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
                 <Card>
@@ -296,15 +468,15 @@ export function DataReviewStep({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {columns.map((col, idx) => (
+                      {currentColumns.map((col, idx) => (
                         <TableHead key={idx}>{editedColumns[col] || col}</TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {preview.map((row, rowIdx) => (
+                    {currentPreview.map((row, rowIdx) => (
                       <TableRow key={rowIdx}>
-                        {columns.map((col, colIdx) => (
+                        {currentColumns.map((col, colIdx) => (
                           <TableCell key={colIdx}>{row[col]?.toString() || '—'}</TableCell>
                         ))}
                       </TableRow>

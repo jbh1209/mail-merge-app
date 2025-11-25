@@ -21,5 +21,8 @@ verify_jwt = true
 [functions.suggest-layout]
 verify_jwt = true
 
+[functions.structure-data-with-ai]
+verify_jwt = true
+
 [functions.diagnose-layout]
 verify_jwt = true

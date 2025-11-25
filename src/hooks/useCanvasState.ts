@@ -21,13 +21,15 @@ interface UseCanvasStateProps {
   initialFields: string[];
   initialDesignConfig?: any;
   sampleData?: any[];
+  shouldShowLabels?: boolean;
 }
 
 export const useCanvasState = ({ 
   templateSize, 
   initialFields, 
   initialDesignConfig,
-  sampleData = []
+  sampleData = [],
+  shouldShowLabels = false
 }: UseCanvasStateProps) => {
   // Initialize fields from existing design or create new
   const [fields, setFields] = useState<FieldConfig[]>(() => {
@@ -52,16 +54,13 @@ export const useCanvasState = ({
       return initialDesignConfig.canvasSettings;
     }
     
-    // Auto-enable labels for complex layouts (5+ fields)
-    const isComplexLayout = initialFields.length >= 5;
-    
     return {
       scale: calculateDefaultScale(),
       showGrid: true,
       snapToGrid: true,
       gridSize: 1,
       backgroundColor: '#ffffff',
-      showAllLabels: isComplexLayout,
+      showAllLabels: shouldShowLabels,
       defaultLabelFontSize: 6
     };
   });

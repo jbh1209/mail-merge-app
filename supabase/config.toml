@@ -3,6 +3,9 @@ project_id = "jtojmvquqdkvibsraydq"
 [functions.parse-data-file]
 verify_jwt = false
 
+[functions.analyze-label-complexity]
+verify_jwt = true
+
 [functions.clean-data-with-ai]
 verify_jwt = true
 

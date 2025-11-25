@@ -48,6 +48,45 @@ export function TemplateDesignCanvas({
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
   const [isDiagnosticLoading, setIsDiagnosticLoading] = useState(false);
   const [lastLayoutData, setLastLayoutData] = useState<any>(null);
+  const [labelAnalysis, setLabelAnalysis] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const currentSample = sampleData?.[currentDataIndex];
+
+  // Analyze label complexity on mount
+  useEffect(() => {
+    const analyzeComplexity = async () => {
+      if (!fieldNames?.length || isAnalyzing || labelAnalysis) return;
+      
+      setIsAnalyzing(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('analyze-label-complexity', {
+          body: {
+            fieldNames,
+            sampleData: currentSample,
+            templateType: 'custom'
+          }
+        });
+
+        if (error) throw error;
+        
+        console.log('📊 Label analysis:', data);
+        setLabelAnalysis(data);
+      } catch (error) {
+        console.error('Failed to analyze complexity:', error);
+        // Fallback: simple heuristic
+        setLabelAnalysis({
+          complexityScore: 50,
+          shouldShowLabels: fieldNames.length >= 5,
+          reasoning: 'Fallback analysis'
+        });
+      } finally {
+        setIsAnalyzing(false);
+      }
+    };
+
+    analyzeComplexity();
+  }, [fieldNames, currentSample, isAnalyzing, labelAnalysis]);
 
   const {
     fields,
@@ -73,7 +112,8 @@ export function TemplateDesignCanvas({
     templateSize, 
     initialFields: fieldNames,
     initialDesignConfig,
-    sampleData
+    sampleData,
+    shouldShowLabels: labelAnalysis?.shouldShowLabels ?? false
   });
 
   const captureCanvasAsBase64 = async (): Promise<string> => {

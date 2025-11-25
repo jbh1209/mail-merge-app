@@ -28,12 +28,36 @@ serve(async (req) => {
       type: templateType
     });
 
-    // Phase 1: Get design strategy from AI
-    console.log('Phase 1: Calling design-with-ai for high-level strategy...');
+    // Phase 1: Analyze label complexity
+    console.log('Phase 1: Analyzing label complexity...');
+    const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
+      'analyze-label-complexity',
+      {
+        body: { fieldNames, sampleData, templateType }
+      }
+    );
+
+    if (analysisError) {
+      console.error('Analysis error:', analysisError);
+      // Continue with defaults
+    }
+
+    const complexity = analysisData?.complexityScore || 50;
+    const fieldImportance = analysisData?.fieldImportance || {};
+    console.log('✓ Complexity score:', complexity, 'Importance:', fieldImportance);
+
+    // Phase 2: Get design strategy from AI
+    console.log('Phase 2: Calling design-with-ai for high-level strategy...');
     const { data: designData, error: designError } = await supabase.functions.invoke(
       'design-with-ai',
       {
-        body: { fieldNames, sampleData, templateSize }
+        body: { 
+          fieldNames, 
+          sampleData, 
+          templateSize,
+          complexityScore: complexity,
+          fieldImportance
+        }
       }
     );
 
@@ -45,17 +69,19 @@ serve(async (req) => {
     const { designStrategy } = designData;
     console.log('✓ Design strategy received:', designStrategy.strategy);
 
-    // Phase 2: Execute with rules engine (client-side)
+    // Phase 3: Execute with rules engine (client-side)
     // We return the design strategy and let the client execute it
     // This is because the layout engine uses Canvas API which needs DOM
     
     return new Response(
       JSON.stringify({
         designStrategy,
+        labelAnalysis: analysisData,
         metadata: {
           generatedAt: new Date().toISOString(),
           approach: 'hybrid_ai_rules',
-          aiModel: 'google/gemini-2.5-flash'
+          aiModel: 'google/gemini-2.5-flash',
+          complexityScore: complexity
         }
       }),
       { 

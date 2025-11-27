@@ -36,7 +36,7 @@ serve(async (req) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    const { fieldNames, sampleData, templateSize } = await req.json();
+    const { fieldNames, sampleData, templateSize, labelAnalysis } = await req.json();
 
     if (!fieldNames || !Array.isArray(fieldNames) || fieldNames.length === 0) {
       throw new Error('Field names are required');
@@ -48,8 +48,39 @@ serve(async (req) => {
 
     console.log('Generating design strategy for:', {
       fields: fieldNames.length,
-      template: `${templateSize.width}mm × ${templateSize.height}mm`
+      template: `${templateSize.width}mm × ${templateSize.height}mm`,
+      layoutMode: labelAnalysis?.layoutMode,
+      isStandardAddress: labelAnalysis?.isStandardAddress
     });
+
+    // Check if this is a standard address label - use combined block layout
+    if (labelAnalysis?.isStandardAddress && labelAnalysis?.layoutMode === 'combined_address_block') {
+      console.log('📮 Standard address detected - using combined block layout');
+      
+      return new Response(
+        JSON.stringify({
+          designStrategy: {
+            strategy: 'combined_address_block',
+            regions: {
+              main: {
+                fields: fieldNames,
+                layout: 'stacked_inline',
+                verticalAllocation: 1.0,
+                priority: 'highest'
+              }
+            },
+            typography: fieldNames.reduce((acc: any, field: string) => {
+              acc[field] = { weight: 'normal', importance: 'high' };
+              return acc;
+            }, {})
+          }
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200 
+        }
+      );
+    }
 
     // Analyze fields
     const fieldAnalysis = fieldNames.map(fieldName => {

@@ -11,7 +11,7 @@ export interface Size {
   height: number;
 }
 
-export type FieldType = 'text' | 'barcode' | 'qrcode' | 'sequence';
+export type FieldType = 'text' | 'barcode' | 'qrcode' | 'sequence' | 'address_block';
 
 export interface FieldConfig {
   id: string;
@@ -47,6 +47,7 @@ export interface FieldConfig {
     sequencePrefix?: string;
     sequencePadding?: number;
   };
+  combinedFields?: string[]; // For address_block type - contains all field names to render
 }
 
 /**

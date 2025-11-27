@@ -160,6 +160,32 @@ export function FieldElement({
           </div>
         );
       
+      case 'address_block':
+        // Render all address fields as stacked lines in one element (no borders between lines)
+        const addressFields = (field as any).combinedFields || [field.templateField];
+        const addressLines = addressFields
+          .map((f: string) => sampleData?.[f] || generateSampleText(f))
+          .filter((line: string) => line && String(line).trim() !== '');
+        
+        return (
+          <div className="flex flex-col h-full px-2 py-1 justify-start">
+            {addressLines.map((line: string, i: number) => (
+              <span 
+                key={i}
+                style={{ 
+                  fontSize: `${(field.style.fontSize / 72) * 96}px`,
+                  fontFamily: field.style.fontFamily,
+                  fontWeight: field.style.fontWeight,
+                  color: field.style.color,
+                  lineHeight: '1.3'
+                }}
+              >
+                {String(line)}
+              </span>
+            ))}
+          </div>
+        );
+      
       default: // text
         return (
           <div 

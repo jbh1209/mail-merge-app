@@ -33,7 +33,7 @@ serve(async (req) => {
     const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
       'analyze-label-complexity',
       {
-        body: { fieldNames, sampleData, templateType }
+        body: { fieldNames, sampleData: sampleData?.[0] || {}, templateType }
       }
     );
 
@@ -42,9 +42,13 @@ serve(async (req) => {
       // Continue with defaults
     }
 
-    const complexity = analysisData?.complexityScore || 50;
-    const fieldImportance = analysisData?.fieldImportance || {};
-    console.log('✓ Complexity score:', complexity, 'Importance:', fieldImportance);
+    const labelAnalysis = analysisData || {};
+    console.log('✓ Label analysis:', {
+      complexity: labelAnalysis.complexityScore,
+      showLabels: labelAnalysis.shouldShowLabels,
+      layoutMode: labelAnalysis.layoutMode,
+      isStandardAddress: labelAnalysis.isStandardAddress
+    });
 
     // Phase 2: Get design strategy from AI
     console.log('Phase 2: Calling design-with-ai for high-level strategy...');
@@ -55,8 +59,7 @@ serve(async (req) => {
           fieldNames, 
           sampleData, 
           templateSize,
-          complexityScore: complexity,
-          fieldImportance
+          labelAnalysis
         }
       }
     );
@@ -76,12 +79,14 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         designStrategy,
-        labelAnalysis: analysisData,
+        labelAnalysis,
         metadata: {
           generatedAt: new Date().toISOString(),
           approach: 'hybrid_ai_rules',
           aiModel: 'google/gemini-2.5-flash',
-          complexityScore: complexity
+          complexityScore: labelAnalysis?.complexityScore || 50,
+          layoutMode: labelAnalysis?.layoutMode || 'separate_fields',
+          isStandardAddress: labelAnalysis?.isStandardAddress || false
         }
       }),
       { 

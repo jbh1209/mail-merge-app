@@ -8,7 +8,7 @@ export interface DesignIntent {
   regions: {
     [key: string]: {
       fields: string[];
-      layout: 'horizontal_split' | 'three_column' | 'single_dominant' | 'stacked' | 'two_column';
+      layout: 'horizontal_split' | 'three_column' | 'single_dominant' | 'stacked' | 'two_column' | 'stacked_inline';
       verticalAllocation: number; // 0-1 (percentage of height)
       priority: 'highest' | 'high' | 'medium' | 'low';
     };
@@ -41,6 +41,8 @@ export interface FieldLayout {
   verticalAlign: 'top' | 'middle' | 'bottom';
   whiteSpace?: 'pre-line';
   transformCommas?: boolean;
+  combinedFields?: string[]; // For address blocks that combine multiple fields
+  fieldType?: 'text' | 'address_block';
 }
 
 export interface ExecuteResult {
@@ -132,6 +134,8 @@ function layoutRegion(
       return layoutThreeColumn(region, bounds, config, typography, sampleData);
     case 'stacked':
       return layoutStacked(region, bounds, config, typography, sampleData);
+    case 'stacked_inline':
+      return layoutStackedInline(region, bounds, config, typography, sampleData);
     default:
       return layoutStacked(region, bounds, config, typography, sampleData);
   }
@@ -347,6 +351,50 @@ function layoutStacked(
   });
 
   return fields;
+}
+
+/**
+ * All fields combined into single stacked text block (standard address labels)
+ * Renders like an address on an envelope - no borders between lines
+ */
+function layoutStackedInline(
+  region: DesignIntent['regions'][string],
+  bounds: { x: number; y: number; width: number; height: number },
+  config: LayoutConfig,
+  typography: DesignIntent['typography'],
+  sampleData: Record<string, any>
+): FieldLayout[] {
+  // Combine all field values into a single multi-line text block
+  const combinedText = region.fields
+    .map(field => String(sampleData[field] || field))
+    .join('\n');
+
+  const typo = typography[region.fields[0]] || { weight: 'normal', importance: 'high' };
+  
+  // Calculate optimal font size for the entire block
+  const fontSize = calculateOptimalFontSize(
+    combinedText,
+    bounds.width,
+    bounds.height,
+    config,
+    typo.importance
+  );
+
+  // Return a single field that represents all address lines
+  return [{
+    templateField: region.fields[0], // Primary field
+    combinedFields: region.fields, // All fields to render
+    fieldType: 'address_block',
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    fontSize,
+    fontWeight: typo.weight,
+    textAlign: 'left',
+    verticalAlign: 'top',
+    whiteSpace: 'pre-line' as const
+  }];
 }
 
 /**

@@ -434,12 +434,11 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                   selectedId={wizardState.templateId}
                   onSelect={async (template: LabelSize) => {
                     try {
-                      const defaultTemplateFields = extractTemplateFields(template);
                       const dataColumns = wizardState.dataColumns || [];
-                      // Use data columns if we have more columns than the default template fields
-                      const templateFields = dataColumns.length > defaultTemplateFields.length 
-                        ? dataColumns.slice(0, 20) 
-                        : defaultTemplateFields;
+                      // ALWAYS prefer actual data columns - they match the uploaded data
+                      const templateFields = dataColumns.length > 0 
+                        ? dataColumns.slice(0, 20)  // Use actual data columns
+                        : extractTemplateFields(template);  // Only fallback if no data
                       
                       const { data: savedTemplate, error } = await supabase
                         .from("templates")

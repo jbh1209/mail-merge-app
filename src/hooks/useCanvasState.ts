@@ -225,7 +225,8 @@ export const useCanvasState = ({
           fieldNames,
           sampleData: sampleData.slice(0, 5) || [],
           templateSize,
-          templateType: 'built_in_library'
+          templateType: 'built_in_library',
+          labelAnalysis: null // Will be passed from TemplateDesignCanvas later
         }
       });
 
@@ -266,8 +267,9 @@ export const useCanvasState = ({
             ...(field.transformCommas && { transformCommas: field.transformCommas })
           },
           showLabel: settings.showAllLabels,
-          fieldType: 'text' as const,
-          overflow: 'wrap' as const
+          fieldType: (field.fieldType as any) || 'text' as const,
+          overflow: 'wrap' as const,
+          ...(field.combinedFields && { combinedFields: field.combinedFields })
         }));
         
         setFields(newFields);

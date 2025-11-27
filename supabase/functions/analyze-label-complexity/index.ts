@@ -27,31 +27,42 @@ Complexity Scoring (0-100):
 - SIMPLE (0-30): Standard formats users recognize (address, name tag, shipping)
   → Examples: name, address, city, state, zip, phone, email
   → Labels: NOT needed (users know what fields mean)
+  → Layout: COMBINED BLOCK (single stacked text block, no borders)
 
 - MODERATE (31-60): Mix of standard + custom fields
   → Examples: SKU, product code, price, quantity mixed with names/addresses
   → Labels: SELECTIVE (only for non-obvious fields)
+  → Layout: SEPARATE FIELDS with selective labels
 
 - COMPLEX (61-100): Unusual business-specific fields
   → Examples: STORE CODE, AREA MANAGER, PROVINCE, DEPT ID, custom codes
   → Labels: NEEDED (users won't know what fields mean)
+  → Layout: SEPARATE FIELDS with all labels
+
+Standard Address Pattern Detection:
+- Must have 4+ of these field types: name, address/street, city/town, state/county/province, zip/postcode
+- Should be rendered as a SINGLE combined text block (like an address on an envelope)
+- layoutMode: "combined_address_block" (NOT "separate_fields")
 
 Consider:
 1. Field name patterns (standard vs custom/cryptic)
 2. User familiarity (everyone knows "address" but not "DEPT CODE")
 3. Business specificity (generic vs company-specific terminology)
 4. Data format (simple text vs codes/IDs)
+5. Whether this is a standard address label (should be single text block)
 
 Respond ONLY with valid JSON matching this structure:
 {
   "complexityScore": 25,
   "shouldShowLabels": false,
+  "layoutMode": "combined_address_block",
+  "isStandardAddress": true,
   "fieldImportance": {
     "name": "critical",
     "address": "critical",
     "city": "supporting"
   },
-  "reasoning": "Standard address label with familiar fields",
+  "reasoning": "Standard address label - render as single combined text block",
   "dataQualityCheck": {
     "hasRealData": true,
     "missingFields": [],
@@ -88,19 +99,33 @@ Determine complexity score, whether to show labels, and field importance.`;
       console.error('AI Gateway error:', response.status, errorText);
       
       // Fallback to simple heuristic
-      const isSimpleAddress = fieldNames.some((f: string) => 
-        /address|city|state|zip|postal|street/i.test(f)
-      );
+      const addressFieldPatterns = [
+        /^(name|first.*name|last.*name|full.*name)/i,
+        /^(address|address.*line|street)/i,
+        /^(city|town)/i,
+        /^(state|county|province|region)/i,
+        /^(zip|postcode|postal)/i
+      ];
+      
+      const matchCount = fieldNames.filter((f: string) => 
+        addressFieldPatterns.some(p => p.test(f))
+      ).length;
+      
+      const isStandardAddress = matchCount >= 4 && fieldNames.length <= 7;
       
       return new Response(
         JSON.stringify({
-          complexityScore: isSimpleAddress ? 25 : 50,
-          shouldShowLabels: !isSimpleAddress,
+          complexityScore: isStandardAddress ? 20 : 50,
+          shouldShowLabels: !isStandardAddress,
+          layoutMode: isStandardAddress ? 'combined_address_block' : 'separate_fields',
+          isStandardAddress,
           fieldImportance: fieldNames.reduce((acc: any, f: string) => {
             acc[f] = 'critical';
             return acc;
           }, {}),
-          reasoning: 'Fallback analysis (AI unavailable)',
+          reasoning: isStandardAddress 
+            ? 'Standard address label - render as single combined text block'
+            : 'Fallback analysis (AI unavailable)',
           dataQualityCheck: {
             hasRealData: !!sampleData,
             missingFields: [],

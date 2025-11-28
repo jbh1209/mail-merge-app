@@ -414,8 +414,8 @@ function calculateOptimalFontSize(
   const widthPx = widthMm * MM_TO_PX;
   const heightPx = heightMm * MM_TO_PX;
   
-  // Check if text contains commas (multi-line)
-  const isMultiLine = sampleText.includes(',');
+  // Check if text contains commas or newlines (multi-line)
+  const isMultiLine = sampleText.includes(',') || sampleText.includes('\n');
 
   // Binary search for LARGEST font size that fits
   // Importance does NOT cap the maximum - it only affects starting guess for efficiency

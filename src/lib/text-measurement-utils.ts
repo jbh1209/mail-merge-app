@@ -50,9 +50,19 @@ export function measureText(
     };
   }
 
-  // For long text with commas, split intelligently
+  // Handle newlines as primary line breaks, then commas
+  const hasNewlines = text.includes('\n');
   const hasCommas = text.includes(',');
-  const segments = hasCommas ? text.split(',').map(s => s.trim()) : [text];
+  
+  let segments: string[];
+  if (hasNewlines) {
+    // Newlines take priority - each is a separate line
+    segments = text.split('\n').map(s => s.trim()).filter(s => s !== '');
+  } else if (hasCommas) {
+    segments = text.split(',').map(s => s.trim());
+  } else {
+    segments = [text];
+  }
   
   const lines: string[] = [];
   

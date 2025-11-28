@@ -1,7 +1,9 @@
 # Development Roadmap
 
-**Last Updated:** 2025-11-15  
-**Version:** 1.0  
+> **📖 Foundation**: [Core Principles](./CORE_PRINCIPLES.md) — All development decisions flow from our dual-audience philosophy.
+
+**Last Updated:** 2025-11-28  
+**Version:** 1.1  
 **Project Start**: November 2025
 
 ---
@@ -11,6 +13,8 @@
 This roadmap outlines the development phases for Mail Merge App, from foundation to full production launch.
 
 **Estimated Timeline**: 5-7 months (November 2025 - May/June 2026)
+
+**Core Philosophy**: Build intelligent automation that makes it simple for beginners AND fast for professionals.
 
 ---
 
@@ -135,15 +139,17 @@ This roadmap outlines the development phases for Mail Merge App, from foundation
 
 ---
 
-## Phase 3: PDF Generation Pipeline 📋 PLANNED
+## Phase 3: PDF Generation & Data Enhancements 📋 PLANNED
 
-**Duration**: 3-4 weeks  
+**Duration**: 4-5 weeks  
 **Start**: 2025-12-20 (estimated)  
-**End**: 2026-01-20 (estimated)
+**End**: 2026-01-27 (estimated)
 
 ### Goals
 - Build asynchronous job queue
 - Implement PDF generation worker
+- **Real barcode and QR code generation** (not placeholders)
+- **Polish sequential numbering UX**
 - Track usage and enforce quotas
 - Enable bulk downloads
 
@@ -156,14 +162,22 @@ This roadmap outlines the development phases for Mail Merge App, from foundation
 - [ ] Status tracking
 - [ ] Real-time progress updates
 
-#### Week 2-3: PDF Generation
+#### Week 2-3: PDF Generation & Enhancements
 - [ ] PDF template loading
 - [ ] Data merging logic
-- [ ] PDF generation with pdf-lib
+- [ ] **Real barcode generation** (bwip-js or similar)
+- [ ] **Real QR code generation** (qrcode library)
+- [ ] Sequential numbering (already functional, polish UI)
 - [ ] Individual PDF storage
 - [ ] Error handling and retries
 
-#### Week 3-4: Usage & Downloads
+#### Week 4: AI-Suggested Enhancements
+- [ ] AI detection of SKU/barcode fields
+- [ ] AI detection of URL fields for QR codes
+- [ ] Smart suggestions UI ("Add barcode?")
+- [ ] Enhancement preview in mapping interface
+
+#### Week 4-5: Usage & Downloads
 - [ ] Usage logging
 - [ ] Quota checking
 - [ ] Quota enforcement
@@ -173,6 +187,9 @@ This roadmap outlines the development phases for Mail Merge App, from foundation
 
 ### Deliverables
 - Working PDF generation pipeline
+- **Real barcode generation** (CODE128, CODE39, EAN13, UPC-A)
+- **Real QR code generation** (URLs, vCard, custom data)
+- **AI-suggested enhancements** based on field analysis
 - Job monitoring UI
 - Usage tracking system
 - Download management
@@ -182,6 +199,7 @@ This roadmap outlines the development phases for Mail Merge App, from foundation
 - Support 1000 PDFs per job
 - < 10 minute total for 100 PDFs
 - 99% success rate
+- Barcode/QR generation: < 500ms per code
 
 ### Risks
 
@@ -480,6 +498,9 @@ None
 |------|--------|--------|
 | 2025-11-15 | Initial roadmap created | Project kickoff |
 | 2025-11-15 | Phase 1 marked complete | Database setup done |
+| 2025-11-28 | Added Core Principles reference | Formalized dual-audience philosophy |
+| 2025-11-28 | Phase 3 expanded with barcode/QR | Expanded scope for data enhancements |
+| 2025-11-28 | Added AI-suggested enhancements | Proactive feature suggestions |
 
 ---
 

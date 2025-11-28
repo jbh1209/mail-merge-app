@@ -1,8 +1,10 @@
 # Product Overview: Mail Merge App
 
-**Last Updated:** 2025-11-15  
-**Version:** 1.0  
-**Status:** Phase 1 Complete (Foundation)
+> **📖 Read First**: [Core Principles](./CORE_PRINCIPLES.md) — The foundational philosophy that guides all product decisions.
+
+**Last Updated:** 2025-11-28  
+**Version:** 1.1  
+**Status:** Phase 2 In Progress (Data & Template Handling)
 
 ## Product Vision
 
@@ -13,10 +15,12 @@ Mail Merge App is a dual-purpose SaaS platform combining:
 ## Value Proposition
 
 ### For Mail Merge Users
-- Transform spreadsheet data into professional PDFs at scale
-- AI-assisted field mapping eliminates manual configuration
+- **For Beginners**: Upload data → Get beautiful labels (3 clicks, 60 seconds)
+- **For Professionals**: Faster than InDesign for variable data projects
+- AI-powered layout generation and field mapping
+- Built-in barcode, QR code, and sequential numbering
 - Support for multiple data sources (CSV, Excel, Google Sheets)
-- Flexible template system with custom design capabilities
+- Professional-grade output without technical knowledge
 - Usage-based pricing with generous free tier
 
 ### For SEO Practitioners
@@ -30,15 +34,29 @@ Mail Merge App is a dual-purpose SaaS platform combining:
 
 ### Primary Personas
 
-**1. Small Business Owner (Mail Merge)**
-- Needs: Certificate generation, invoices, personalized marketing materials
-- Pain Points: Manual document creation is time-consuming
-- Goals: Automate repetitive document tasks
+**1. Non-Technical User (Beginner)**
+- Needs: Simple label creation (address, shipping, name badges)
+- Pain Points: Existing tools are too complex or expensive
+- Goals: Professional output without learning curve
+- Success: Creates perfect labels in under 60 seconds
 
-**2. Marketing Team (Mail Merge)**
+**2. Professional Designer (Power User)**
+- Needs: Speed advantage for variable data projects
+- Pain Points: InDesign data merge is tedious, time-consuming
+- Goals: Handle data complexity fast, then fine-tune design
+- Success: Completes in 10 minutes what takes 1 hour in InDesign
+
+**3. Small Business Owner**
+- Needs: Product labels, inventory tags, shelf labels
+- Pain Points: Need barcodes, QR codes, numbering
+- Goals: Professional branded labels at scale
+- Success: Generates 1000 labels with barcodes easily
+
+**4. Marketing Team**
 - Needs: Bulk personalized campaign materials
 - Pain Points: Limited design flexibility in existing tools
 - Goals: Create professional, branded documents at scale
+- Success: Rapid iteration on label designs
 
 **3. SEO Manager (SEO System)**
 - Needs: Programmatic SEO for location/product pages
@@ -71,6 +89,13 @@ Mail Merge App is a dual-purpose SaaS platform combining:
 - Smart mapping suggestions based on data column names
 - Confidence scoring for mapping quality
 - Manual override and confirmation
+
+#### Data Enhancements
+- Sequential numbering (prefix, padding, start number)
+- Barcode generation (CODE128, CODE39, EAN13, UPC-A)
+- QR code generation (URLs, vCard, custom data)
+- AI-suggested enhancements based on field analysis
+- Image handling (logos, product photos)
 
 #### PDF Generation Pipeline
 - Asynchronous job processing

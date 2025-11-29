@@ -128,6 +128,13 @@ export function FabricLabelCanvas({
     fields.forEach(fieldConfig => {
       let obj;
 
+      console.log('🎨 Rendering field:', {
+        type: fieldConfig.fieldType,
+        field: fieldConfig.templateField,
+        fontSize: fieldConfig.style?.fontSize,
+        size: `${fieldConfig.size?.width?.toFixed(1)}x${fieldConfig.size?.height?.toFixed(1)}mm`
+      });
+
       switch (fieldConfig.fieldType) {
         case 'address_block':
           obj = createAddressBlock(canvas, fieldConfig, sampleData, scale);

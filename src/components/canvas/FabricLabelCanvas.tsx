@@ -216,8 +216,8 @@ export function FabricLabelCanvas({
           });
         }
 
-        // CRITICAL: Apply style properties from fieldConfig
-        if (fieldConfig.fieldType === 'text') {
+        // CRITICAL: Apply style properties from fieldConfig for text-based fields
+        if (fieldConfig.fieldType === 'text' || fieldConfig.fieldType === 'address_block') {
           existingObj.set({
             fontFamily: fieldConfig.style.fontFamily || 'Arial, sans-serif',
             fontSize: fieldConfig.style.fontSize || 24,

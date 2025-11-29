@@ -296,17 +296,10 @@ function renderAddressBlock(
   
   if (lines.length === 0) return;
   
-  // Calculate optimal font size
+  // Use user's font size setting - NO auto-shrink to keep consistency
   const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
-  let fontSize = 24;
+  const fontSize = field.style?.fontSize || 12;
   const lineHeight = 1.2;
-  
-  // Binary search for best font size that fits
-  while (fontSize > 8) {
-    const totalHeight = lines.length * fontSize * lineHeight;
-    if (totalHeight <= height - 8) break;
-    fontSize--;
-  }
   
   // Render lines from top
   let yOffset = y + height - fontSize - 4;

@@ -187,7 +187,8 @@ export function createAddressBlock(
   // Convert mm to px using centralized coordinate system
   const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
   
-  const initialFontSize = 24;
+  // Use user's font size setting instead of hardcoded value
+  const initialFontSize = style.fontSize || 24;
 
   console.log(`📍 Address block: ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${pxCoords.position.x.toFixed(0)},${pxCoords.position.y.toFixed(0)}px (TOP-LEFT)`);
 
@@ -215,8 +216,10 @@ export function createAddressBlock(
   (textbox as any).templateField = combinedFields[0];
   (textbox as any).combinedFields = combinedFields;
 
-  // Always auto-fit address blocks
-  fitTextToBox(textbox, pxCoords.size.width, pxCoords.size.height, 10);
+  // Only auto-fit if enabled (respect user's fontSize setting)
+  if (fieldConfig.autoFit) {
+    fitTextToBox(textbox, pxCoords.size.width, pxCoords.size.height, 10);
+  }
 
   return textbox as LabelFieldObject;
 }

@@ -178,8 +178,22 @@ export const useCanvasState = ({
   }, [saveToHistory]);
 
   const updateFieldType = useCallback((fieldId: string, fieldType: FieldConfig['fieldType'], typeConfig?: any) => {
-    updateField(fieldId, { fieldType, typeConfig });
-  }, [updateField]);
+    const field = fields.find(f => f.id === fieldId);
+    
+    // Protect address blocks - don't change their type
+    if (field?.fieldType === 'address_block' && fieldType !== 'address_block') {
+      console.warn('Cannot change address_block type - skipping');
+      return;
+    }
+    
+    // Preserve combinedFields when updating
+    const updates: any = { fieldType, typeConfig };
+    if (field?.combinedFields) {
+      updates.combinedFields = field.combinedFields;
+    }
+    
+    updateField(fieldId, updates);
+  }, [fields, updateField]);
 
   const getFieldData = useCallback(() => {
     return fields.map(f => {

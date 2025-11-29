@@ -164,51 +164,6 @@ export function CanvasToolbar({
 
           <Separator orientation="vertical" className="h-5" />
           
-          {/* Field type selector */}
-          <Select value={selectedField.fieldType} onValueChange={(value: FieldType) => onUpdateFieldType(value)}>
-            <SelectTrigger className="h-7 w-[130px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="text">
-                <div className="flex items-center gap-2">
-                  <Type className="h-3.5 w-3.5" />
-                  <div className="flex flex-col items-start">
-                    <span>Text</span>
-                    <span className="text-[10px] text-muted-foreground">Standard data</span>
-                  </div>
-                </div>
-              </SelectItem>
-              <SelectItem value="barcode">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-3.5 w-3.5" />
-                  <div className="flex flex-col items-start">
-                    <span>Barcode</span>
-                    <span className="text-[10px] text-muted-foreground">Linear codes</span>
-                  </div>
-                </div>
-              </SelectItem>
-              <SelectItem value="qrcode">
-                <div className="flex items-center gap-2">
-                  <QrCode className="h-3.5 w-3.5" />
-                  <div className="flex flex-col items-start">
-                    <span>QR Code</span>
-                    <span className="text-[10px] text-muted-foreground">2D matrix</span>
-                  </div>
-                </div>
-              </SelectItem>
-              <SelectItem value="sequence">
-                <div className="flex items-center gap-2">
-                  <Hash className="h-3.5 w-3.5" />
-                  <div className="flex flex-col items-start">
-                    <span>Sequence</span>
-                    <span className="text-[10px] text-muted-foreground">Auto-increment</span>
-                  </div>
-                </div>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
           {/* Font family - only for text fields */}
           {selectedField.fieldType === 'text' && (
             <>

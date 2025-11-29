@@ -148,8 +148,8 @@ export function createLabelTextField(
   (textbox as any).fieldType = fieldConfig.fieldType || 'text';
   (textbox as any).templateField = templateField;
 
-  // Use auto-fit if enabled
-  if (fieldConfig.autoFit) {
+  // Only auto-fit if enabled AND not already applied (prevents re-fitting on zoom)
+  if (fieldConfig.autoFit && !fieldConfig.autoFitApplied) {
     fitTextToBox(textbox, pxCoords.size.width, pxCoords.size.height);
   }
 
@@ -216,8 +216,8 @@ export function createAddressBlock(
   (textbox as any).templateField = combinedFields[0];
   (textbox as any).combinedFields = combinedFields;
 
-  // Only auto-fit if enabled (respect user's fontSize setting)
-  if (fieldConfig.autoFit) {
+  // Only auto-fit if enabled AND not already applied (prevents re-fitting on zoom)
+  if (fieldConfig.autoFit && !fieldConfig.autoFitApplied) {
     fitTextToBox(textbox, pxCoords.size.width, pxCoords.size.height, 10);
   }
 

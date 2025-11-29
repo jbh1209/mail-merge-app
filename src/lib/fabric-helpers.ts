@@ -1,22 +1,31 @@
 // Fabric.js helper functions for label field creation and text sizing
 import { Canvas, Textbox, Group, Rect, Text, FabricObject } from 'fabric';
 import { FieldConfig, FieldType } from './canvas-utils';
+import { CoordinateSystem } from './canvas-coordinate-system';
 
 /**
  * Get field value from data with comprehensive matching strategies
  */
 const getFieldValue = (fieldName: string, data: Record<string, any> | undefined): string | null => {
-  if (!data) return null;
+  if (!data) {
+    console.log(`📝 getFieldValue: No data provided for "${fieldName}"`);
+    return null;
+  }
+  
+  const dataKeys = Object.keys(data);
+  console.log(`📝 Looking for "${fieldName}" in keys:`, dataKeys.slice(0, 5), `(${dataKeys.length} total)`);
   
   // 1. Exact match
-  if (data[fieldName] !== undefined) return String(data[fieldName]);
+  if (data[fieldName] !== undefined) {
+    console.log(`✅ Exact match: "${fieldName}" → "${data[fieldName]}"`);
+    return String(data[fieldName]);
+  }
   
   // 2. Case-insensitive match
   const lowerField = fieldName.toLowerCase();
-  const dataKeys = Object.keys(data);
-  
   for (const key of dataKeys) {
     if (key.toLowerCase() === lowerField) {
+      console.log(`✅ Case-insensitive match: "${fieldName}" → "${key}" → "${data[key]}"`);
       return String(data[key]);
     }
   }
@@ -27,6 +36,7 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
   
   for (const key of dataKeys) {
     if (normalize(key) === normalizedField) {
+      console.log(`✅ Normalized match: "${fieldName}" → "${key}" → "${data[key]}"`);
       return String(data[key]);
     }
   }
@@ -34,11 +44,12 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
   // 4. Partial match (contains)
   for (const key of dataKeys) {
     if (normalize(key).includes(normalizedField) || normalizedField.includes(normalize(key))) {
+      console.log(`✅ Partial match: "${fieldName}" → "${key}" → "${data[key]}"`);
       return String(data[key]);
     }
   }
   
-  console.warn(`⚠️ Field "${fieldName}" not found. Available keys:`, dataKeys);
+  console.warn(`❌ Field "${fieldName}" not found. Available keys:`, dataKeys);
   return null;
 };
 
@@ -52,31 +63,43 @@ export interface LabelFieldObject extends Textbox {
 }
 
 /**
- * Fit text to box using Fabric.js native capabilities
+ * Fit text to box using Fabric.js native capabilities with binary search
  */
-function fitTextToBox(textbox: Textbox, maxWidth: number, maxHeight: number, minFontSize: number = 10): void {
-  // Start with a large font size
-  let fontSize = 24;
-  textbox.set('fontSize', fontSize);
-  
-  // Use Fabric's native measurements for both dimensions
-  textbox.setCoords();
-  let actualHeight = textbox.calcTextHeight();
-  let actualWidth = textbox.calcTextWidth();
-  
-  // Calculate scale factors based on both dimensions
-  const heightRatio = maxHeight / actualHeight;
-  const widthRatio = maxWidth / actualWidth;
-  const scaleFactor = Math.min(heightRatio, widthRatio, 1); // Don't scale up
-  
-  // Apply as font size reduction (cleaner than using scaleY/scaleX)
-  const finalFontSize = Math.max(minFontSize, Math.floor(fontSize * scaleFactor * 0.9));
-  textbox.set('fontSize', finalFontSize);
+function fitTextToBox(
+  textbox: Textbox,
+  maxWidth: number,
+  maxHeight: number,
+  minFontSize: number = 10
+): void {
+  // Binary search for optimal font size
+  let high = 48; // Start with a larger max size
+  let low = minFontSize;
+  let bestFit = minFontSize;
+
+  while (high - low > 1) {
+    const mid = Math.floor((high + low) / 2);
+    textbox.set('fontSize', mid);
+    textbox.setCoords();
+
+    const textHeight = textbox.calcTextHeight();
+    const textWidth = textbox.calcTextWidth();
+
+    if (textHeight <= maxHeight && textWidth <= maxWidth) {
+      bestFit = mid;
+      low = mid; // Can try larger
+    } else {
+      high = mid; // Must try smaller
+    }
+  }
+
+  textbox.set('fontSize', bestFit);
+  console.log(`📏 Fit text: "${textbox.text?.slice(0, 20)}..." to ${maxWidth.toFixed(0)}x${maxHeight.toFixed(0)}px → ${bestFit}pt`);
 }
 
 export function createLabelTextField(
   fieldConfig: FieldConfig,
-  sampleData?: Record<string, any>
+  sampleData?: Record<string, any>,
+  scale: number = 1
 ): LabelFieldObject | null {
   const { templateField, position, size, style } = fieldConfig;
   const value = getFieldValue(templateField, sampleData);
@@ -88,16 +111,21 @@ export function createLabelTextField(
     console.warn(`⚠️ No data for field "${templateField}"`);
   }
   
+  // Convert mm to px using centralized coordinate system
+  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  
   const initialFontSize = style.fontSize || 24;
   
-  // Calculate center point for positioning
-  const centerX = position.x + size.width / 2;
-  const centerY = position.y + size.height / 2;
+  // Calculate center point for positioning (in pixels)
+  const centerX = pxCoords.position.x + pxCoords.size.width / 2;
+  const centerY = pxCoords.position.y + pxCoords.size.height / 2;
+
+  console.log(`📍 Field "${templateField}": ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${centerX.toFixed(0)},${centerY.toFixed(0)}px`);
 
   const textbox = new Textbox(displayText, {
     left: centerX,
     top: centerY,
-    width: size.width,
+    width: pxCoords.size.width,
     fontSize: initialFontSize,
     fontFamily: style.fontFamily || 'Arial',
     fontWeight: style.fontWeight || 'normal',
@@ -118,7 +146,7 @@ export function createLabelTextField(
 
   // Use auto-fit if enabled
   if (fieldConfig.autoFit) {
-    fitTextToBox(textbox, size.width, size.height);
+    fitTextToBox(textbox, pxCoords.size.width, pxCoords.size.height);
   }
 
   return textbox as LabelFieldObject;
@@ -126,7 +154,8 @@ export function createLabelTextField(
 
 export function createAddressBlock(
   fieldConfig: FieldConfig,
-  sampleData?: Record<string, any>
+  sampleData?: Record<string, any>,
+  scale: number = 1
 ): LabelFieldObject | null {
   const { position, size, style, combinedFields } = fieldConfig;
 
@@ -151,15 +180,20 @@ export function createAddressBlock(
     console.warn(`⚠️ Address block empty - no data for fields:`, combinedFields);
   }
   
+  // Convert mm to px using centralized coordinate system
+  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  
   const initialFontSize = 24;
   
-  // Calculate center Y for vertical centering
-  const centerY = position.y + size.height / 2;
+  // Calculate center Y for vertical centering (in pixels)
+  const centerY = pxCoords.position.y + pxCoords.size.height / 2;
+
+  console.log(`📍 Address block: ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${pxCoords.position.x.toFixed(0)},${centerY.toFixed(0)}px`);
 
   const textbox = new Textbox(displayText, {
-    left: position.x,
+    left: pxCoords.position.x,
     top: centerY,
-    width: size.width,
+    width: pxCoords.size.width,
     fontSize: initialFontSize,
     fontFamily: style.fontFamily || 'Arial',
     fontWeight: style.fontWeight || 'normal',
@@ -177,22 +211,27 @@ export function createAddressBlock(
   (textbox as any).fieldName = combinedFields[0];
   (textbox as any).fieldType = 'address_block';
   (textbox as any).templateField = combinedFields[0];
+  (textbox as any).combinedFields = combinedFields;
 
   // Always auto-fit address blocks
-  fitTextToBox(textbox, size.width, size.height, 10);
+  fitTextToBox(textbox, pxCoords.size.width, pxCoords.size.height, 10);
 
   return textbox as LabelFieldObject;
 }
 
 export function createBarcodeField(
-  fieldConfig: FieldConfig
+  fieldConfig: FieldConfig,
+  scale: number = 1
 ): Group {
-  // Barcode implementation remains unchanged for now
+  // Convert mm to px using centralized coordinate system
+  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  
+  // Barcode implementation - for now returns empty group
   return new Group([], {
-    left: fieldConfig.position.x,
-    top: fieldConfig.position.y,
-    width: fieldConfig.size.width,
-    height: fieldConfig.size.height
+    left: pxCoords.position.x,
+    top: pxCoords.position.y,
+    width: pxCoords.size.width,
+    height: pxCoords.size.height
   });
 }
 

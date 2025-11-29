@@ -15,8 +15,15 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
   const dataKeys = Object.keys(data);
   console.log(`📝 Looking for "${fieldName}" in keys:`, dataKeys.slice(0, 5), `(${dataKeys.length} total)`);
   
+  // Helper to check if value is valid (not null/undefined/empty)
+  const isValidValue = (val: any): boolean => {
+    if (val === null || val === undefined) return false;
+    const str = String(val).trim();
+    return str.length > 0 && str.toLowerCase() !== 'null';
+  };
+
   // 1. Exact match
-  if (data[fieldName] !== undefined) {
+  if (data[fieldName] !== undefined && isValidValue(data[fieldName])) {
     console.log(`✅ Exact match: "${fieldName}" → "${data[fieldName]}"`);
     return String(data[fieldName]);
   }
@@ -24,7 +31,7 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
   // 2. Case-insensitive match
   const lowerField = fieldName.toLowerCase();
   for (const key of dataKeys) {
-    if (key.toLowerCase() === lowerField) {
+    if (key.toLowerCase() === lowerField && isValidValue(data[key])) {
       console.log(`✅ Case-insensitive match: "${fieldName}" → "${key}" → "${data[key]}"`);
       return String(data[key]);
     }
@@ -35,7 +42,7 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
   const normalizedField = normalize(fieldName);
   
   for (const key of dataKeys) {
-    if (normalize(key) === normalizedField) {
+    if (normalize(key) === normalizedField && isValidValue(data[key])) {
       console.log(`✅ Normalized match: "${fieldName}" → "${key}" → "${data[key]}"`);
       return String(data[key]);
     }
@@ -43,7 +50,7 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
   
   // 4. Partial match (contains)
   for (const key of dataKeys) {
-    if (normalize(key).includes(normalizedField) || normalizedField.includes(normalize(key))) {
+    if ((normalize(key).includes(normalizedField) || normalizedField.includes(normalize(key))) && isValidValue(data[key])) {
       console.log(`✅ Partial match: "${fieldName}" → "${key}" → "${data[key]}"`);
       return String(data[key]);
     }
@@ -185,13 +192,14 @@ export function createAddressBlock(
   
   const initialFontSize = 24;
   
-  // Calculate center Y for vertical centering (in pixels)
+  // Calculate center point for horizontal and vertical centering (in pixels)
+  const centerX = pxCoords.position.x + pxCoords.size.width / 2;
   const centerY = pxCoords.position.y + pxCoords.size.height / 2;
 
-  console.log(`📍 Address block: ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${pxCoords.position.x.toFixed(0)},${centerY.toFixed(0)}px`);
+  console.log(`📍 Address block: ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${centerX.toFixed(0)},${centerY.toFixed(0)}px`);
 
   const textbox = new Textbox(displayText, {
-    left: pxCoords.position.x,
+    left: centerX,
     top: centerY,
     width: pxCoords.size.width,
     fontSize: initialFontSize,
@@ -199,7 +207,7 @@ export function createAddressBlock(
     fontWeight: style.fontWeight || 'normal',
     fill: style.color || '#000000',
     textAlign: 'left',
-    originX: 'left',
+    originX: 'center', // Horizontally center the block
     originY: 'center', // Vertically center the block
     selectable: true,
     hasControls: true,

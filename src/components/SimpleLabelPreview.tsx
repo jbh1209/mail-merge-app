@@ -38,8 +38,22 @@ export function SimpleLabelPreview({
   const labelHeightPx = mmToPx(labelHeightMm, previewScale);
 
   const renderField = (field: any) => {
-    const dataColumn = fieldMappings[field.templateField];
-    const dataValue = dataRow[dataColumn] || field.templateField;
+    let dataValue = '';
+    
+    // Handle address_block with combined fields
+    if (field.fieldType === 'address_block' && field.combinedFields) {
+      const lines = field.combinedFields
+        .map((fieldName: string) => {
+          const dataColumn = fieldMappings[fieldName];
+          return dataColumn ? String(dataRow[dataColumn] || '').trim() : '';
+        })
+        .filter((line: string) => line && line.toLowerCase() !== 'null');
+      dataValue = lines.join('\n');
+    } else {
+      // Regular single field
+      const dataColumn = fieldMappings[field.templateField];
+      dataValue = dataColumn ? String(dataRow[dataColumn] || '') : field.templateField;
+    }
     
     const scaledX = mmToPx(field.position.x, previewScale);
     const scaledY = mmToPx(field.position.y, previewScale);
@@ -70,7 +84,7 @@ export function SimpleLabelPreview({
             fontWeight: field.style.fontWeight,
             textAlign: field.style.textAlign,
             color: field.style.color,
-            whiteSpace: field.style.whiteSpace || 'normal',
+            whiteSpace: field.fieldType === 'address_block' ? 'pre-line' : field.style.whiteSpace || 'normal',
             wordWrap: field.style.wordWrap || 'break-word',
             lineHeight: field.style.lineHeight || '1.2',
             display: 'block',

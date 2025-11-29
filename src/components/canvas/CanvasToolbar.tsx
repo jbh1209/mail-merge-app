@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FieldConfig, FieldType } from '@/lib/canvas-utils';
+import { POPULAR_GOOGLE_FONTS } from '@/lib/google-fonts';
 
 interface CanvasToolbarProps {
   zoom: number;
@@ -208,6 +209,28 @@ export function CanvasToolbar({
             </SelectContent>
           </Select>
 
+          {/* Font family - only for text fields */}
+          {selectedField.fieldType === 'text' && (
+            <>
+              <Separator orientation="vertical" className="h-5" />
+              <Select
+                value={selectedField.style.fontFamily || 'Arial, sans-serif'}
+                onValueChange={(value) => onUpdateFieldStyle({ fontFamily: value })}
+              >
+                <SelectTrigger className="h-7 w-[140px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {POPULAR_GOOGLE_FONTS.map(font => (
+                    <SelectItem key={font.family} value={font.family}>
+                      <span style={{ fontFamily: font.family }}>{font.name}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+
           {/* Font size - only for text fields */}
           {selectedField.fieldType === 'text' && (
             <>
@@ -222,7 +245,7 @@ export function CanvasToolbar({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[6, 8, 10, 12, 14, 16, 18, 20, 24].map(size => (
+                    {[6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36].map(size => (
                       <SelectItem key={size} value={size.toString()}>{size}pt</SelectItem>
                     ))}
                   </SelectContent>

@@ -422,6 +422,9 @@ export function TemplateDesignCanvas({
                 // Canvas is ready - can add custom event handlers here if needed
                 console.log('✅ Fabric canvas initialized');
               }}
+              onFieldSelected={(fieldId) => {
+                setSelectedFieldId(fieldId);
+              }}
             />
           </div>
         </div>

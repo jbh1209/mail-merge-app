@@ -142,6 +142,8 @@ function renderTextField(
   }
   
   // Render value
+  // Note: PDF has limited font support - custom fonts would need embedding
+  // For now, we map to standard PDF fonts based on style
   const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
   const fontSize = field.style?.fontSize || 12;
   const lines = wrapText(value, font, width - 12, fontSize);

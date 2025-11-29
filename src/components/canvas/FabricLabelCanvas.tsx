@@ -106,6 +106,7 @@ export function FabricLabelCanvas({
     return () => {
       canvas.dispose();
       fabricCanvasRef.current = null;
+      objectRefsMap.current.clear(); // Clear object tracking on canvas disposal
     };
   }, [templateSize, scale]); // Removed showGrid from deps
 
@@ -168,26 +169,22 @@ export function FabricLabelCanvas({
     const width = mmToPx(templateSize.width);
     const height = mmToPx(templateSize.height);
 
-    // Get current non-grid objects (filter out grid lines)
-    const currentObjects = canvas.getObjects().filter((obj: any) => obj.selectable !== false && !obj.data?.isGridLine);
-    
-    // Create a map of existing fields by ID
-    const existingFieldsMap = new Map<string, any>();
-    currentObjects.forEach((obj: any) => {
-      if (obj.fieldId) {
-        existingFieldsMap.set(obj.fieldId, obj);
-      }
-    });
-
     // Track which fields we've processed
     const processedFieldIds = new Set<string>();
 
     // Update or create fields
     fields.forEach(fieldConfig => {
-      const fieldId = fieldConfig.id || `${fieldConfig.templateField}-${fieldConfig.position?.x}-${fieldConfig.position?.y}`;
+      // CRITICAL: Always use fieldConfig.id for stable tracking
+      const fieldId = fieldConfig.id;
+      if (!fieldId) {
+        console.warn('⚠️ Field missing id:', fieldConfig.templateField);
+        return;
+      }
+      
       processedFieldIds.add(fieldId);
 
-      const existingObj = existingFieldsMap.get(fieldId);
+      // Use objectRefsMap for consistent object tracking
+      const existingObj = objectRefsMap.current.get(fieldId);
 
       if (existingObj) {
         // Update existing object instead of recreating
@@ -271,14 +268,18 @@ export function FabricLabelCanvas({
         if (obj) {
           (obj as any).fieldId = fieldId;
           canvas.add(obj);
+          // CRITICAL: Track the new object in objectRefsMap
+          objectRefsMap.current.set(fieldId, obj as LabelFieldObject);
         }
       }
     });
 
     // Remove objects that are no longer in fields
+    const currentObjects = canvas.getObjects().filter((obj: any) => obj.selectable !== false && !obj.data?.isGridLine);
     currentObjects.forEach((obj: any) => {
       if (obj.fieldId && !processedFieldIds.has(obj.fieldId)) {
         canvas.remove(obj);
+        objectRefsMap.current.delete(obj.fieldId);
       }
     });
 

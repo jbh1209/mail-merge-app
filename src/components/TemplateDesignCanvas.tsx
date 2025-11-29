@@ -398,6 +398,7 @@ export function TemplateDesignCanvas({
               fields={fields}
               sampleData={sampleRow}
               scale={settings.scale}
+              showGrid={settings.showGrid}
               onFieldsChange={(updatedFields) => {
                 // Update fields when modified on canvas
                 updatedFields.forEach((updatedField, index) => {

@@ -35,10 +35,11 @@ export interface FieldLayout {
   y: number; // in mm
   width: number; // in mm
   height: number; // in mm
-  fontSize: number; // in pt
+  fontSize: number; // in pt (max size - Fabric will auto-fit)
   fontWeight: 'normal' | 'bold';
   textAlign: 'left' | 'center' | 'right';
   verticalAlign: 'top' | 'middle' | 'bottom';
+  autoFit?: boolean; // Enable Fabric.js native text fitting
   whiteSpace?: 'pre-line';
   transformCommas?: boolean;
   combinedFields?: string[]; // For address blocks that combine multiple fields
@@ -175,10 +176,11 @@ function layoutSingleDominant(
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    fontSize,
+    fontSize: 24, // Max size - Fabric will auto-fit
     fontWeight: typo.weight,
     textAlign: 'left',
     verticalAlign: 'top',
+    autoFit: true, // Enable Fabric.js native fitting
     ...(isAddress ? { whiteSpace: 'pre-line' as const, transformCommas: true } : {})
   }];
 }
@@ -381,6 +383,7 @@ function layoutStackedInline(
   );
 
   // Return a single field that represents all address lines
+  // Pass max font size (24pt) and let Fabric.js auto-fit down
   return [{
     templateField: region.fields[0], // Primary field
     combinedFields: region.fields, // All fields to render
@@ -389,7 +392,7 @@ function layoutStackedInline(
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    fontSize,
+    fontSize: 24, // Max size - Fabric will auto-fit down
     fontWeight: typo.weight,
     textAlign: 'left',
     verticalAlign: 'top',

@@ -108,7 +108,23 @@ export function FabricLabelCanvas({
       fabricCanvasRef.current = null;
       objectRefsMap.current.clear(); // Clear object tracking on canvas disposal
     };
-  }, [templateSize, scale]); // Removed showGrid from deps
+  }, [templateSize]); // Only recreate on template size change, NOT scale
+
+  // Separate effect for zoom - use viewport transform instead of recreation
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+
+    const mmToPx = (mm: number) => mm * 3.7795 * scale;
+    
+    // Apply zoom via viewport transform
+    canvas.setZoom(scale);
+    canvas.setDimensions({
+      width: mmToPx(templateSize.width),
+      height: mmToPx(templateSize.height)
+    });
+    canvas.renderAll();
+  }, [scale, templateSize]);
 
   // Separate effect for grid visibility - doesn't recreate canvas
   useEffect(() => {

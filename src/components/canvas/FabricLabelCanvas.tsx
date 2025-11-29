@@ -191,7 +191,7 @@ export function FabricLabelCanvas({
     });
 
     canvas.renderAll();
-  }, [fields, sampleData, templateSize, scale]);
+  }, [fields, sampleData, templateSize, scale, showGrid]);
 
   return (
     <div className="relative border-2 border-border rounded-lg overflow-hidden shadow-lg bg-muted/20">

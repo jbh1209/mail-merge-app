@@ -261,15 +261,22 @@ export function FieldMappingWizard({
         return acc;
       }, {} as Record<string, string>);
 
+      // Use upsert to prevent duplicate entries
       const { error } = await supabase
         .from('field_mappings')
-        .insert({
-          project_id: projectId,
-          data_source_id: dataSourceId,
-          template_id: templateId,
-          mappings: mappingsData,
-          user_confirmed: true,
-        });
+        .upsert(
+          {
+            project_id: projectId,
+            data_source_id: dataSourceId,
+            template_id: templateId,
+            mappings: mappingsData,
+            user_confirmed: true,
+          },
+          {
+            onConflict: 'data_source_id,template_id',
+            ignoreDuplicates: false // Update existing
+          }
+        );
 
       if (error) throw error;
 

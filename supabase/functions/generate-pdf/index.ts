@@ -441,12 +441,15 @@ serve(async (req) => {
       hasDesignConfig: !!job.template.design_config
     });
 
+    // Get the most recent mapping (handles multiple entries gracefully)
     const { data: mappings, error: mappingsError } = await supabase
       .from('field_mappings')
       .select('mappings')
       .eq('data_source_id', job.data_source_id)
       .eq('template_id', job.template_id)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (mappingsError || !mappings) {
       throw new Error('Field mappings not found');

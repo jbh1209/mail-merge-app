@@ -59,13 +59,14 @@ export function autoFitFontSize(
 export function createLabelTextField(
   canvas: Canvas,
   fieldConfig: Partial<FieldConfig>,
-  sampleData?: Record<string, any>
+  sampleData?: Record<string, any>,
+  scale: number = 1
 ): LabelFieldObject {
   const fieldName = fieldConfig.templateField || 'field';
   const displayText = sampleData?.[fieldName] || generateSampleText(fieldName);
   
   // Convert mm to pixels (96 DPI: 1mm ≈ 3.7795px)
-  const mmToPx = (mm: number) => mm * 3.7795;
+  const mmToPx = (mm: number) => mm * 3.7795 * scale;
   
   const x = mmToPx(fieldConfig.position?.x || 0);
   const y = mmToPx(fieldConfig.position?.y || 0);
@@ -121,7 +122,8 @@ export function createLabelTextField(
 export function createAddressBlock(
   canvas: Canvas,
   fieldConfig: Partial<FieldConfig>,
-  sampleData?: Record<string, any>
+  sampleData?: Record<string, any>,
+  scale: number = 1
 ): LabelFieldObject {
   const addressFields = fieldConfig.combinedFields || [fieldConfig.templateField || 'address'];
   const addressLines = addressFields
@@ -131,7 +133,7 @@ export function createAddressBlock(
   const displayText = addressLines.join('\n');
   
   // Convert mm to pixels
-  const mmToPx = (mm: number) => mm * 3.7795;
+  const mmToPx = (mm: number) => mm * 3.7795 * scale;
   
   const x = mmToPx(fieldConfig.position?.x || 0);
   const y = mmToPx(fieldConfig.position?.y || 0);
@@ -185,9 +187,10 @@ export function createAddressBlock(
 export function createBarcodeField(
   canvas: Canvas,
   fieldConfig: Partial<FieldConfig>,
-  sampleData?: Record<string, any>
+  sampleData?: Record<string, any>,
+  scale: number = 1
 ): Group {
-  const mmToPx = (mm: number) => mm * 3.7795;
+  const mmToPx = (mm: number) => mm * 3.7795 * scale;
   
   const x = mmToPx(fieldConfig.position?.x || 0);
   const y = mmToPx(fieldConfig.position?.y || 0);

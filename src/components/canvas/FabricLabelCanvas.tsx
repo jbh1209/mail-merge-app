@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Canvas as FabricCanvas } from 'fabric';
+import { Canvas as FabricCanvas, Line } from 'fabric';
 import { FieldConfig } from '@/lib/canvas-utils';
 import { 
   createLabelTextField, 
@@ -56,6 +56,16 @@ export function FabricLabelCanvas({
       evented: false
     };
 
+    // Draw grid lines
+    for (let x = 0; x <= width; x += gridSize) {
+      const line = new Line([x, 0, x, height], gridOptions);
+      canvas.add(line);
+    }
+    for (let y = 0; y <= height; y += gridSize) {
+      const line = new Line([0, y, width, y], gridOptions);
+      canvas.add(line);
+    }
+
     // Notify parent that canvas is ready
     if (onCanvasReady) {
       onCanvasReady(canvas);
@@ -66,7 +76,8 @@ export function FabricLabelCanvas({
       if (onFieldsChange) {
         // Convert back to field configs
         const updatedFields = fields.map((field, index) => {
-          const obj = canvas.item(index);
+          const objects = canvas.getObjects();
+          const obj = objects[index];
           if (!obj) return field;
 
           const pxToMm = (px: number) => px / (3.7795 * scale);
@@ -85,6 +96,17 @@ export function FabricLabelCanvas({
         });
         onFieldsChange(updatedFields);
       }
+    });
+
+    // Listen for selection events
+    canvas.on('selection:created', (e) => {
+      // Field selection sync with parent state
+      console.log('Field selected:', e.selected);
+    });
+
+    canvas.on('selection:cleared', () => {
+      // Clear selection state
+      console.log('Selection cleared');
     });
 
     return () => {
@@ -108,14 +130,14 @@ export function FabricLabelCanvas({
 
       switch (fieldConfig.fieldType) {
         case 'address_block':
-          obj = createAddressBlock(canvas, fieldConfig, sampleData);
+          obj = createAddressBlock(canvas, fieldConfig, sampleData, scale);
           break;
         case 'barcode':
-          obj = createBarcodeField(canvas, fieldConfig, sampleData);
+          obj = createBarcodeField(canvas, fieldConfig, sampleData, scale);
           break;
         case 'text':
         default:
-          obj = createLabelTextField(canvas, fieldConfig, sampleData);
+          obj = createLabelTextField(canvas, fieldConfig, sampleData, scale);
           break;
       }
 

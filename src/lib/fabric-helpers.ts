@@ -200,7 +200,7 @@ export function createAddressBlock(
     fontFamily: style.fontFamily || 'Arial',
     fontWeight: style.fontWeight || 'normal',
     fill: style.color || '#000000',
-    textAlign: 'left',
+    textAlign: 'center',
     originX: 'left',  // TOP-LEFT coordinate system
     originY: 'top',   // TOP-LEFT coordinate system
     selectable: true,

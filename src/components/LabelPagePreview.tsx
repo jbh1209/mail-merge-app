@@ -33,8 +33,22 @@ export function LabelPagePreview({
   const fields: FieldConfig[] = designConfig?.fields || [];
 
   const renderField = (field: FieldConfig, dataRow: any, offsetX: number, offsetY: number) => {
-    const dataColumn = fieldMappings[field.templateField];
-    const value = dataColumn ? String(dataRow[dataColumn] || '') : ''; // NO DEMO DATA
+    let value = '';
+    
+    // Handle address_block with combined fields
+    if (field.fieldType === 'address_block' && field.combinedFields) {
+      const lines = field.combinedFields
+        .map(fieldName => {
+          const dataColumn = fieldMappings[fieldName];
+          return dataColumn ? String(dataRow[dataColumn] || '').trim() : '';
+        })
+        .filter(line => line && line.toLowerCase() !== 'null');
+      value = lines.join('\n');
+    } else {
+      // Regular single field
+      const dataColumn = fieldMappings[field.templateField];
+      value = dataColumn ? String(dataRow[dataColumn] || '') : '';
+    }
 
     const x = mmToPx(field.position.x, scale);
     const y = mmToPx(field.position.y, scale);
@@ -47,6 +61,7 @@ export function LabelPagePreview({
       fontWeight: field.style.fontWeight,
       textAlign: field.style.textAlign,
       color: field.style.color,
+      whiteSpace: field.fieldType === 'address_block' ? 'pre-line' : 'normal',
     };
 
     return (
@@ -66,7 +81,7 @@ export function LabelPagePreview({
             {field.templateField}
           </div>
         )}
-        <div className="truncate">{value}</div>
+        <div className={field.fieldType === 'address_block' ? 'whitespace-pre-line' : 'truncate'}>{value}</div>
       </div>
     );
   };

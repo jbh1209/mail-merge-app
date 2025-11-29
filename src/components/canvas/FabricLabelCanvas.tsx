@@ -29,7 +29,7 @@ export function FabricLabelCanvas({
 }: FabricLabelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
-  const isInternalUpdate = useRef(false); // Prevent feedback loop
+  const objectRefsMap = useRef<Map<string, LabelFieldObject>>(new Map()); // Track objects by field ID
 
   // Initialize Fabric canvas
   useEffect(() => {
@@ -77,16 +77,24 @@ export function FabricLabelCanvas({
     }
 
     // Listen for object modifications
-    canvas.on('object:modified', () => {
-      // Set flag to prevent re-render from triggering
-      isInternalUpdate.current = true;
+    canvas.on('object:modified', (e) => {
+      const obj = e.target as any;
       
-      if (onFieldsChange) {
-        // Use fabricToFieldConfigs for proper conversion
-        const { fabricToFieldConfigs } = require('@/lib/fabric-helpers');
-        const updatedFields = fabricToFieldConfigs(canvas, scale);
-        onFieldsChange(updatedFields);
+      // Reset scale transforms to prevent compounding
+      if (obj && (obj.scaleX !== 1 || obj.scaleY !== 1)) {
+        obj.set({
+          width: obj.getScaledWidth(),
+          height: obj.getScaledHeight(),
+          scaleX: 1,
+          scaleY: 1
+        });
+        obj.setCoords();
       }
+      
+      canvas.renderAll();
+      
+      // Only update parent on explicit save, not on every drag
+      // This prevents the feedback loop
     });
 
     // Listen for selection events
@@ -106,18 +114,12 @@ export function FabricLabelCanvas({
     };
   }, [templateSize, scale, showGrid]);
 
-  // Update fields when they change
+  // Update fields when they change - use object updates instead of clear/redraw
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    // If this is an internal update (from user drag), skip re-rendering
-    if (isInternalUpdate.current) {
-      isInternalUpdate.current = false;
-      return;
-    }
-
-    console.log('🖼️ FabricLabelCanvas received:', {
+    console.log('🖼️ FabricLabelCanvas updating:', {
       templateSize,
       fieldsCount: fields.length,
       sampleDataExists: !!sampleData,
@@ -125,61 +127,79 @@ export function FabricLabelCanvas({
       firstFieldCombinedFields: fields[0]?.combinedFields
     });
 
-    // Clear existing objects
-    canvas.clear();
-    canvas.backgroundColor = '#ffffff';
-
-    // RE-DRAW GRID (it was cleared above) - only if showGrid is true
     const mmToPx = (mm: number) => mm * 3.7795 * scale;
     const width = mmToPx(templateSize.width);
     const height = mmToPx(templateSize.height);
+
+    // Get current non-grid objects
+    const currentObjects = canvas.getObjects().filter((obj: any) => obj.selectable !== false);
     
-    if (showGrid) {
-      const gridSize = 5 * 3.7795 * scale; // 5mm grid
-      const gridOptions = {
-        stroke: '#e5e7eb',
-        strokeWidth: 1,
-        selectable: false,
-        evented: false
-      };
-
-      // Draw vertical grid lines
-      for (let x = 0; x <= width; x += gridSize) {
-        const line = new Line([x, 0, x, height], gridOptions);
-        canvas.add(line);
+    // Create a map of existing fields by ID
+    const existingFieldsMap = new Map<string, any>();
+    currentObjects.forEach((obj: any) => {
+      if (obj.fieldId) {
+        existingFieldsMap.set(obj.fieldId, obj);
       }
-      // Draw horizontal grid lines
-      for (let y = 0; y <= height; y += gridSize) {
-        const line = new Line([0, y, width, y], gridOptions);
-        canvas.add(line);
-      }
-    }
+    });
 
-    // Add fields
+    // Track which fields we've processed
+    const processedFieldIds = new Set<string>();
+
+    // Update or create fields
     fields.forEach(fieldConfig => {
-      let obj;
+      const fieldId = fieldConfig.id || `${fieldConfig.templateField}-${fieldConfig.position?.x}-${fieldConfig.position?.y}`;
+      processedFieldIds.add(fieldId);
 
-      console.log('🎨 Rendering field:', {
-        type: fieldConfig.fieldType,
-        field: fieldConfig.templateField,
-        size: `${fieldConfig.size?.width?.toFixed(1)}x${fieldConfig.size?.height?.toFixed(1)}mm`
-      });
+      const existingObj = existingFieldsMap.get(fieldId);
 
-      switch (fieldConfig.fieldType) {
-        case 'address_block':
-          obj = createAddressBlock(fieldConfig, sampleData, scale);
-          break;
-        case 'barcode':
-          obj = createBarcodeField(fieldConfig, scale);
-          break;
-        case 'text':
-        default:
-          obj = createLabelTextField(fieldConfig, sampleData, scale);
-          break;
+      if (existingObj) {
+        // Update existing object instead of recreating
+        const newLeft = mmToPx(fieldConfig.position?.x || 0);
+        const newTop = mmToPx(fieldConfig.position?.y || 0);
+        const newWidth = mmToPx(fieldConfig.size?.width || 50);
+        const newHeight = mmToPx(fieldConfig.size?.height || 10);
+
+        existingObj.set({
+          left: newLeft,
+          top: newTop,
+          width: newWidth,
+          height: newHeight,
+        });
+        existingObj.setCoords();
+      } else {
+        // Create new object
+        let obj;
+
+        console.log('🎨 Creating new field:', {
+          type: fieldConfig.fieldType,
+          field: fieldConfig.templateField,
+          size: `${fieldConfig.size?.width?.toFixed(1)}x${fieldConfig.size?.height?.toFixed(1)}mm`
+        });
+
+        switch (fieldConfig.fieldType) {
+          case 'address_block':
+            obj = createAddressBlock(fieldConfig, sampleData, scale);
+            break;
+          case 'barcode':
+            obj = createBarcodeField(fieldConfig, scale);
+            break;
+          case 'text':
+          default:
+            obj = createLabelTextField(fieldConfig, sampleData, scale);
+            break;
+        }
+
+        if (obj) {
+          (obj as any).fieldId = fieldId;
+          canvas.add(obj);
+        }
       }
+    });
 
-      if (obj) {
-        canvas.add(obj);
+    // Remove objects that are no longer in fields
+    currentObjects.forEach((obj: any) => {
+      if (obj.fieldId && !processedFieldIds.has(obj.fieldId)) {
+        canvas.remove(obj);
       }
     });
 

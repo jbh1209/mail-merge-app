@@ -392,7 +392,7 @@ function layoutStackedInline(
     fontSize: 24, // Max - Fabric auto-fits
     autoFit: true,
     fontWeight: typo.weight,
-    textAlign: 'left',
+    textAlign: 'center',
     verticalAlign: 'top',
   }];
 }

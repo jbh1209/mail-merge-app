@@ -120,9 +120,40 @@ export function FabricLabelCanvas({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
+    console.log('🖼️ FabricLabelCanvas received:', {
+      templateSize,
+      fieldsCount: fields.length,
+      sampleDataExists: !!sampleData,
+      sampleDataKeys: sampleData ? Object.keys(sampleData) : [],
+      firstFieldCombinedFields: fields[0]?.combinedFields
+    });
+
     // Clear existing objects
     canvas.clear();
     canvas.backgroundColor = '#ffffff';
+
+    // RE-DRAW GRID (it was cleared above)
+    const mmToPx = (mm: number) => mm * 3.7795 * scale;
+    const width = mmToPx(templateSize.width);
+    const height = mmToPx(templateSize.height);
+    const gridSize = 5 * 3.7795 * scale; // 5mm grid
+    const gridOptions = {
+      stroke: '#e5e7eb',
+      strokeWidth: 1,
+      selectable: false,
+      evented: false
+    };
+
+    // Draw vertical grid lines
+    for (let x = 0; x <= width; x += gridSize) {
+      const line = new Line([x, 0, x, height], gridOptions);
+      canvas.add(line);
+    }
+    // Draw horizontal grid lines
+    for (let y = 0; y <= height; y += gridSize) {
+      const line = new Line([0, y, width, y], gridOptions);
+      canvas.add(line);
+    }
 
     // Add fields
     fields.forEach(fieldConfig => {
@@ -152,7 +183,7 @@ export function FabricLabelCanvas({
     });
 
     canvas.renderAll();
-  }, [fields, sampleData]);
+  }, [fields, sampleData, templateSize, scale]);
 
   return (
     <div className="border-2 border-border rounded-lg overflow-hidden shadow-lg bg-muted/20">

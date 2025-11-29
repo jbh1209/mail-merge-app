@@ -20,6 +20,7 @@ interface DataReviewStepProps {
   dataSourceId: string;
   parsedData: {
     columns: string[];
+    rows?: Record<string, any>[];  // ✅ Add optional rows
     preview: any[];
     rowCount: number;
     filePath: string;
@@ -302,6 +303,7 @@ export function DataReviewStep({
       parsedData: {
         ...parsedData,
         columns: updatedColumns,
+        rows: finalRows,  // ✅ CRITICAL: Pass rows!
         preview: updatedPreview
       },
       analysis

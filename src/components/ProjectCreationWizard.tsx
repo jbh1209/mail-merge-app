@@ -44,7 +44,14 @@ interface WizardState {
   projectId: string | null;
   dataSourceId: string | null;
   dataColumns: string[];
-  parsedData: any;
+  parsedData: {
+    columns: string[];
+    rows?: Record<string, any>[];
+    preview: any[];
+    rowCount: number;
+    filePath: string;
+    fileName: string;
+  } | null;
   dataReviewComplete: boolean;
   aiAnalysisResult: any;
   templateId: string | null;
@@ -373,6 +380,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                     row_count: result.rowCount,
                     parsed_fields: {
                       columns: result.columns,
+                      rows: result.rows || result.preview,  // ✅ Include full rows
                       preview: result.preview
                     }
                   }])

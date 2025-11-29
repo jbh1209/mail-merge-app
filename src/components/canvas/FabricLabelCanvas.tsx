@@ -216,6 +216,16 @@ export function FabricLabelCanvas({
           });
         }
 
+        // CRITICAL: Apply style properties from fieldConfig
+        if (fieldConfig.fieldType === 'text') {
+          existingObj.set({
+            fontFamily: fieldConfig.style.fontFamily || 'Arial, sans-serif',
+            fontSize: fieldConfig.style.fontSize || 24,
+            fontWeight: fieldConfig.style.fontWeight || 'normal',
+            textAlign: fieldConfig.style.textAlign || 'center',
+          });
+        }
+
         // CRITICAL: Always update text content when sampleData changes
         if (fieldConfig.fieldType === 'address_block' && fieldConfig.combinedFields) {
           // Address block - combine all fields

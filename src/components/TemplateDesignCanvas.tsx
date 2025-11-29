@@ -208,10 +208,8 @@ export function TemplateDesignCanvas({
     
     if (result.success) {
       toast({
-        title: result.strategy === 'hybrid_ai_rules' ? "Hybrid Layout Complete" : "Layout Optimized",
-        description: result.strategy === 'hybrid_ai_rules' 
-          ? "AI designed strategy + rules engine executed precisely."
-          : "Field positions and sizes have been optimized successfully.",
+        title: "Layout Ready",
+        description: "Your label layout has been optimized.",
       });
     } else {
       toast({

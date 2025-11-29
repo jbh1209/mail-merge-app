@@ -190,11 +190,23 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(
-        wizardState.step === 6.5 
-          ? "w-[95vw] max-w-none h-[95vh] p-2 overflow-auto" 
-          : "w-[90vw] max-w-7xl h-[90vh] max-h-[90vh] overflow-y-auto p-4 sm:p-6"
-      )}>
+      <DialogContent 
+        className={cn(
+          wizardState.step === 6.5 
+            ? "w-[95vw] max-w-none h-[95vh] p-2 overflow-auto" 
+            : "w-[90vw] max-w-7xl h-[90vh] max-h-[90vh] overflow-y-auto p-4 sm:p-6"
+        )}
+        onInteractOutside={(e) => {
+          if (wizardState.step === 6.5) {
+            e.preventDefault(); // Prevent closing during design
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          if (wizardState.step === 6.5) {
+            e.preventDefault(); // Prevent closing during design
+          }
+        }}
+      >
         {wizardState.step !== 6.5 && (
           <DialogHeader>
             <DialogTitle className="text-xl sm:text-2xl">Create New Project</DialogTitle>

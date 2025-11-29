@@ -16,6 +16,7 @@ interface FabricLabelCanvasProps {
   showGrid?: boolean;
   onFieldsChange?: (fields: FieldConfig[]) => void;
   onCanvasReady?: (canvas: FabricCanvas) => void;
+  onFieldSelected?: (fieldId: string | null) => void;
 }
 
 export function FabricLabelCanvas({
@@ -25,7 +26,8 @@ export function FabricLabelCanvas({
   scale,
   showGrid = true,
   onFieldsChange,
-  onCanvasReady
+  onCanvasReady,
+  onFieldSelected
 }: FabricLabelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
@@ -50,27 +52,6 @@ export function FabricLabelCanvas({
     });
 
     fabricCanvasRef.current = canvas;
-
-    // Add grid background if enabled
-    if (showGrid) {
-      const gridSize = 5 * 3.7795 * scale; // 5mm grid
-      const gridOptions = {
-        stroke: '#e5e7eb',
-        strokeWidth: 1,
-        selectable: false,
-        evented: false
-      };
-
-      // Draw grid lines
-      for (let x = 0; x <= width; x += gridSize) {
-        const line = new Line([x, 0, x, height], gridOptions);
-        canvas.add(line);
-      }
-      for (let y = 0; y <= height; y += gridSize) {
-        const line = new Line([0, y, width, y], gridOptions);
-        canvas.add(line);
-      }
-    }
 
     // Notify parent that canvas is ready
     if (onCanvasReady) {
@@ -110,20 +91,65 @@ export function FabricLabelCanvas({
 
     // Listen for selection events
     canvas.on('selection:created', (e) => {
-      // Field selection sync with parent state
-      console.log('Field selected:', e.selected);
+      const obj = e.selected?.[0] as any;
+      if (obj?.fieldId && onFieldSelected) {
+        onFieldSelected(obj.fieldId);
+      }
     });
 
     canvas.on('selection:cleared', () => {
-      // Clear selection state
-      console.log('Selection cleared');
+      if (onFieldSelected) {
+        onFieldSelected(null);
+      }
     });
 
     return () => {
       canvas.dispose();
       fabricCanvasRef.current = null;
     };
-  }, [templateSize, scale, showGrid]);
+  }, [templateSize, scale]); // Removed showGrid from deps
+
+  // Separate effect for grid visibility - doesn't recreate canvas
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+
+    const mmToPx = (mm: number) => mm * 3.7795 * scale;
+    const width = mmToPx(templateSize.width);
+    const height = mmToPx(templateSize.height);
+
+    // Remove existing grid lines
+    const objects = canvas.getObjects();
+    objects.forEach((obj: any) => {
+      if (obj.data?.isGridLine) {
+        canvas.remove(obj);
+      }
+    });
+
+    // Add grid lines if enabled
+    if (showGrid) {
+      const gridSize = 5 * 3.7795 * scale; // 5mm grid
+      const gridOptions = {
+        stroke: '#e5e7eb',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        data: { isGridLine: true }
+      };
+
+      // Draw grid lines
+      for (let x = 0; x <= width; x += gridSize) {
+        const line = new Line([x, 0, x, height], gridOptions);
+        canvas.add(line);
+      }
+      for (let y = 0; y <= height; y += gridSize) {
+        const line = new Line([0, y, width, y], gridOptions);
+        canvas.add(line);
+      }
+    }
+
+    canvas.renderAll();
+  }, [showGrid, scale, templateSize]);
 
   // Update fields when they change - use object updates instead of clear/redraw
   useEffect(() => {
@@ -142,8 +168,8 @@ export function FabricLabelCanvas({
     const width = mmToPx(templateSize.width);
     const height = mmToPx(templateSize.height);
 
-    // Get current non-grid objects
-    const currentObjects = canvas.getObjects().filter((obj: any) => obj.selectable !== false);
+    // Get current non-grid objects (filter out grid lines)
+    const currentObjects = canvas.getObjects().filter((obj: any) => obj.selectable !== false && !obj.data?.isGridLine);
     
     // Create a map of existing fields by ID
     const existingFieldsMap = new Map<string, any>();
@@ -247,7 +273,7 @@ export function FabricLabelCanvas({
     });
 
     canvas.renderAll();
-  }, [fields, sampleData, templateSize, scale, showGrid]);
+  }, [fields, sampleData, templateSize, scale]); // Removed showGrid from deps
 
   return (
     <div className="relative border-2 border-border rounded-lg overflow-hidden shadow-lg bg-muted/20">

@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FieldConfig, FieldType } from '@/lib/canvas-utils';
+import { FieldConfig, FieldType, isTextBasedFieldType } from '@/lib/canvas-utils';
 import { POPULAR_GOOGLE_FONTS } from '@/lib/google-fonts';
 
 interface CanvasToolbarProps {
@@ -164,8 +164,8 @@ export function CanvasToolbar({
 
           <Separator orientation="vertical" className="h-5" />
           
-          {/* Font family - only for text fields */}
-          {selectedField.fieldType === 'text' && (
+          {/* Font family - only for text-based fields */}
+          {isTextBasedFieldType(selectedField.fieldType) && (
             <>
               <Separator orientation="vertical" className="h-5" />
               <Select
@@ -186,8 +186,8 @@ export function CanvasToolbar({
             </>
           )}
 
-          {/* Font size - only for text fields */}
-          {selectedField.fieldType === 'text' && (
+          {/* Font size - only for text-based fields */}
+          {isTextBasedFieldType(selectedField.fieldType) && (
             <>
               <Separator orientation="vertical" className="h-5" />
               <div className="flex items-center gap-1">
@@ -209,8 +209,8 @@ export function CanvasToolbar({
             </>
           )}
           
-          {/* Text align - only for text fields */}
-          {selectedField.fieldType === 'text' && (
+          {/* Text align - only for text-based fields */}
+          {isTextBasedFieldType(selectedField.fieldType) && (
             <div className="flex items-center gap-0.5">
               <Button
                 variant={selectedField.style.textAlign === 'left' ? "default" : "ghost"}
@@ -239,8 +239,8 @@ export function CanvasToolbar({
             </div>
           )}
           
-          {/* Bold toggle - only for text fields */}
-          {selectedField.fieldType === 'text' && (
+          {/* Bold toggle - only for text-based fields */}
+          {isTextBasedFieldType(selectedField.fieldType) && (
             <Button
               variant={selectedField.style.fontWeight === 'bold' ? "default" : "ghost"}
               size="sm"

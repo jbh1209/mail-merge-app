@@ -393,7 +393,7 @@ function layoutStackedInline(
     autoFit: true,
     fontWeight: typo.weight,
     textAlign: 'center',
-    verticalAlign: 'top',
+    verticalAlign: 'middle',
   }];
 }
 

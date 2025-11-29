@@ -30,6 +30,7 @@ export function FabricLabelCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
   const objectRefsMap = useRef<Map<string, LabelFieldObject>>(new Map()); // Track objects by field ID
+  const userModificationsRef = useRef<Map<string, { left: number; top: number; width: number; height: number }>>(new Map()); // Track user modifications
 
   // Initialize Fabric canvas
   useEffect(() => {
@@ -79,6 +80,16 @@ export function FabricLabelCanvas({
     // Listen for object modifications
     canvas.on('object:modified', (e) => {
       const obj = e.target as any;
+      
+      // Store user modifications locally (don't trigger re-render)
+      if (obj && obj.fieldId) {
+        userModificationsRef.current.set(obj.fieldId, {
+          left: obj.left,
+          top: obj.top,
+          width: obj.getScaledWidth(),
+          height: obj.getScaledHeight()
+        });
+      }
       
       // Reset scale transforms to prevent compounding
       if (obj && (obj.scaleX !== 1 || obj.scaleY !== 1)) {
@@ -159,12 +170,44 @@ export function FabricLabelCanvas({
         const newWidth = mmToPx(fieldConfig.size?.width || 50);
         const newHeight = mmToPx(fieldConfig.size?.height || 10);
 
-        existingObj.set({
-          left: newLeft,
-          top: newTop,
-          width: newWidth,
-          height: newHeight,
-        });
+        // Check for user modifications and preserve them
+        const userMod = userModificationsRef.current.get(fieldId);
+        if (userMod) {
+          // Use user's modification instead of prop values
+          existingObj.set({
+            left: userMod.left,
+            top: userMod.top,
+            width: userMod.width,
+            height: userMod.height,
+          });
+        } else {
+          // Use prop values
+          existingObj.set({
+            left: newLeft,
+            top: newTop,
+            width: newWidth,
+            height: newHeight,
+          });
+        }
+
+        // CRITICAL: Always update text content when sampleData changes
+        if (fieldConfig.fieldType === 'address_block' && fieldConfig.combinedFields) {
+          // Address block - combine all fields
+          const lines: string[] = [];
+          for (const fn of fieldConfig.combinedFields) {
+            // Use getFieldValue helper from fabric-helpers
+            const value = sampleData?.[fn] || '';
+            if (value && String(value).trim()) {
+              lines.push(String(value).trim());
+            }
+          }
+          existingObj.set('text', lines.join('\n') || '');
+        } else {
+          // Single field
+          const value = sampleData?.[fieldConfig.templateField] || '';
+          existingObj.set('text', String(value));
+        }
+        
         existingObj.setCoords();
       } else {
         // Create new object

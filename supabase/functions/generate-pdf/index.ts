@@ -266,6 +266,63 @@ function renderSequenceField(
   });
 }
 
+// Render address block with combined fields
+function renderAddressBlock(
+  page: PDFPage,
+  field: any,
+  dataRow: Record<string, any>,
+  mappings: Record<string, string>,
+  fonts: { regular: PDFFont; bold: PDFFont },
+  x: number,
+  y: number,
+  width: number,
+  height: number
+) {
+  const combinedFields = field.combinedFields || [field.templateField];
+  
+  // Gather all field values, skip empty/null
+  const lines: string[] = [];
+  for (const fieldName of combinedFields) {
+    const dataColumn = mappings[fieldName];
+    if (dataColumn && dataRow[dataColumn]) {
+      const value = String(dataRow[dataColumn]).trim();
+      if (value && value.toLowerCase() !== 'null') {
+        lines.push(value);
+      }
+    }
+  }
+  
+  if (lines.length === 0) return;
+  
+  // Calculate optimal font size
+  const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
+  let fontSize = 24;
+  const lineHeight = 1.2;
+  
+  // Binary search for best font size that fits
+  while (fontSize > 8) {
+    const totalHeight = lines.length * fontSize * lineHeight;
+    if (totalHeight <= height - 8) break;
+    fontSize--;
+  }
+  
+  // Render lines from top
+  let yOffset = y + height - fontSize - 4;
+  
+  for (const line of lines) {
+    if (yOffset < y) break;
+    
+    page.drawText(line, {
+      x: x + 6,
+      y: yOffset,
+      size: fontSize,
+      font: font,
+      color: rgb(0, 0, 0)
+    });
+    yOffset -= fontSize * lineHeight;
+  }
+}
+
 // Render a single label with design config
 function renderLabelWithDesign(
   page: PDFPage,
@@ -305,6 +362,10 @@ function renderLabelWithDesign(
       console.log(`   Position: (${x}, ${y}), Size: ${width}x${height}`);
       
       switch (field.fieldType) {
+        case 'address_block':
+          console.log(`   ✏️ Rendering address block with ${field.combinedFields?.length || 0} fields`);
+          renderAddressBlock(page, field, dataRow, mappings, fonts, x, y, width, height);
+          break;
         case 'barcode':
           console.log(`   ✏️ Rendering barcode`);
           renderBarcodeField(page, field, dataRow, dataColumn, x, y, width, height);

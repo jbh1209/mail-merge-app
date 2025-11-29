@@ -29,6 +29,7 @@ export function FabricLabelCanvas({
 }: FabricLabelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
+  const isInternalUpdate = useRef(false); // Prevent feedback loop
 
   // Initialize Fabric canvas
   useEffect(() => {
@@ -77,27 +78,13 @@ export function FabricLabelCanvas({
 
     // Listen for object modifications
     canvas.on('object:modified', () => {
+      // Set flag to prevent re-render from triggering
+      isInternalUpdate.current = true;
+      
       if (onFieldsChange) {
-        // Convert back to field configs
-        const updatedFields = fields.map((field, index) => {
-          const objects = canvas.getObjects();
-          const obj = objects[index];
-          if (!obj) return field;
-
-          const pxToMm = (px: number) => px / (3.7795 * scale);
-          
-          return {
-            ...field,
-            position: {
-              x: pxToMm(obj.left || 0),
-              y: pxToMm(obj.top || 0)
-            },
-            size: {
-              width: pxToMm(obj.getScaledWidth()),
-              height: pxToMm(obj.getScaledHeight())
-            }
-          };
-        });
+        // Use fabricToFieldConfigs for proper conversion
+        const { fabricToFieldConfigs } = require('@/lib/fabric-helpers');
+        const updatedFields = fabricToFieldConfigs(canvas, scale);
         onFieldsChange(updatedFields);
       }
     });
@@ -123,6 +110,12 @@ export function FabricLabelCanvas({
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
+
+    // If this is an internal update (from user drag), skip re-rendering
+    if (isInternalUpdate.current) {
+      isInternalUpdate.current = false;
+      return;
+    }
 
     console.log('🖼️ FabricLabelCanvas received:', {
       templateSize,

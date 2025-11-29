@@ -122,24 +122,21 @@ export function createLabelTextField(
   const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
   
   const initialFontSize = style.fontSize || 24;
-  
-  // Calculate center point for positioning (in pixels)
-  const centerX = pxCoords.position.x + pxCoords.size.width / 2;
-  const centerY = pxCoords.position.y + pxCoords.size.height / 2;
 
-  console.log(`📍 Field "${templateField}": ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${centerX.toFixed(0)},${centerY.toFixed(0)}px`);
+  console.log(`📍 Field "${templateField}": ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${pxCoords.position.x.toFixed(0)},${pxCoords.position.y.toFixed(0)}px (TOP-LEFT)`);
 
+  // Use TOP-LEFT origin - matches storage format, simpler
   const textbox = new Textbox(displayText, {
-    left: centerX,
-    top: centerY,
+    left: pxCoords.position.x,
+    top: pxCoords.position.y,
     width: pxCoords.size.width,
     fontSize: initialFontSize,
     fontFamily: style.fontFamily || 'Arial',
     fontWeight: style.fontWeight || 'normal',
     fill: style.color || '#000000',
     textAlign: 'center',
-    originX: 'center',
-    originY: 'center',
+    originX: 'left',  // TOP-LEFT coordinate system
+    originY: 'top',   // TOP-LEFT coordinate system
     selectable: true,
     hasControls: true,
     hasBorders: true,
@@ -191,24 +188,21 @@ export function createAddressBlock(
   const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
   
   const initialFontSize = 24;
-  
-  // Calculate center point for horizontal and vertical centering (in pixels)
-  const centerX = pxCoords.position.x + pxCoords.size.width / 2;
-  const centerY = pxCoords.position.y + pxCoords.size.height / 2;
 
-  console.log(`📍 Address block: ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${centerX.toFixed(0)},${centerY.toFixed(0)}px`);
+  console.log(`📍 Address block: ${position.x.toFixed(1)},${position.y.toFixed(1)}mm → ${pxCoords.position.x.toFixed(0)},${pxCoords.position.y.toFixed(0)}px (TOP-LEFT)`);
 
+  // Use TOP-LEFT origin - matches storage format
   const textbox = new Textbox(displayText, {
-    left: centerX,
-    top: centerY,
+    left: pxCoords.position.x,
+    top: pxCoords.position.y,
     width: pxCoords.size.width,
     fontSize: initialFontSize,
     fontFamily: style.fontFamily || 'Arial',
     fontWeight: style.fontWeight || 'normal',
     fill: style.color || '#000000',
     textAlign: 'left',
-    originX: 'center', // Horizontally center the block
-    originY: 'center', // Vertically center the block
+    originX: 'left',  // TOP-LEFT coordinate system
+    originY: 'top',   // TOP-LEFT coordinate system
     selectable: true,
     hasControls: true,
     hasBorders: true,
@@ -245,40 +239,46 @@ export function createBarcodeField(
 
 /**
  * Convert Fabric canvas to field configs for saving
+ * Since we use originX/Y: 'left'/'top', obj.left and obj.top ARE top-left coords
+ * This makes conversion trivial!
  */
-export function fabricToFieldConfigs(canvas: any): FieldConfig[] {
-  const pxToMm = (px: number) => px / 3.7795;
+export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfig[] {
+  const pxToMm = (px: number) => px / (3.7795 * scale);
   
-  return canvas.getObjects().map((obj: any, index: number) => {
-    const labelObj = obj as LabelFieldObject;
-    
-    return {
-      id: `field-${index}`,
-      templateField: labelObj.templateField || labelObj.fieldName || 'field',
-      position: {
-        x: pxToMm(obj.left || 0),
-        y: pxToMm(obj.top || 0)
-      },
-      size: {
-        width: pxToMm(obj.width || 50),
-        height: pxToMm(obj.height || 10)
-      },
-      style: {
-        fontSize: (obj as Textbox).fontSize || 12,
-        fontFamily: (obj as Textbox).fontFamily || 'Arial',
-        fontWeight: ((obj as Textbox).fontWeight as any) || 'normal',
-        fontStyle: 'normal',
-        textAlign: ((obj as Textbox).textAlign as any) || 'left',
-        color: (obj as Textbox).fill as string || '#000000',
-        verticalAlign: 'top'
-      },
-      overflow: 'shrink',
-      autoFit: true,
-      showLabel: false,
-      fieldType: labelObj.fieldType || 'text',
-      combinedFields: labelObj.combinedFields
-    };
-  });
+  return canvas.getObjects()
+    .filter((obj: any) => obj.type === 'textbox') // Skip grid lines
+    .map((obj: any, index: number) => {
+      const labelObj = obj as LabelFieldObject;
+      
+      // Since originX/Y is 'left'/'top', these ARE top-left coordinates!
+      // No conversion needed!
+      return {
+        id: `field-${index}`,
+        templateField: labelObj.templateField || labelObj.fieldName || 'field',
+        position: {
+          x: pxToMm(obj.left || 0),  // Already top-left
+          y: pxToMm(obj.top || 0)    // Already top-left
+        },
+        size: {
+          width: pxToMm(obj.getScaledWidth()),
+          height: pxToMm(obj.getScaledHeight())
+        },
+        style: {
+          fontSize: (obj as Textbox).fontSize || 12,
+          fontFamily: (obj as Textbox).fontFamily || 'Arial',
+          fontWeight: ((obj as Textbox).fontWeight as any) || 'normal',
+          fontStyle: 'normal',
+          textAlign: ((obj as Textbox).textAlign as any) || 'left',
+          color: (obj as Textbox).fill as string || '#000000',
+          verticalAlign: 'top'
+        },
+        overflow: 'shrink',
+        autoFit: true,
+        showLabel: false,
+        fieldType: labelObj.fieldType || 'text',
+        combinedFields: labelObj.combinedFields
+      };
+    });
 }
 
 /**

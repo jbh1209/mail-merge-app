@@ -315,7 +315,12 @@ export function MergeJobRunner({
             onClose={() => setShowPreview(false)}
             template={templates.find(t => t.id === selectedTemplate)}
             designConfig={templates.find(t => t.id === selectedTemplate)?.design_config || {}}
-            allDataRows={(dataSources.find(ds => ds.id === selectedDataSource)?.parsed_fields as any)?.data || []}
+            allDataRows={
+              (dataSources.find(ds => ds.id === selectedDataSource)?.parsed_fields as any)?.rows ||
+              (dataSources.find(ds => ds.id === selectedDataSource)?.parsed_fields as any)?.preview ||
+              (dataSources.find(ds => ds.id === selectedDataSource)?.parsed_fields as any)?.data ||
+              []
+            }
             fieldMappings={(fieldMappings.find(m => 
               m.data_source_id === selectedDataSource && m.template_id === selectedTemplate
             )?.mappings as Record<string, string>) || {}}

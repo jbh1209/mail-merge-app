@@ -38,8 +38,8 @@ export function FabricLabelCanvas({
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    // Convert mm to pixels (96 DPI)
-    const mmToPx = (mm: number) => mm * 3.7795 * scale;
+    // Convert mm to pixels at base scale (96 DPI) - zoom applied separately
+    const mmToPx = (mm: number) => mm * 3.7795;
     const width = mmToPx(templateSize.width);
     const height = mmToPx(templateSize.height);
 
@@ -115,13 +115,13 @@ export function FabricLabelCanvas({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    const mmToPx = (mm: number) => mm * 3.7795 * scale;
+    const mmToPxBase = (mm: number) => mm * 3.7795; // Base conversion without scale
     
     // Apply zoom via viewport transform
     canvas.setZoom(scale);
     canvas.setDimensions({
-      width: mmToPx(templateSize.width),
-      height: mmToPx(templateSize.height)
+      width: mmToPxBase(templateSize.width) * scale,
+      height: mmToPxBase(templateSize.height) * scale
     });
     canvas.renderAll();
   }, [scale, templateSize]);
@@ -131,9 +131,9 @@ export function FabricLabelCanvas({
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    const mmToPx = (mm: number) => mm * 3.7795 * scale;
-    const width = mmToPx(templateSize.width);
-    const height = mmToPx(templateSize.height);
+    const mmToPxBase = (mm: number) => mm * 3.7795; // Base conversion
+    const width = mmToPxBase(templateSize.width);
+    const height = mmToPxBase(templateSize.height);
 
     // Remove existing grid lines
     const objects = canvas.getObjects();
@@ -145,7 +145,7 @@ export function FabricLabelCanvas({
 
     // Add grid lines if enabled
     if (showGrid) {
-      const gridSize = 5 * 3.7795 * scale; // 5mm grid
+      const gridSize = 5 * 3.7795; // 5mm grid at base scale
       const gridOptions = {
         stroke: '#e5e7eb',
         strokeWidth: 1,
@@ -181,9 +181,7 @@ export function FabricLabelCanvas({
       firstFieldCombinedFields: fields[0]?.combinedFields
     });
 
-    const mmToPx = (mm: number) => mm * 3.7795 * scale;
-    const width = mmToPx(templateSize.width);
-    const height = mmToPx(templateSize.height);
+    const mmToPxBase = (mm: number) => mm * 3.7795; // Base conversion without scale
 
     // Track which fields we've processed
     const processedFieldIds = new Set<string>();
@@ -203,11 +201,11 @@ export function FabricLabelCanvas({
       const existingObj = objectRefsMap.current.get(fieldId);
 
       if (existingObj) {
-        // Update existing object instead of recreating
-        const newLeft = mmToPx(fieldConfig.position?.x || 0);
-        const newTop = mmToPx(fieldConfig.position?.y || 0);
-        const newWidth = mmToPx(fieldConfig.size?.width || 50);
-        const newHeight = mmToPx(fieldConfig.size?.height || 10);
+        // Update existing object instead of recreating (use base scale)
+        const newLeft = mmToPxBase(fieldConfig.position?.x || 0);
+        const newTop = mmToPxBase(fieldConfig.position?.y || 0);
+        const newWidth = mmToPxBase(fieldConfig.size?.width || 50);
+        const newHeight = mmToPxBase(fieldConfig.size?.height || 10);
 
         // Check for user modifications and preserve them
         const userMod = userModificationsRef.current.get(fieldId);
@@ -270,14 +268,14 @@ export function FabricLabelCanvas({
 
         switch (fieldConfig.fieldType) {
           case 'address_block':
-            obj = createAddressBlock(fieldConfig, sampleData, scale);
+            obj = createAddressBlock(fieldConfig, sampleData, 1); // Always create at scale=1
             break;
           case 'barcode':
-            obj = createBarcodeField(fieldConfig, scale);
+            obj = createBarcodeField(fieldConfig, 1); // Always create at scale=1
             break;
           case 'text':
           default:
-            obj = createLabelTextField(fieldConfig, sampleData, scale);
+            obj = createLabelTextField(fieldConfig, sampleData, 1); // Always create at scale=1
             break;
         }
 

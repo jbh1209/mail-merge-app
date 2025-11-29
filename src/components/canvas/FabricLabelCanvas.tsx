@@ -169,24 +169,25 @@ export function FabricLabelCanvas({
       console.log('🎨 Rendering field:', {
         type: fieldConfig.fieldType,
         field: fieldConfig.templateField,
-        fontSize: fieldConfig.style?.fontSize,
         size: `${fieldConfig.size?.width?.toFixed(1)}x${fieldConfig.size?.height?.toFixed(1)}mm`
       });
 
       switch (fieldConfig.fieldType) {
         case 'address_block':
-          obj = createAddressBlock(canvas, fieldConfig, sampleData, scale);
+          obj = createAddressBlock(fieldConfig, sampleData);
           break;
         case 'barcode':
-          obj = createBarcodeField(canvas, fieldConfig, sampleData, scale);
+          obj = createBarcodeField(fieldConfig);
           break;
         case 'text':
         default:
-          obj = createLabelTextField(canvas, fieldConfig, sampleData, scale);
+          obj = createLabelTextField(fieldConfig, sampleData);
           break;
       }
 
-      canvas.add(obj);
+      if (obj) {
+        canvas.add(obj);
+      }
     });
 
     canvas.renderAll();

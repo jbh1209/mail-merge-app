@@ -524,7 +524,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
             templateFields={wizardState.templateFields}
             sampleData={wizardState.parsedData?.rows || wizardState.parsedData?.preview || []}
             subscriptionFeatures={subscriptionFeatures}
-            onComplete={() => {
+            onComplete={(mappingsData) => {
               setWizardState(prev => ({ ...prev, fieldMappingsComplete: true, step: 6.5 }));
             }}
             onCancel={() => setWizardState(prev => ({ ...prev, step: 5 }))}
@@ -554,7 +554,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
             <TemplateDesignCanvas
               templateSize={wizardState.templateSize}
               templateName={wizardState.templateName}
-              fieldNames={wizardState.templateFields}
+              fieldNames={wizardState.dataColumns}
               sampleData={wizardState.parsedData?.rows || wizardState.parsedData?.preview || []}
               stepInfo={{ current: 9, total: 9 }}
               templateId={wizardState.templateId}

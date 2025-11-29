@@ -170,19 +170,18 @@ function layoutSingleDominant(
   // Check if field is ADDRESS type (contains commas)
   const isAddress = sampleText.includes(',');
 
-  return [{
-    templateField: field,
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
-    fontSize: 24, // Max size - Fabric will auto-fit
-    fontWeight: typo.weight,
-    textAlign: 'left',
-    verticalAlign: 'top',
-    autoFit: true, // Enable Fabric.js native fitting
-    ...(isAddress ? { whiteSpace: 'pre-line' as const, transformCommas: true } : {})
-  }];
+    return [{
+      templateField: region.fields[0],
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      fontSize: 24, // Max - Fabric auto-fits
+      autoFit: true,
+      fontWeight: typo.weight,
+      textAlign: 'center',
+      verticalAlign: 'middle',
+    }];
 }
 
 /**
@@ -382,21 +381,19 @@ function layoutStackedInline(
     typo.importance
   );
 
-  // Return a single field that represents all address lines
-  // Pass max font size (24pt) and let Fabric.js auto-fit down
   return [{
-    templateField: region.fields[0], // Primary field
-    combinedFields: region.fields, // All fields to render
+    templateField: region.fields[0],
+    combinedFields: region.fields,
     fieldType: 'address_block',
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    fontSize: 24, // Max size - Fabric will auto-fit down
+    fontSize: 24, // Max - Fabric auto-fits
+    autoFit: true,
     fontWeight: typo.weight,
     textAlign: 'left',
     verticalAlign: 'top',
-    whiteSpace: 'pre-line' as const
   }];
 }
 

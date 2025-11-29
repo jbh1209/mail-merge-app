@@ -214,33 +214,3 @@ export const autoLayoutFieldsSimple = (
   }));
 };
 
-/**
- * Generate sample text for preview
- * @param fieldName - Field name
- * @returns Sample text
- */
-export const generateSampleText = (fieldName: string): string => {
-  const samples: Record<string, string> = {
-    name: 'John Doe',
-    first_name: 'Jane',
-    last_name: 'Smith',
-    company: 'Acme Corp',
-    address: '123 Main Street',
-    address_line_1: '123 Main Street',
-    address_line_2: 'Suite 100',
-    city: 'New York',
-    state: 'NY',
-    zip: '10001',
-    country: 'USA',
-    email: 'john@example.com',
-    phone: '(555) 123-4567',
-    title: 'Senior Manager',
-    product_name: 'Premium Widget',
-    sku: 'SKU-12345',
-    price: '$29.99',
-    date: '2024-01-15'
-  };
-  
-  const normalized = fieldName.toLowerCase().replace(/[_\s-]/g, '_');
-  return samples[normalized] || fieldName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-};

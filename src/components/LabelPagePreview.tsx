@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { FieldConfig, mmToPx, generateSampleText } from '@/lib/canvas-utils';
+import { FieldConfig, mmToPx } from '@/lib/canvas-utils';
 import { calculateLayout, getLabelPosition } from '@/lib/label-layout-utils';
 
 interface LabelPagePreviewProps {
@@ -34,7 +34,7 @@ export function LabelPagePreview({
 
   const renderField = (field: FieldConfig, dataRow: any, offsetX: number, offsetY: number) => {
     const dataColumn = fieldMappings[field.templateField];
-    const value = dataColumn ? String(dataRow[dataColumn] || '') : generateSampleText(field.templateField);
+    const value = dataColumn ? String(dataRow[dataColumn] || '') : ''; // NO DEMO DATA
 
     const x = mmToPx(field.position.x, scale);
     const y = mmToPx(field.position.y, scale);

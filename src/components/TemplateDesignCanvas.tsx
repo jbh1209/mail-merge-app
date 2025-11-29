@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FieldElement } from './canvas/FieldElement';
+import { FabricLabelCanvas } from './canvas/FabricLabelCanvas';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
 import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx } from '@/lib/canvas-utils';
@@ -384,43 +384,36 @@ export function TemplateDesignCanvas({
               {templateName} ({templateSize.width} × {templateSize.height}mm)
             </div>
             
-            {/* The actual canvas */}
-            <div
-              ref={canvasRef}
-              className="relative border-2 border-border shadow-xl bg-background"
-                style={{
-                  width: `${mmToPx(templateSize.width, settings.scale)}px`,
-                  height: `${mmToPx(templateSize.height, settings.scale)}px`,
-                  backgroundColor: settings.backgroundColor,
-                  backgroundImage: settings.showGrid
-                    ? `linear-gradient(hsl(var(--border)) 1px, transparent 1px),
-                       linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px)`
-                    : 'none',
-                  backgroundSize: settings.showGrid
-                    ? `${mmToPx(settings.gridSize, settings.scale)}px ${mmToPx(settings.gridSize, settings.scale)}px`
-                    : 'auto'
-                }}
-                onClick={handleCanvasClick}
-              >
-                {fields.map((field) => (
-                  <FieldElement
-                    key={field.id}
-                    field={field}
-                    scale={settings.scale}
-                    isSelected={field.id === selectedFieldId}
-                    sampleData={sampleRow}
-                    showAllLabels={settings.showAllLabels}
-                    onSelect={() => setSelectedFieldId(field.id)}
-                    onMove={(position) => moveField(field.id, position)}
-                    onResize={(size) => resizeField(field.id, size)}
-                    onMoveEnd={finalizeFieldPositions}
-                    onDelete={() => {
-                      deleteField(field.id);
-                      import('sonner').then(m => m.toast.success(`Field "${field.templateField}" removed. Click undo to restore.`));
-                    }}
-                  />
-                ))}
-            </div>
+            {/* Fabric.js Canvas */}
+            <FabricLabelCanvas
+              templateSize={templateSize}
+              fields={fields}
+              sampleData={sampleRow}
+              scale={settings.scale}
+              onFieldsChange={(updatedFields) => {
+                // Update fields when modified on canvas
+                updatedFields.forEach((updatedField, index) => {
+                  const originalField = fields[index];
+                  if (!originalField) return;
+                  
+                  // Update position and size if changed
+                  if (updatedField.position.x !== originalField.position.x || 
+                      updatedField.position.y !== originalField.position.y) {
+                    moveField(originalField.id, updatedField.position);
+                  }
+                  
+                  if (updatedField.size.width !== originalField.size.width || 
+                      updatedField.size.height !== originalField.size.height) {
+                    resizeField(originalField.id, updatedField.size);
+                  }
+                });
+                finalizeFieldPositions();
+              }}
+              onCanvasReady={(canvas) => {
+                // Canvas is ready - can add custom event handlers here if needed
+                console.log('✅ Fabric canvas initialized');
+              }}
+            />
           </div>
         </div>
       </div>

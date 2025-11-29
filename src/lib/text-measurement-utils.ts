@@ -1,9 +1,7 @@
-// Text measurement utilities for dynamic font sizing and overflow detection
+// Minimal text measurement utilities for compatibility
+// Note: The Fabric.js canvas now handles actual text measurement
+// These are fallback utilities for non-canvas contexts
 
-/**
- * Convert CSS points to pixels (96 DPI standard)
- * 12pt = 16px, 14pt = 18.67px, etc.
- */
 export function pointsToPixels(points: number): number {
   return (points / 72) * 96;
 }
@@ -21,7 +19,7 @@ export interface FitResult {
 }
 
 /**
- * Measure rendered text dimensions using Canvas API
+ * Simple text measurement using Canvas API (fallback only)
  */
 export function measureText(
   text: string,
@@ -30,7 +28,6 @@ export function measureText(
   fontWeight: string = 'normal',
   maxWidth?: number
 ): TextMeasurement {
-  // Create temporary canvas for measurement
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   
@@ -41,34 +38,20 @@ export function measureText(
   ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
   
   if (!maxWidth) {
-    // Single line measurement
     const metrics = ctx.measureText(text);
     return {
       width: metrics.width,
-      height: fontSize * 1.2, // Approximate line height
+      height: fontSize * 1.2,
       lineCount: 1
     };
   }
 
-  // Handle newlines as primary line breaks, then commas
-  const hasNewlines = text.includes('\n');
-  const hasCommas = text.includes(',');
-  
-  let segments: string[];
-  if (hasNewlines) {
-    // Newlines take priority - each is a separate line
-    segments = text.split('\n').map(s => s.trim()).filter(s => s !== '');
-  } else if (hasCommas) {
-    segments = text.split(',').map(s => s.trim());
-  } else {
-    segments = [text];
-  }
-  
+  // Handle newlines and word wrapping
   const lines: string[] = [];
+  const paragraphs = text.split('\n');
   
-  for (const segment of segments) {
-    // Wrap each segment by spaces
-    const words = segment.split(' ');
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(' ');
     let currentLine = '';
     
     for (const word of words) {
@@ -88,19 +71,16 @@ export function measureText(
     }
   }
 
-  const maxLineWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
   const lineHeight = fontSize * 1.2;
-  const totalHeight = lines.length * lineHeight;
-
   return {
-    width: maxLineWidth,
-    height: totalHeight,
+    width: maxWidth,
+    height: lines.length * lineHeight,
     lineCount: lines.length
   };
 }
 
 /**
- * Calculate the best-fit font size for text within a container
+ * Calculate best fit font size (binary search)
  */
 export function calculateBestFitFontSize(
   text: string,
@@ -119,7 +99,6 @@ export function calculateBestFitFontSize(
   const availableWidth = containerWidth - padding;
   const availableHeight = containerHeight - padding;
 
-  // Binary search for optimal font size
   let low = minFontSize;
   let high = maxFontSize;
   let bestFit = minFontSize;
@@ -130,13 +109,12 @@ export function calculateBestFitFontSize(
 
     if (measurement.height <= availableHeight && measurement.width <= availableWidth) {
       bestFit = mid;
-      low = mid + 1; // Try larger
+      low = mid + 1;
     } else {
-      high = mid - 1; // Try smaller
+      high = mid - 1;
     }
   }
 
-  // Check if even minimum font size fits
   const finalMeasurement = measureText(text, fontFamily, bestFit, fontWeight, availableWidth);
   const willFit = finalMeasurement.height <= availableHeight;
   
@@ -152,27 +130,23 @@ export function calculateBestFitFontSize(
 }
 
 /**
- * Detect if text will overflow at the given font size
- * With 8% tolerance - minor overflow is acceptable
+ * Detect text overflow
  */
 export function detectTextOverflow(
   text: string,
   containerWidth: number,
   containerHeight: number,
-  fontSizeInPoints: number, // Explicitly points
+  fontSizeInPoints: number,
   fontFamily: string = 'Arial',
   fontWeight: string = 'normal',
   padding: number = 12
 ): { hasOverflow: boolean; overflowPercentage: number } {
-  // Convert points to pixels for Canvas API
   const fontSizeInPixels = pointsToPixels(fontSizeInPoints);
   const availableWidth = containerWidth - padding;
   const availableHeight = containerHeight - padding;
 
-  // Measure using pixels
   const measurement = measureText(text, fontFamily, fontSizeInPixels, fontWeight, availableWidth);
   
-  // Check for both height and width overflow
   const hasHeightOverflow = measurement.height > availableHeight;
   const hasWidthOverflow = measurement.width > availableWidth;
   
@@ -184,28 +158,9 @@ export function detectTextOverflow(
   const widthRatio = measurement.width / availableWidth;
   const overflowPercentage = (Math.max(heightRatio, widthRatio) - 1) * 100;
 
-  const TOLERANCE = 8; // 8% tolerance
+  const TOLERANCE = 8;
   return {
     hasOverflow: overflowPercentage > TOLERANCE,
     overflowPercentage: Math.round(overflowPercentage)
   };
-}
-
-/**
- * Calculate optimal font size in mm/points for PDF generation
- */
-export function mmToPdfPoints(mm: number): number {
-  return (mm / 25.4) * 72;
-}
-
-/**
- * Estimate text width in mm for PDF (rough approximation)
- */
-export function estimateTextWidthMm(
-  text: string,
-  fontSizePt: number
-): number {
-  // Rough estimation: average character is ~0.6 width of font size in points
-  const estimatedWidthPt = text.length * fontSizePt * 0.6;
-  return (estimatedWidthPt / 72) * 25.4; // Convert to mm
 }

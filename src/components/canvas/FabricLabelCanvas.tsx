@@ -13,6 +13,7 @@ interface FabricLabelCanvasProps {
   fields: FieldConfig[];
   sampleData?: Record<string, any>;
   scale: number;
+  showGrid?: boolean;
   onFieldsChange?: (fields: FieldConfig[]) => void;
   onCanvasReady?: (canvas: FabricCanvas) => void;
 }
@@ -22,6 +23,7 @@ export function FabricLabelCanvas({
   fields,
   sampleData,
   scale,
+  showGrid = true,
   onFieldsChange,
   onCanvasReady
 }: FabricLabelCanvasProps) {
@@ -47,23 +49,25 @@ export function FabricLabelCanvas({
 
     fabricCanvasRef.current = canvas;
 
-    // Add grid background
-    const gridSize = 5 * 3.7795 * scale; // 5mm grid
-    const gridOptions = {
-      stroke: '#e5e7eb',
-      strokeWidth: 1,
-      selectable: false,
-      evented: false
-    };
+    // Add grid background if enabled
+    if (showGrid) {
+      const gridSize = 5 * 3.7795 * scale; // 5mm grid
+      const gridOptions = {
+        stroke: '#e5e7eb',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false
+      };
 
-    // Draw grid lines
-    for (let x = 0; x <= width; x += gridSize) {
-      const line = new Line([x, 0, x, height], gridOptions);
-      canvas.add(line);
-    }
-    for (let y = 0; y <= height; y += gridSize) {
-      const line = new Line([0, y, width, y], gridOptions);
-      canvas.add(line);
+      // Draw grid lines
+      for (let x = 0; x <= width; x += gridSize) {
+        const line = new Line([x, 0, x, height], gridOptions);
+        canvas.add(line);
+      }
+      for (let y = 0; y <= height; y += gridSize) {
+        const line = new Line([0, y, width, y], gridOptions);
+        canvas.add(line);
+      }
     }
 
     // Notify parent that canvas is ready
@@ -113,7 +117,7 @@ export function FabricLabelCanvas({
       canvas.dispose();
       fabricCanvasRef.current = null;
     };
-  }, [templateSize, scale]);
+  }, [templateSize, scale, showGrid]);
 
   // Update fields when they change
   useEffect(() => {
@@ -132,27 +136,30 @@ export function FabricLabelCanvas({
     canvas.clear();
     canvas.backgroundColor = '#ffffff';
 
-    // RE-DRAW GRID (it was cleared above)
+    // RE-DRAW GRID (it was cleared above) - only if showGrid is true
     const mmToPx = (mm: number) => mm * 3.7795 * scale;
     const width = mmToPx(templateSize.width);
     const height = mmToPx(templateSize.height);
-    const gridSize = 5 * 3.7795 * scale; // 5mm grid
-    const gridOptions = {
-      stroke: '#e5e7eb',
-      strokeWidth: 1,
-      selectable: false,
-      evented: false
-    };
+    
+    if (showGrid) {
+      const gridSize = 5 * 3.7795 * scale; // 5mm grid
+      const gridOptions = {
+        stroke: '#e5e7eb',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false
+      };
 
-    // Draw vertical grid lines
-    for (let x = 0; x <= width; x += gridSize) {
-      const line = new Line([x, 0, x, height], gridOptions);
-      canvas.add(line);
-    }
-    // Draw horizontal grid lines
-    for (let y = 0; y <= height; y += gridSize) {
-      const line = new Line([0, y, width, y], gridOptions);
-      canvas.add(line);
+      // Draw vertical grid lines
+      for (let x = 0; x <= width; x += gridSize) {
+        const line = new Line([x, 0, x, height], gridOptions);
+        canvas.add(line);
+      }
+      // Draw horizontal grid lines
+      for (let y = 0; y <= height; y += gridSize) {
+        const line = new Line([0, y, width, y], gridOptions);
+        canvas.add(line);
+      }
     }
 
     // Add fields

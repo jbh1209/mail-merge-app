@@ -3,22 +3,44 @@ import { Canvas, Textbox, Group, Rect, Text, FabricObject } from 'fabric';
 import { FieldConfig, FieldType, generateSampleText } from './canvas-utils';
 
 /**
- * Case-insensitive field value lookup helper
+ * Robust case-insensitive field value lookup with normalization
+ * Handles spaces, underscores, hyphens, and partial matches
  */
 const getFieldValue = (fieldName: string, data: Record<string, any> | undefined): string | null => {
   if (!data) return null;
   
-  // Try exact match first
+  // 1. Exact match
   if (data[fieldName] !== undefined) return String(data[fieldName]);
   
-  // Try lowercase
-  const lowerKey = fieldName.toLowerCase();
-  if (data[lowerKey] !== undefined) return String(data[lowerKey]);
+  // 2. Case-insensitive match
+  const lowerField = fieldName.toLowerCase();
+  const dataKeys = Object.keys(data);
   
-  // Try finding key that matches ignoring case
-  const matchingKey = Object.keys(data).find(k => k.toLowerCase() === lowerKey);
-  if (matchingKey) return String(data[matchingKey]);
+  for (const key of dataKeys) {
+    if (key.toLowerCase() === lowerField) {
+      return String(data[key]);
+    }
+  }
   
+  // 3. Normalize both sides (remove spaces, underscores, hyphens)
+  const normalize = (s: string) => s.toLowerCase().replace(/[\s_-]/g, '');
+  const normalizedField = normalize(fieldName);
+  
+  for (const key of dataKeys) {
+    if (normalize(key) === normalizedField) {
+      return String(data[key]);
+    }
+  }
+  
+  // 4. Partial match (e.g., "address" matches "address_line_1")
+  for (const key of dataKeys) {
+    const normalizedKey = normalize(key);
+    if (normalizedKey.includes(normalizedField) || normalizedField.includes(normalizedKey)) {
+      return String(data[key]);
+    }
+  }
+  
+  console.warn(`⚠️ No match for "${fieldName}" in available keys:`, dataKeys);
   return null;
 };
 
@@ -32,45 +54,42 @@ export interface LabelFieldObject extends Textbox {
 }
 
 /**
- * Binary search to find optimal font size that fits both width and height
+ * Fabric.js-native text fitting using calcTextHeight() and ratio-based adjustment
+ * Starts large and reduces until text fits within bounds
  */
-export function autoFitFontSize(
-  text: string,
+function fitTextToBox(
+  textbox: Textbox,
   maxWidth: number,
   maxHeight: number,
-  minSize: number = 6,
-  maxSize: number = 24,
-  fontFamily: string = 'Arial',
-  fontWeight: string = 'normal'
-): number {
-  let low = minSize;
-  let high = maxSize;
-  let bestFit = minSize;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    
-    // Create temporary textbox to measure
-    const testBox = new Textbox(text, {
-      fontSize: mid,
-      fontFamily,
-      fontWeight: fontWeight as any,
-      width: maxWidth,
-      splitByGrapheme: false
-    });
-
-    const textHeight = testBox.calcTextHeight();
-    const textWidth = testBox.width || 0;
-
-    if (textHeight <= maxHeight && textWidth <= maxWidth) {
-      bestFit = mid;
-      low = mid + 1; // Try larger
-    } else {
-      high = mid - 1; // Try smaller
-    }
+  minFontSize: number = 8
+): void {
+  // Start with a large font size (24pt)
+  let fontSize = 24;
+  textbox.set('fontSize', fontSize);
+  
+  // Use Fabric's actual measurement
+  let actualHeight = textbox.calcTextHeight();
+  
+  // Simple ratio-based reduction until it fits
+  let iterations = 0;
+  const maxIterations = 10; // Safety limit
+  
+  while (actualHeight > maxHeight && fontSize > minFontSize && iterations < maxIterations) {
+    const ratio = maxHeight / actualHeight;
+    fontSize = Math.max(minFontSize, Math.floor(fontSize * ratio * 0.95)); // 0.95 for safety margin
+    textbox.set('fontSize', fontSize);
+    actualHeight = textbox.calcTextHeight();
+    iterations++;
   }
-
-  return bestFit;
+  
+  console.log(`📏 fitTextToBox: final fontSize=${fontSize}pt (${iterations} iterations)`);
+  
+  // If still too tall after reaching minFontSize, use scaleY as last resort
+  if (actualHeight > maxHeight) {
+    const scaleY = maxHeight / actualHeight;
+    textbox.set('scaleY', scaleY);
+    console.log(`⚠️ Applied scaleY=${scaleY.toFixed(2)} to fit`);
+  }
 }
 
 /**
@@ -102,26 +121,15 @@ export function createLabelTextField(
     }
   }
 
-  // Auto-fit font size if enabled
-  let fontSize = fieldConfig.style?.fontSize || 12;
-  if (fieldConfig.autoFit && (!fieldConfig.style?.fontSize || fieldConfig.style.fontSize < 8)) {
-    fontSize = autoFitFontSize(
-      displayText,
-      width,
-      height,
-      6,
-      24, // max 24pt (was 18)
-      fieldConfig.style?.fontFamily || 'Arial',
-      fieldConfig.style?.fontWeight || 'normal'
-    );
-  }
+  // Use provided font size or default to max (24pt) and let Fabric fit it
+  const initialFontSize = fieldConfig.style?.fontSize || 24;
 
   const textbox = new Textbox(displayText, {
     left: x,
     top: y,
     width: width,
     height: height,
-    fontSize: fontSize,
+    fontSize: initialFontSize,
     fontFamily: fieldConfig.style?.fontFamily || 'Arial',
     fontWeight: (fieldConfig.style?.fontWeight || 'normal') as any,
     fill: fieldConfig.style?.color || '#000000',
@@ -138,12 +146,9 @@ export function createLabelTextField(
     splitByGrapheme: false
   });
 
-  // Measure actual height and adjust if needed
-  const actualHeight = textbox.calcTextHeight();
-  if (actualHeight > height) {
-    const ratio = height / actualHeight;
-    const adjustedFontSize = Math.floor(fontSize * ratio * 0.9);
-    textbox.set('fontSize', Math.max(8, adjustedFontSize));
+  // Use Fabric.js native text fitting if autoFit is enabled
+  if (fieldConfig.autoFit) {
+    fitTextToBox(textbox, width, height, 8);
   }
 
   // Add custom properties
@@ -196,27 +201,15 @@ export function createAddressBlock(
   const width = mmToPx(fieldConfig.size?.width || 50);
   const height = mmToPx(fieldConfig.size?.height || 20);
 
-  // TRUST the layout-engine fontSize, only recalculate if not provided
-  let fontSize = fieldConfig.style?.fontSize;
-  if (!fontSize || fontSize < 8) {
-    // Fallback: auto-fit with HIGHER max
-    fontSize = autoFitFontSize(
-      displayText,
-      width,
-      height,
-      8,    // min 8pt
-      24,   // max 24pt (was 14!)
-      fieldConfig.style?.fontFamily || 'Arial',
-      fieldConfig.style?.fontWeight || 'normal'
-    );
-  }
+  // Use provided font size or default to max (24pt) for address blocks
+  const initialFontSize = fieldConfig.style?.fontSize || 24;
   
   console.log('📝 Creating address block:', { 
     widthMm: fieldConfig.size?.width?.toFixed(1), 
     heightMm: fieldConfig.size?.height?.toFixed(1),
     widthPx: width.toFixed(0), 
     heightPx: height.toFixed(0), 
-    fontSize,
+    initialFontSize,
     lineCount: displayText.split('\n').length 
   });
 
@@ -225,7 +218,7 @@ export function createAddressBlock(
     top: y,
     width: width,
     height: height,
-    fontSize: fontSize,
+    fontSize: initialFontSize,
     fontFamily: fieldConfig.style?.fontFamily || 'Arial',
     fontWeight: (fieldConfig.style?.fontWeight || 'normal') as any,
     fill: fieldConfig.style?.color || '#000000',
@@ -243,14 +236,8 @@ export function createAddressBlock(
     splitByGrapheme: false
   });
 
-  // Measure actual height and adjust font size if needed
-  const actualHeight = textbox.calcTextHeight();
-  if (actualHeight > height) {
-    const ratio = height / actualHeight;
-    const adjustedFontSize = Math.floor(fontSize * ratio * 0.9);
-    textbox.set('fontSize', Math.max(8, adjustedFontSize));
-    console.log('📏 Adjusted font size from', fontSize, 'to', adjustedFontSize);
-  }
+  // Use Fabric.js native text fitting - address blocks always auto-fit
+  fitTextToBox(textbox, width, height, 10); // min 10pt for address blocks
 
   // Add custom properties
   (textbox as any).fieldName = addressFields[0];

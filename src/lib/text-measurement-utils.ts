@@ -41,7 +41,7 @@ export function measureText(
     const metrics = ctx.measureText(text);
     return {
       width: metrics.width,
-      height: fontSize * 1.2,
+      height: fontSize * 1.3, // Changed from 1.2 to match Fabric.js
       lineCount: 1
     };
   }
@@ -71,7 +71,7 @@ export function measureText(
     }
   }
 
-  const lineHeight = fontSize * 1.2;
+  const lineHeight = fontSize * 1.3; // Changed from 1.2 to match Fabric.js
   return {
     width: maxWidth,
     height: lines.length * lineHeight,

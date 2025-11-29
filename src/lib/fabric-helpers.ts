@@ -75,13 +75,13 @@ export function createLabelTextField(
 
   // Auto-fit font size if enabled
   let fontSize = fieldConfig.style?.fontSize || 12;
-  if (fieldConfig.autoFit) {
+  if (fieldConfig.autoFit && (!fieldConfig.style?.fontSize || fieldConfig.style.fontSize < 8)) {
     fontSize = autoFitFontSize(
       displayText,
-      width - 8, // padding
-      height - 4,
+      width,
+      height,
       6,
-      fieldConfig.style?.fontSize || 18,
+      24, // max 24pt (was 18)
       fieldConfig.style?.fontFamily || 'Arial',
       fieldConfig.style?.fontWeight || 'normal'
     );
@@ -140,16 +140,29 @@ export function createAddressBlock(
   const width = mmToPx(fieldConfig.size?.width || 50);
   const height = mmToPx(fieldConfig.size?.height || 20);
 
-  // Auto-fit font size for address blocks
-  const fontSize = autoFitFontSize(
-    displayText,
-    width - 8,
-    height - 4,
-    8, // min 8pt for addresses
-    fieldConfig.style?.fontSize || 14,
-    fieldConfig.style?.fontFamily || 'Arial',
-    fieldConfig.style?.fontWeight || 'normal'
-  );
+  // TRUST the layout-engine fontSize, only recalculate if not provided
+  let fontSize = fieldConfig.style?.fontSize;
+  if (!fontSize || fontSize < 8) {
+    // Fallback: auto-fit with HIGHER max
+    fontSize = autoFitFontSize(
+      displayText,
+      width,
+      height,
+      8,    // min 8pt
+      24,   // max 24pt (was 14!)
+      fieldConfig.style?.fontFamily || 'Arial',
+      fieldConfig.style?.fontWeight || 'normal'
+    );
+  }
+  
+  console.log('📝 Creating address block:', { 
+    widthMm: fieldConfig.size?.width?.toFixed(1), 
+    heightMm: fieldConfig.size?.height?.toFixed(1),
+    widthPx: width.toFixed(0), 
+    heightPx: height.toFixed(0), 
+    fontSize,
+    lineCount: displayText.split('\n').length 
+  });
 
   const textbox = new Textbox(displayText, {
     left: x,

@@ -416,10 +416,14 @@ function calculateOptimalFontSize(
   
   // Check if text contains commas or newlines (multi-line)
   const isMultiLine = sampleText.includes(',') || sampleText.includes('\n');
+  const lineCount = (sampleText.match(/\n/g) || []).length + 1;
+  
+  // Higher minimum for address blocks (4+ lines)
+  const minFont = lineCount >= 4 ? 10 : config.minFontSize;
 
   // Binary search for LARGEST font size that fits
   // Importance does NOT cap the maximum - it only affects starting guess for efficiency
-  let low = config.minFontSize;
+  let low = minFont;
   let high = config.maxFontSize;
   let bestFit = low;
 
@@ -435,10 +439,15 @@ function calculateOptimalFontSize(
       isMultiLine ? widthPx : undefined
     );
 
+    // Use 1.3 line height for multi-line, matching Fabric
+    const adjustedHeight = isMultiLine 
+      ? measurement.lineCount * fontSizePx * 1.3 
+      : measurement.height;
+
     // Check if fits with some padding
     const paddingPx = config.padding * MM_TO_PX;
     const fits = measurement.width <= (widthPx - paddingPx) && 
-                 measurement.height <= (heightPx - paddingPx);
+                 adjustedHeight <= (heightPx - paddingPx);
 
     if (fits) {
       bestFit = mid;
@@ -448,7 +457,7 @@ function calculateOptimalFontSize(
     }
   }
 
-  return Math.max(bestFit, config.minFontSize);
+  return Math.max(bestFit, minFont);
 }
 
 /**
@@ -456,8 +465,8 @@ function calculateOptimalFontSize(
  */
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   templateSize: { width: 66.68, height: 25.4 }, // Avery 5160
-  margins: { top: 2, right: 2, bottom: 2, left: 2 },
-  padding: 1,
-  minFontSize: 7,
-  maxFontSize: 16
+  margins: { top: 1.5, right: 1.5, bottom: 1.5, left: 1.5 }, // Reduced from 2mm
+  padding: 0.5, // Reduced from 1mm
+  minFontSize: 8, // Increased from 7
+  maxFontSize: 24 // Increased from 16
 };

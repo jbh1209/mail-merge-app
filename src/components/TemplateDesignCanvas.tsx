@@ -52,6 +52,14 @@ export function TemplateDesignCanvas({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const currentSample = sampleData?.[currentDataIndex];
+  
+  console.log('🎨 TemplateDesignCanvas - sampleData flow:', {
+    sampleDataExists: !!sampleData,
+    sampleDataLength: sampleData?.length || 0,
+    currentDataIndex,
+    currentSampleKeys: currentSample ? Object.keys(currentSample) : [],
+    currentSamplePreview: currentSample
+  });
 
   // Analyze label complexity on mount
   useEffect(() => {

@@ -2,6 +2,26 @@
 import { Canvas, Textbox, Group, Rect, Text, FabricObject } from 'fabric';
 import { FieldConfig, FieldType, generateSampleText } from './canvas-utils';
 
+/**
+ * Case-insensitive field value lookup helper
+ */
+const getFieldValue = (fieldName: string, data: Record<string, any> | undefined): string | null => {
+  if (!data) return null;
+  
+  // Try exact match first
+  if (data[fieldName] !== undefined) return String(data[fieldName]);
+  
+  // Try lowercase
+  const lowerKey = fieldName.toLowerCase();
+  if (data[lowerKey] !== undefined) return String(data[lowerKey]);
+  
+  // Try finding key that matches ignoring case
+  const matchingKey = Object.keys(data).find(k => k.toLowerCase() === lowerKey);
+  if (matchingKey) return String(data[matchingKey]);
+  
+  return null;
+};
+
 // Custom properties for label fields
 export interface LabelFieldObject extends Textbox {
   fieldName: string;
@@ -62,16 +82,25 @@ export function createLabelTextField(
   sampleData?: Record<string, any>,
   scale: number = 1
 ): LabelFieldObject {
-  const fieldName = fieldConfig.templateField || 'field';
-  const displayText = sampleData?.[fieldName] || generateSampleText(fieldName);
-  
-  // Convert mm to pixels (96 DPI: 1mm ≈ 3.7795px)
   const mmToPx = (mm: number) => mm * 3.7795 * scale;
   
   const x = mmToPx(fieldConfig.position?.x || 0);
   const y = mmToPx(fieldConfig.position?.y || 0);
   const width = mmToPx(fieldConfig.size?.width || 50);
-  const height = mmToPx(fieldConfig.size?.height || 10);
+  const height = mmToPx(fieldConfig.size?.height || 20);
+
+  // Get display text from sample data using case-insensitive lookup
+  let displayText = '';
+  if (fieldConfig.templateField) {
+    const value = getFieldValue(fieldConfig.templateField, sampleData);
+    if (value) {
+      displayText = value;
+      console.log('✅ Found data for', fieldConfig.templateField, ':', displayText);
+    } else {
+      displayText = generateSampleText(fieldConfig.templateField);
+      console.log('⚠️ No data for', fieldConfig.templateField, '- using sample');
+    }
+  }
 
   // Auto-fit font size if enabled
   let fontSize = fieldConfig.style?.fontSize || 12;
@@ -97,8 +126,10 @@ export function createLabelTextField(
     fontWeight: (fieldConfig.style?.fontWeight || 'normal') as any,
     fill: fieldConfig.style?.color || '#000000',
     textAlign: fieldConfig.style?.textAlign || 'left',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 4,
+    selectable: true,
+    hasControls: true,
+    lockRotation: true,
+    editable: false,
     borderColor: '#e5e7eb',
     cornerColor: '#3b82f6',
     cornerStyle: 'circle',
@@ -107,7 +138,16 @@ export function createLabelTextField(
     splitByGrapheme: false
   });
 
+  // Measure actual height and adjust if needed
+  const actualHeight = textbox.calcTextHeight();
+  if (actualHeight > height) {
+    const ratio = height / actualHeight;
+    const adjustedFontSize = Math.floor(fontSize * ratio * 0.9);
+    textbox.set('fontSize', Math.max(8, adjustedFontSize));
+  }
+
   // Add custom properties
+  const fieldName = fieldConfig.templateField || 'field';
   (textbox as any).fieldName = fieldName;
   (textbox as any).fieldType = fieldConfig.fieldType || 'text';
   (textbox as any).templateField = fieldName;
@@ -126,9 +166,25 @@ export function createAddressBlock(
   scale: number = 1
 ): LabelFieldObject {
   const addressFields = fieldConfig.combinedFields || [fieldConfig.templateField || 'address'];
-  const addressLines = addressFields
-    .map(f => sampleData?.[f] || generateSampleText(f))
-    .filter(line => line && String(line).trim() !== '');
+  
+  console.log('🔍 Address block data:', {
+    combinedFields: addressFields,
+    sampleDataKeys: sampleData ? Object.keys(sampleData) : 'undefined',
+    sampleDataValues: sampleData
+  });
+  
+  // Build address from combined fields using case-insensitive lookup
+  const addressLines: string[] = [];
+  addressFields.forEach(fieldName => {
+    const value = getFieldValue(fieldName, sampleData);
+    if (value) {
+      addressLines.push(value);
+      console.log('✅ Found data for', fieldName, ':', value);
+    } else {
+      addressLines.push(generateSampleText(fieldName));
+      console.log('⚠️ No data for', fieldName, '- using sample');
+    }
+  });
   
   const displayText = addressLines.join('\n');
   
@@ -174,9 +230,11 @@ export function createAddressBlock(
     fontWeight: (fieldConfig.style?.fontWeight || 'normal') as any,
     fill: fieldConfig.style?.color || '#000000',
     textAlign: 'left',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 4,
-    lineHeight: 1.3,
+    lineHeight: 1.2,
+    selectable: true,
+    hasControls: true,
+    lockRotation: true,
+    editable: false,
     borderColor: '#e5e7eb',
     cornerColor: '#3b82f6',
     cornerStyle: 'circle',
@@ -184,6 +242,15 @@ export function createAddressBlock(
     lockUniScaling: false,
     splitByGrapheme: false
   });
+
+  // Measure actual height and adjust font size if needed
+  const actualHeight = textbox.calcTextHeight();
+  if (actualHeight > height) {
+    const ratio = height / actualHeight;
+    const adjustedFontSize = Math.floor(fontSize * ratio * 0.9);
+    textbox.set('fontSize', Math.max(8, adjustedFontSize));
+    console.log('📏 Adjusted font size from', fontSize, 'to', adjustedFontSize);
+  }
 
   // Add custom properties
   (textbox as any).fieldName = addressFields[0];

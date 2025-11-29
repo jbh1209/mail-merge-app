@@ -24,7 +24,7 @@ interface FieldMappingWizardProps {
   templateFields: string[];
   sampleData: Record<string, any>[];
   subscriptionFeatures?: SubscriptionFeatures;
-  onComplete: () => void;
+  onComplete: (mappings?: Record<string, string>) => void;
   onCancel: () => void;
 }
 
@@ -274,7 +274,7 @@ export function FieldMappingWizard({
       if (error) throw error;
 
       toast({ title: "Mappings saved!" });
-      onComplete();
+      onComplete(mappingsData);
     } catch (error: any) {
       toast({ title: "Save failed", description: error.message, variant: "destructive" });
     } finally {

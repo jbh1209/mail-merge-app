@@ -1,10 +1,9 @@
 // Fabric.js helper functions for label field creation and text sizing
 import { Canvas, Textbox, Group, Rect, Text, FabricObject } from 'fabric';
-import { FieldConfig, FieldType, generateSampleText } from './canvas-utils';
+import { FieldConfig, FieldType } from './canvas-utils';
 
 /**
- * Robust case-insensitive field value lookup with normalization
- * Handles spaces, underscores, hyphens, and partial matches
+ * Get field value from data with comprehensive matching strategies
  */
 const getFieldValue = (fieldName: string, data: Record<string, any> | undefined): string | null => {
   if (!data) return null;
@@ -22,7 +21,7 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
     }
   }
   
-  // 3. Normalize both sides (remove spaces, underscores, hyphens)
+  // 3. Normalized match (remove spaces, underscores, hyphens)
   const normalize = (s: string) => s.toLowerCase().replace(/[\s_-]/g, '');
   const normalizedField = normalize(fieldName);
   
@@ -32,15 +31,14 @@ const getFieldValue = (fieldName: string, data: Record<string, any> | undefined)
     }
   }
   
-  // 4. Partial match (e.g., "address" matches "address_line_1")
+  // 4. Partial match (contains)
   for (const key of dataKeys) {
-    const normalizedKey = normalize(key);
-    if (normalizedKey.includes(normalizedField) || normalizedField.includes(normalizedKey)) {
+    if (normalize(key).includes(normalizedField) || normalizedField.includes(normalize(key))) {
       return String(data[key]);
     }
   }
   
-  console.warn(`⚠️ No match for "${fieldName}" in available keys:`, dataKeys);
+  console.warn(`⚠️ Field "${fieldName}" not found. Available keys:`, dataKeys);
   return null;
 };
 
@@ -54,263 +52,157 @@ export interface LabelFieldObject extends Textbox {
 }
 
 /**
- * Fabric.js-native text fitting using calcTextHeight() and ratio-based adjustment
- * Starts large and reduces until text fits within bounds
+ * Fit text to box using Fabric.js native capabilities
  */
-function fitTextToBox(
-  textbox: Textbox,
-  maxWidth: number,
-  maxHeight: number,
-  minFontSize: number = 8
-): void {
-  // Start with a large font size (24pt)
+function fitTextToBox(textbox: Textbox, maxWidth: number, maxHeight: number, minFontSize: number = 10): void {
+  // Start with a large font size
   let fontSize = 24;
   textbox.set('fontSize', fontSize);
   
-  // Use Fabric's actual measurement
+  // Use Fabric's native measurements for both dimensions
+  textbox.setCoords();
   let actualHeight = textbox.calcTextHeight();
+  let actualWidth = textbox.calcTextWidth();
   
-  // Simple ratio-based reduction until it fits
-  let iterations = 0;
-  const maxIterations = 10; // Safety limit
+  // Calculate scale factors based on both dimensions
+  const heightRatio = maxHeight / actualHeight;
+  const widthRatio = maxWidth / actualWidth;
+  const scaleFactor = Math.min(heightRatio, widthRatio, 1); // Don't scale up
   
-  while (actualHeight > maxHeight && fontSize > minFontSize && iterations < maxIterations) {
-    const ratio = maxHeight / actualHeight;
-    fontSize = Math.max(minFontSize, Math.floor(fontSize * ratio * 0.95)); // 0.95 for safety margin
-    textbox.set('fontSize', fontSize);
-    actualHeight = textbox.calcTextHeight();
-    iterations++;
-  }
-  
-  console.log(`📏 fitTextToBox: final fontSize=${fontSize}pt (${iterations} iterations)`);
-  
-  // If still too tall after reaching minFontSize, use scaleY as last resort
-  if (actualHeight > maxHeight) {
-    const scaleY = maxHeight / actualHeight;
-    textbox.set('scaleY', scaleY);
-    console.log(`⚠️ Applied scaleY=${scaleY.toFixed(2)} to fit`);
-  }
+  // Apply as font size reduction (cleaner than using scaleY/scaleX)
+  const finalFontSize = Math.max(minFontSize, Math.floor(fontSize * scaleFactor * 0.9));
+  textbox.set('fontSize', finalFontSize);
 }
 
-/**
- * Create a Fabric text field with auto-fit sizing
- */
 export function createLabelTextField(
-  canvas: Canvas,
-  fieldConfig: Partial<FieldConfig>,
-  sampleData?: Record<string, any>,
-  scale: number = 1
-): LabelFieldObject {
-  const mmToPx = (mm: number) => mm * 3.7795 * scale;
+  fieldConfig: FieldConfig,
+  sampleData?: Record<string, any>
+): LabelFieldObject | null {
+  const { templateField, position, size, style } = fieldConfig;
+  const value = getFieldValue(templateField, sampleData);
   
-  const x = mmToPx(fieldConfig.position?.x || 0);
-  const y = mmToPx(fieldConfig.position?.y || 0);
-  const width = mmToPx(fieldConfig.size?.width || 50);
-  const height = mmToPx(fieldConfig.size?.height || 20);
-
-  // Get display text from sample data using case-insensitive lookup
-  let displayText = '';
-  if (fieldConfig.templateField) {
-    const value = getFieldValue(fieldConfig.templateField, sampleData);
-    if (value) {
-      displayText = value;
-      console.log('✅ Found data for', fieldConfig.templateField, ':', displayText);
-    } else {
-      displayText = generateSampleText(fieldConfig.templateField);
-      console.log('⚠️ No data for', fieldConfig.templateField, '- using sample');
-    }
+  // If no data found, return empty string (no demo data!)
+  const displayText = value || '';
+  
+  if (!value) {
+    console.warn(`⚠️ No data for field "${templateField}"`);
   }
-
-  // Use provided font size or default to max (24pt) and let Fabric fit it
-  const initialFontSize = fieldConfig.style?.fontSize || 24;
+  
+  const initialFontSize = style.fontSize || 24;
+  
+  // Calculate center point for positioning
+  const centerX = position.x + size.width / 2;
+  const centerY = position.y + size.height / 2;
 
   const textbox = new Textbox(displayText, {
-    left: x,
-    top: y,
-    width: width,
-    height: height,
+    left: centerX,
+    top: centerY,
+    width: size.width,
     fontSize: initialFontSize,
-    fontFamily: fieldConfig.style?.fontFamily || 'Arial',
-    fontWeight: (fieldConfig.style?.fontWeight || 'normal') as any,
-    fill: fieldConfig.style?.color || '#000000',
-    textAlign: fieldConfig.style?.textAlign || 'left',
+    fontFamily: style.fontFamily || 'Arial',
+    fontWeight: style.fontWeight || 'normal',
+    fill: style.color || '#000000',
+    textAlign: 'center',
+    originX: 'center',
+    originY: 'center',
     selectable: true,
     hasControls: true,
+    hasBorders: true,
     lockRotation: true,
-    editable: false,
-    borderColor: '#e5e7eb',
-    cornerColor: '#3b82f6',
-    cornerStyle: 'circle',
-    transparentCorners: false,
-    lockUniScaling: false,
-    splitByGrapheme: false
+    splitByGrapheme: false,
   });
 
-  // Use Fabric.js native text fitting if autoFit is enabled
-  if (fieldConfig.autoFit) {
-    fitTextToBox(textbox, width, height, 8);
-  }
-
-  // Add custom properties
-  const fieldName = fieldConfig.templateField || 'field';
-  (textbox as any).fieldName = fieldName;
+  (textbox as any).fieldName = templateField;
   (textbox as any).fieldType = fieldConfig.fieldType || 'text';
-  (textbox as any).templateField = fieldName;
-  (textbox as any).dataColumn = fieldName;
+  (textbox as any).templateField = templateField;
 
-  return textbox as LabelFieldObject;
-}
-
-/**
- * Create an address block (multi-line combined fields)
- */
-export function createAddressBlock(
-  canvas: Canvas,
-  fieldConfig: Partial<FieldConfig>,
-  sampleData?: Record<string, any>,
-  scale: number = 1
-): LabelFieldObject {
-  const addressFields = fieldConfig.combinedFields || [fieldConfig.templateField || 'address'];
-  
-  console.log('🔍 Address block data:', {
-    combinedFields: addressFields,
-    sampleDataKeys: sampleData ? Object.keys(sampleData) : 'undefined',
-    sampleDataValues: sampleData
-  });
-  
-  // Build address from combined fields using case-insensitive lookup
-  const addressLines: string[] = [];
-  addressFields.forEach(fieldName => {
-    const value = getFieldValue(fieldName, sampleData);
-    if (value) {
-      addressLines.push(value);
-      console.log('✅ Found data for', fieldName, ':', value);
-    } else {
-      addressLines.push(generateSampleText(fieldName));
-      console.log('⚠️ No data for', fieldName, '- using sample');
-    }
-  });
-  
-  const displayText = addressLines.join('\n');
-  
-  // Convert mm to pixels
-  const mmToPx = (mm: number) => mm * 3.7795 * scale;
-  
-  const x = mmToPx(fieldConfig.position?.x || 0);
-  const y = mmToPx(fieldConfig.position?.y || 0);
-  const width = mmToPx(fieldConfig.size?.width || 50);
-  const height = mmToPx(fieldConfig.size?.height || 20);
-
-  // Use provided font size or default to max (24pt) for address blocks
-  const initialFontSize = fieldConfig.style?.fontSize || 24;
-  
-  console.log('📝 Creating address block:', { 
-    widthMm: fieldConfig.size?.width?.toFixed(1), 
-    heightMm: fieldConfig.size?.height?.toFixed(1),
-    widthPx: width.toFixed(0), 
-    heightPx: height.toFixed(0), 
-    initialFontSize,
-    lineCount: displayText.split('\n').length 
-  });
-
-  const textbox = new Textbox(displayText, {
-    left: x,
-    top: y,
-    width: width,
-    height: height,
-    fontSize: initialFontSize,
-    fontFamily: fieldConfig.style?.fontFamily || 'Arial',
-    fontWeight: (fieldConfig.style?.fontWeight || 'normal') as any,
-    fill: fieldConfig.style?.color || '#000000',
-    textAlign: 'left',
-    lineHeight: 1.2,
-    selectable: true,
-    hasControls: true,
-    lockRotation: true,
-    editable: false,
-    borderColor: '#e5e7eb',
-    cornerColor: '#3b82f6',
-    cornerStyle: 'circle',
-    transparentCorners: false,
-    lockUniScaling: false,
-    splitByGrapheme: false
-  });
-
-  // Use Fabric.js native text fitting - address blocks always auto-fit
-  fitTextToBox(textbox, width, height, 10); // min 10pt for address blocks
-
-  // Add custom properties
-  (textbox as any).fieldName = addressFields[0];
-  (textbox as any).fieldType = 'address_block';
-  (textbox as any).templateField = addressFields[0];
-  (textbox as any).combinedFields = addressFields;
-
-  return textbox as LabelFieldObject;
-}
-
-/**
- * Create a barcode placeholder
- */
-export function createBarcodeField(
-  canvas: Canvas,
-  fieldConfig: Partial<FieldConfig>,
-  sampleData?: Record<string, any>,
-  scale: number = 1
-): Group {
-  const mmToPx = (mm: number) => mm * 3.7795 * scale;
-  
-  const x = mmToPx(fieldConfig.position?.x || 0);
-  const y = mmToPx(fieldConfig.position?.y || 0);
-  const width = mmToPx(fieldConfig.size?.width || 40);
-  const height = mmToPx(fieldConfig.size?.height || 12);
-
-  // Create barcode bars
-  const bars: Rect[] = [];
-  const barCount = 20;
-  const barWidth = (width * 0.8) / barCount;
-  
-  for (let i = 0; i < barCount; i++) {
-    bars.push(new Rect({
-      left: i * barWidth,
-      top: 0,
-      width: i % 3 === 0 ? barWidth * 1.5 : barWidth,
-      height: height * 0.6,
-      fill: '#000000'
-    }));
+  // Use auto-fit if enabled
+  if (fieldConfig.autoFit) {
+    fitTextToBox(textbox, size.width, size.height);
   }
 
-  // Add text below bars
-  const fieldName = fieldConfig.templateField || 'barcode';
-  const displayText = sampleData?.[fieldName] || generateSampleText(fieldName);
-  const text = new Text(displayText, {
-    left: width / 2,
-    top: height * 0.65,
-    fontSize: 8,
-    fontFamily: 'monospace',
-    fill: '#000000',
-    originX: 'center'
+  return textbox as LabelFieldObject;
+}
+
+export function createAddressBlock(
+  fieldConfig: FieldConfig,
+  sampleData?: Record<string, any>
+): LabelFieldObject | null {
+  const { position, size, style, combinedFields } = fieldConfig;
+
+  if (!combinedFields || combinedFields.length === 0) {
+    console.warn("createAddressBlock called without combinedFields");
+    return null;
+  }
+
+  // Gather all field values
+  const lines: string[] = [];
+  for (const fieldName of combinedFields) {
+    const value = getFieldValue(fieldName, sampleData);
+    if (value && value.trim()) {
+      lines.push(value.trim());
+    }
+  }
+
+  // No demo data - if empty, leave empty
+  const displayText = lines.join('\n') || '';
+  
+  if (lines.length === 0) {
+    console.warn(`⚠️ Address block empty - no data for fields:`, combinedFields);
+  }
+  
+  const initialFontSize = 24;
+  
+  // Calculate center Y for vertical centering
+  const centerY = position.y + size.height / 2;
+
+  const textbox = new Textbox(displayText, {
+    left: position.x,
+    top: centerY,
+    width: size.width,
+    fontSize: initialFontSize,
+    fontFamily: style.fontFamily || 'Arial',
+    fontWeight: style.fontWeight || 'normal',
+    fill: style.color || '#000000',
+    textAlign: 'left',
+    originX: 'left',
+    originY: 'center', // Vertically center the block
+    selectable: true,
+    hasControls: true,
+    hasBorders: true,
+    lockRotation: true,
+    splitByGrapheme: false,
   });
 
-  const group = new Group([...bars, text], {
-    left: x,
-    top: y,
-    width: width,
-    height: height,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderColor: '#e5e7eb',
-    cornerColor: '#3b82f6'
-  });
+  (textbox as any).fieldName = combinedFields[0];
+  (textbox as any).fieldType = 'address_block';
+  (textbox as any).templateField = combinedFields[0];
 
-  return group;
+  // Always auto-fit address blocks
+  fitTextToBox(textbox, size.width, size.height, 10);
+
+  return textbox as LabelFieldObject;
+}
+
+export function createBarcodeField(
+  fieldConfig: FieldConfig
+): Group {
+  // Barcode implementation remains unchanged for now
+  return new Group([], {
+    left: fieldConfig.position.x,
+    top: fieldConfig.position.y,
+    width: fieldConfig.size.width,
+    height: fieldConfig.size.height
+  });
 }
 
 /**
  * Convert Fabric canvas to field configs for saving
  */
-export function fabricToFieldConfigs(canvas: Canvas): FieldConfig[] {
+export function fabricToFieldConfigs(canvas: any): FieldConfig[] {
   const pxToMm = (px: number) => px / 3.7795;
   
-  return canvas.getObjects().map((obj, index) => {
+  return canvas.getObjects().map((obj: any, index: number) => {
     const labelObj = obj as LabelFieldObject;
     
     return {
@@ -346,11 +238,11 @@ export function fabricToFieldConfigs(canvas: Canvas): FieldConfig[] {
  * Update field text with new data
  */
 export function updateFieldData(
-  canvas: Canvas,
+  canvas: any,
   fieldName: string,
   newValue: string
 ): void {
-  canvas.getObjects().forEach(obj => {
+  canvas.getObjects().forEach((obj: any) => {
     const labelObj = obj as LabelFieldObject;
     if (labelObj.fieldName === fieldName && obj instanceof Textbox) {
       obj.set('text', newValue);

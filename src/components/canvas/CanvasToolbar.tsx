@@ -193,16 +193,23 @@ export function CanvasToolbar({
               <div className="flex items-center gap-1">
                 <Type className="h-3.5 w-3.5 text-muted-foreground" />
                 <Select
-                  value={selectedField.style.fontSize.toString()}
+                  value={Math.round(selectedField.style.fontSize).toString()}
                   onValueChange={(value) => onUpdateFieldStyle({ fontSize: parseInt(value) })}
                 >
                   <SelectTrigger className="w-16 h-7 text-xs">
-                    <SelectValue />
+                    <SelectValue placeholder={`${Math.round(selectedField.style.fontSize)}pt`} />
                   </SelectTrigger>
                   <SelectContent>
-                    {[6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36].map(size => (
-                      <SelectItem key={size} value={size.toString()}>{size}pt</SelectItem>
-                    ))}
+                    {(() => {
+                      const standardSizes = [6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36];
+                      const currentSize = Math.round(selectedField.style.fontSize);
+                      const allSizes = standardSizes.includes(currentSize) 
+                        ? standardSizes 
+                        : [...standardSizes, currentSize].sort((a, b) => a - b);
+                      return allSizes.map(size => (
+                        <SelectItem key={size} value={size.toString()}>{size}pt</SelectItem>
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
               </div>

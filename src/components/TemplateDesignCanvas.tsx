@@ -7,6 +7,7 @@ import { AddElementPanel } from './canvas/AddElementPanel';
 import { SequenceConfigDialog } from './canvas/SequenceConfigDialog';
 import { QRCodeConfigDialog } from './canvas/QRCodeConfigDialog';
 import { BarcodeConfigDialog } from './canvas/BarcodeConfigDialog';
+import { SmartSuggestionsPanel } from './canvas/SmartSuggestionsPanel';
 import { useCanvasState } from '@/hooks/useCanvasState';
 import { mmToPx, FieldConfig } from '@/lib/canvas-utils';
 import { CheckCircle2, Info, ChevronLeft, ChevronRight, Bug } from 'lucide-react';
@@ -16,12 +17,14 @@ import { DiagnosticModal } from './DiagnosticModal';
 import html2canvas from 'html2canvas';
 import { supabase } from '@/integrations/supabase/client';
 import { fabricToFieldConfigs } from '@/lib/fabric-helpers';
+import { FieldSuggestion, shouldShowSuggestions } from '@/lib/field-detection-utils';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
   templateName: string;
   fieldNames: string[];
   sampleData?: Record<string, any>[];
+  fieldSuggestions?: any[];
   initialDesignConfig?: any;
   onSave: (designConfig: any) => void;
   onCancel: () => void;
@@ -36,6 +39,7 @@ export function TemplateDesignCanvas({
   templateName,
   fieldNames,
   sampleData,
+  fieldSuggestions = [],
   initialDesignConfig,
   onSave,
   onCancel,
@@ -62,6 +66,8 @@ export function TemplateDesignCanvas({
   const [showSequenceDialog, setShowSequenceDialog] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestions, setActiveSuggestions] = useState<FieldSuggestion[]>([]);
 
   const currentSample = sampleData?.[currentDataIndex];
   
@@ -72,6 +78,38 @@ export function TemplateDesignCanvas({
     currentSampleKeys: currentSample ? Object.keys(currentSample) : [],
     currentSamplePreview: currentSample
   });
+
+  // Show smart suggestions when available
+  useEffect(() => {
+    if (fieldSuggestions && fieldSuggestions.length > 0 && shouldShowSuggestions(fieldSuggestions)) {
+      setActiveSuggestions(fieldSuggestions as FieldSuggestion[]);
+      setShowSuggestions(true);
+    }
+  }, [fieldSuggestions]);
+
+  // Handle accepting a smart suggestion
+  const handleAcceptSuggestion = (suggestion: FieldSuggestion) => {
+    console.log('🎯 Accepting suggestion:', suggestion);
+    
+    // Open the appropriate dialog based on suggestion type
+    switch (suggestion.suggestedType) {
+      case 'barcode':
+        // Pre-populate barcode settings based on suggestion
+        setShowBarcodeDialog(true);
+        break;
+      case 'qrcode':
+        setShowQRDialog(true);
+        break;
+      case 'sequence':
+        setShowSequenceDialog(true);
+        break;
+    }
+    
+    toast({
+      title: 'Opening configuration',
+      description: `Configure the ${suggestion.suggestedType} for "${suggestion.fieldName}"`,
+    });
+  };
 
   // Analyze label complexity on mount
   useEffect(() => {
@@ -421,6 +459,18 @@ export function TemplateDesignCanvas({
 
       {/* Main canvas area - takes all available space */}
       <div className="flex-1 overflow-auto bg-muted/20 p-4 min-h-0">
+        {/* Smart Suggestions Panel */}
+        {showSuggestions && activeSuggestions.length > 0 && (
+          <div className="mb-4">
+            <SmartSuggestionsPanel
+              suggestions={activeSuggestions}
+              onAcceptSuggestion={handleAcceptSuggestion}
+              onDismiss={() => setShowSuggestions(false)}
+              templateSize={templateSize}
+            />
+          </div>
+        )}
+        
         <div className="flex items-center justify-center h-full">
           <div className="flex flex-col items-center gap-2">
             {/* Compact template info */}

@@ -52,6 +52,7 @@ interface WizardState {
     filePath: string;
     fileName: string;
   } | null;
+  fieldSuggestions: any[];
   dataReviewComplete: boolean;
   aiAnalysisResult: any;
   templateId: string | null;
@@ -120,6 +121,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
     dataSourceId: null,
     dataColumns: [],
     parsedData: null,
+    fieldSuggestions: [],
     dataReviewComplete: false,
     aiAnalysisResult: null,
     templateId: null,
@@ -142,6 +144,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
       dataSourceId: null, 
       dataColumns: [], 
       parsedData: null,
+      fieldSuggestions: [],
       dataReviewComplete: false,
       aiAnalysisResult: null,
       templateId: null, 
@@ -407,6 +410,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                   dataSourceId: dataSource.id,
                   dataColumns: result.columns,
                   parsedData: result,
+                  fieldSuggestions: result.fieldSuggestions || [],
                 }));
                 
                 toast({ title: "Data uploaded and saved!" });
@@ -576,6 +580,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               templateName={wizardState.templateName}
               fieldNames={wizardState.dataColumns}
               sampleData={wizardState.parsedData?.rows || wizardState.parsedData?.preview || []}
+              fieldSuggestions={wizardState.fieldSuggestions || []}
               stepInfo={{ current: 9, total: 9 }}
               templateId={wizardState.templateId}
               dataSourceId={wizardState.dataSourceId}

@@ -96,15 +96,21 @@ export function FabricLabelCanvas({
       const actualWidth = obj.getScaledWidth();
       const actualHeight = obj.getScaledHeight();
       
-      // CRITICAL: Reset the object to use actual dimensions without scale
-      // This prevents scale from compounding with future updates
-      obj.set({
-        width: actualWidth,
-        height: actualHeight,
-        scaleX: 1,
-        scaleY: 1
-      });
-      obj.setCoords();
+      // CRITICAL: Handle Groups (barcodes/QR codes) differently
+      // Groups should keep their scale, not normalize to width/height
+      const isGroup = obj.type === 'Group' || obj.type === 'group';
+      
+      if (!isGroup) {
+        // For normal objects: Reset to use actual dimensions without scale
+        obj.set({
+          width: actualWidth,
+          height: actualHeight,
+          scaleX: 1,
+          scaleY: 1
+        });
+        obj.setCoords();
+      }
+      // For Groups: Keep scale values as-is, they handle sizing differently
       
       // Convert pixel positions back to mm using normalized dimensions
       const newPosition = {
@@ -148,12 +154,33 @@ export function FabricLabelCanvas({
       onFieldsChange(updatedFields);
     });
 
+    // Keyboard event handler for Delete key
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const activeObj = canvas.getActiveObject();
+        if (activeObj && (activeObj as any).fieldId && onFieldsChange) {
+          const fieldId = (activeObj as any).fieldId;
+          const updatedFields = fields.filter(f => f.id !== fieldId);
+          onFieldsChange(updatedFields);
+          canvas.remove(activeObj);
+          canvas.renderAll();
+          if (onFieldsSelected) {
+            onFieldsSelected([]);
+          }
+          e.preventDefault();
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+
     return () => {
+      window.removeEventListener('keydown', handleKeyDown);
       canvas.dispose();
       objectsRef.current.clear();
       fabricCanvasRef.current = null;
     };
-  }, [templateSize.width, templateSize.height]);
+  }, [templateSize.width, templateSize.height, fields, onFieldsChange, onFieldsSelected]);
 
   // Update text content when sample data changes (page navigation)
   useEffect(() => {
@@ -344,6 +371,8 @@ export function FabricLabelCanvas({
             canvas.add(obj);
             objectsRef.current.set(fieldConfig.id, obj);
             
+            // Z-index will be handled by render order
+            
             // If autoFit was applied, sync the fitted fontSize back to React state IMMEDIATELY
             if (fieldConfig.autoFit && !fieldConfig.autoFitApplied && onFieldsChange) {
               const fittedFontSize = (obj as any).fontSize;
@@ -378,6 +407,30 @@ export function FabricLabelCanvas({
           canvas.remove(obj);
           objectsRef.current.delete(fieldId);
         }
+      });
+      
+      // Apply z-index ordering by moving objects in canvas
+      // Sort fields by zIndex (lowest first = back, highest last = front)
+      const sortedFields = [...fields].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+      
+      // Remove all objects and re-add in correct order
+      const tempObjects: any[] = [];
+      sortedFields.forEach((field) => {
+        const obj = objectsRef.current.get(field.id);
+        if (obj) {
+          canvas.remove(obj);
+          tempObjects.push(obj);
+        }
+      });
+      
+      // Re-add in sorted order (back to front)
+      tempObjects.forEach(obj => {
+        canvas.add(obj);
+      });
+      
+      // Re-add grid lines to back
+      gridObjectsRef.current.forEach(line => {
+        canvas.sendObjectToBack(line);
       });
 
       // Debugging: Track object lifecycle

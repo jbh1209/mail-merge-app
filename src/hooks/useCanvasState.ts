@@ -64,8 +64,12 @@ export const useCanvasState = ({
       defaultLabelFontSize: 6
     };
   });
-  const [history, setHistory] = useState<FieldConfig[][]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  // Initialize history with initial fields
+  const [history, setHistory] = useState<FieldConfig[][]>(() => {
+    const initial = initialDesignConfig?.fields || autoLayoutFieldsSimple(initialFields, templateSize, 6, false);
+    return [initial];
+  });
+  const [historyIndex, setHistoryIndex] = useState(0);
 
   const saveToHistory = useCallback((newFields: FieldConfig[]) => {
     const newHistory = history.slice(0, historyIndex + 1);
@@ -156,7 +160,9 @@ export const useCanvasState = ({
   const addField = useCallback((newField: FieldConfig) => {
     setFields(prev => {
       const maxZIndex = Math.max(0, ...prev.map(f => f.zIndex || 0));
-      const newFields = [...prev, { ...newField, zIndex: maxZIndex + 1, visible: true }];
+      // Generate consistent ID: field-{templateField}-{shortId}
+      const fieldId = newField.id || `field-${newField.templateField}-${crypto.randomUUID().slice(0, 8)}`;
+      const newFields = [...prev, { ...newField, id: fieldId, zIndex: maxZIndex + 1, visible: true }];
       saveToHistory(newFields);
       return newFields;
     });
@@ -400,7 +406,7 @@ export const useCanvasState = ({
         
         // Convert rules engine output to canvas field format
         const newFields = result.fields.map(field => ({
-          id: `field-${field.templateField}`,
+          id: `field-${field.templateField}-${crypto.randomUUID().slice(0, 8)}`,
           templateField: field.templateField,
           position: { x: field.x, y: field.y },
           size: { width: field.width, height: field.height },
@@ -452,7 +458,7 @@ export const useCanvasState = ({
       
       if (data?.fields) {
         const newFields = data.fields.map((field: any) => ({
-          id: `field-${field.templateField}`,
+          id: `field-${field.templateField}-${crypto.randomUUID().slice(0, 8)}`,
           templateField: field.templateField,
           position: { x: field.position.x, y: field.position.y },
           size: { width: field.size.width, height: field.size.height },

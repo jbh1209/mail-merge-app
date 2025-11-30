@@ -70,7 +70,7 @@ export function CanvasToolbar({
   onDistribute
 }: CanvasToolbarProps) {
   return (
-    <div className="flex flex-wrap items-center gap-2 px-2 py-1.5">
+    <div className="flex items-center gap-2 px-2 py-1.5 overflow-x-auto">
       {/* Zoom Controls */}
       <div className="flex items-center gap-1">
         <Button
@@ -196,6 +196,10 @@ export function CanvasToolbar({
       {selectedField && selectedCount === 1 && (
         <>
           <Separator orientation="vertical" className="h-5" />
+          
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
+            Text Format
+          </span>
           
           {/* Field label toggle */}
           <div className="flex items-center gap-1.5">

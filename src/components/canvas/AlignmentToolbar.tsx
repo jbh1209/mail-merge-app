@@ -1,4 +1,4 @@
-import { AlignLeft, AlignCenter, AlignRight, AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter } from 'lucide-react';
+import { AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -27,10 +27,10 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('left')}
               >
-                <AlignLeft className="h-3.5 w-3.5" />
+                <AlignStartHorizontal className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Align Left</TooltipContent>
+            <TooltipContent>Align Elements to Left</TooltipContent>
           </Tooltip>
           
           <Tooltip>
@@ -41,10 +41,10 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('center')}
               >
-                <AlignCenter className="h-3.5 w-3.5" />
+                <AlignCenterHorizontal className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Align Center</TooltipContent>
+            <TooltipContent>Center Elements Horizontally</TooltipContent>
           </Tooltip>
           
           <Tooltip>
@@ -55,10 +55,10 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('right')}
               >
-                <AlignRight className="h-3.5 w-3.5" />
+                <AlignEndHorizontal className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Align Right</TooltipContent>
+            <TooltipContent>Align Elements to Right</TooltipContent>
           </Tooltip>
         </div>
         
@@ -74,10 +74,10 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('top')}
               >
-                <AlignVerticalJustifyStart className="h-3.5 w-3.5" />
+                <AlignStartVertical className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Align Top</TooltipContent>
+            <TooltipContent>Align Elements to Top</TooltipContent>
           </Tooltip>
           
           <Tooltip>
@@ -88,10 +88,10 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('middle')}
               >
-                <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
+                <AlignCenterVertical className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Align Middle</TooltipContent>
+            <TooltipContent>Center Elements Vertically</TooltipContent>
           </Tooltip>
           
           <Tooltip>
@@ -102,10 +102,10 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('bottom')}
               >
-                <AlignVerticalJustifyEnd className="h-3.5 w-3.5" />
+                <AlignEndVertical className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Align Bottom</TooltipContent>
+            <TooltipContent>Align Elements to Bottom</TooltipContent>
           </Tooltip>
         </div>
         

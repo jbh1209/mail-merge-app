@@ -20,7 +20,7 @@ interface FabricLabelCanvasProps {
   showGrid?: boolean;
   onFieldsChange?: (fields: FieldConfig[]) => void;
   onCanvasReady?: (canvas: FabricCanvas) => void;
-  onFieldSelected?: (fieldId: string | null) => void;
+  onFieldsSelected?: (fieldIds: string[]) => void;
 }
 
 export function FabricLabelCanvas({
@@ -32,7 +32,7 @@ export function FabricLabelCanvas({
   showGrid = true,
   onFieldsChange,
   onCanvasReady,
-  onFieldSelected
+  onFieldsSelected
 }: FabricLabelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
@@ -64,17 +64,26 @@ export function FabricLabelCanvas({
       onCanvasReady(canvas);
     }
 
-    // Selection events
+    // Multi-selection events
     canvas.on('selection:created', (e) => {
-      const obj = e.selected?.[0] as any;
-      if (obj?.fieldId && onFieldSelected) {
-        onFieldSelected(obj.fieldId);
-      }
+      if (!onFieldsSelected) return;
+      const selectedIds = (e.selected || [])
+        .map((obj: any) => obj.fieldId)
+        .filter(Boolean);
+      onFieldsSelected(selectedIds);
+    });
+
+    canvas.on('selection:updated', (e) => {
+      if (!onFieldsSelected) return;
+      const selectedIds = (e.selected || [])
+        .map((obj: any) => obj.fieldId)
+        .filter(Boolean);
+      onFieldsSelected(selectedIds);
     });
 
     canvas.on('selection:cleared', () => {
-      if (onFieldSelected) {
-        onFieldSelected(null);
+      if (onFieldsSelected) {
+        onFieldsSelected([]);
       }
     });
 
@@ -244,7 +253,7 @@ export function FabricLabelCanvas({
       for (const fieldConfig of fields) {
         const existingObj = objectsRef.current.get(fieldConfig.id);
 
-        if (existingObj) {
+          if (existingObj) {
           // UPDATE existing object properties without recreating
           // CRITICAL: Always normalize scale to prevent compounding
           const updates: any = {
@@ -257,6 +266,9 @@ export function FabricLabelCanvas({
             fontWeight: fieldConfig.style.fontWeight,
             fontFamily: fieldConfig.style.fontFamily,
             fill: fieldConfig.style.color,
+            selectable: !fieldConfig.locked,
+            evented: !fieldConfig.locked,
+            visible: fieldConfig.visible !== false,
           };
 
           // Apply fontSize ONLY if user has explicitly set one
@@ -297,6 +309,13 @@ export function FabricLabelCanvas({
 
           if (obj) {
             (obj as any).fieldId = fieldConfig.id;
+            
+            // Apply layer properties
+            obj.set({
+              selectable: !fieldConfig.locked,
+              evented: !fieldConfig.locked,
+              visible: fieldConfig.visible !== false,
+            });
             
             // Validate size and apply visual indicator
             const validation = validateFieldSize(fieldConfig);

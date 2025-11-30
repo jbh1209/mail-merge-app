@@ -1,4 +1,4 @@
-import { ZoomIn, ZoomOut, Grid3x3, Undo2, Redo2, Wand2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Plus } from 'lucide-react';
+import { ZoomIn, ZoomOut, Grid3x3, Undo2, Redo2, Wand2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Plus, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { FieldConfig, FieldType, isTextBasedFieldType } from '@/lib/canvas-utils';
 import { POPULAR_GOOGLE_FONTS } from '@/lib/google-fonts';
+import { AlignmentToolbar } from './AlignmentToolbar';
 
 interface CanvasToolbarProps {
   zoom: number;
@@ -30,10 +31,15 @@ interface CanvasToolbarProps {
   showAllLabels: boolean;
   onToggleAllLabels: () => void;
   selectedField: FieldConfig | null;
+  selectedCount: number;
   onUpdateFieldStyle: (updates: Partial<FieldConfig['style']>) => void;
   onToggleLabel: () => void;
   onUpdateFieldType: (fieldType: FieldType, typeConfig?: any) => void;
   onAddElement: () => void;
+  showLayers: boolean;
+  onToggleLayers: () => void;
+  onAlign: (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
+  onDistribute: (direction: 'horizontal' | 'vertical') => void;
 }
 
 export function CanvasToolbar({
@@ -53,10 +59,15 @@ export function CanvasToolbar({
   showAllLabels,
   onToggleAllLabels,
   selectedField,
+  selectedCount,
   onUpdateFieldStyle,
   onToggleLabel,
   onUpdateFieldType,
-  onAddElement
+  onAddElement,
+  showLayers,
+  onToggleLayers,
+  onAlign,
+  onDistribute
 }: CanvasToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 px-2 py-1.5">
@@ -138,8 +149,20 @@ export function CanvasToolbar({
 
       <Separator orientation="vertical" className="h-5" />
 
-      {/* Auto Layout */}
+      {/* Layers Toggle */}
       <Button 
+        size="sm" 
+        variant={showLayers ? "default" : "ghost"}
+        className="h-7 w-7 p-0" 
+        onClick={onToggleLayers}
+      >
+        <Layers className="h-3.5 w-3.5" />
+      </Button>
+
+      <Separator orientation="vertical" className="h-5" />
+
+      {/* Auto Layout */}
+      <Button
         size="sm" 
         variant="ghost" 
         className="h-7 px-2" 
@@ -162,8 +185,15 @@ export function CanvasToolbar({
         <Label className="text-xs">Show All Labels</Label>
       </div>
 
-      {/* Field styling options - only show when field is selected */}
-      {selectedField && (
+      {/* Alignment tools - show when fields are selected */}
+      <AlignmentToolbar
+        selectedCount={selectedCount}
+        onAlign={onAlign}
+        onDistribute={onDistribute}
+      />
+
+      {/* Field styling options - only show when single field is selected */}
+      {selectedField && selectedCount === 1 && (
         <>
           <Separator orientation="vertical" className="h-5" />
           

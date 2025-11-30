@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { DiagnosticModal } from './DiagnosticModal';
 import html2canvas from 'html2canvas';
 import { supabase } from '@/integrations/supabase/client';
+import { fabricToFieldConfigs } from '@/lib/fabric-helpers';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
@@ -40,6 +41,7 @@ export function TemplateDesignCanvas({
   projectId
 }: TemplateDesignCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const fabricCanvasRef = useRef<any>(null); // Store Fabric.js canvas instance
   const { toast } = useToast();
   
   const [currentDataIndex, setCurrentDataIndex] = useState(0);
@@ -254,9 +256,23 @@ export function TemplateDesignCanvas({
   }, [currentDataIndex, sampleData]);
 
   const handleSave = () => {
-    finalizeFieldPositions();
+    // HARD CAPTURE: Get exact state from Fabric.js canvas
+    if (!fabricCanvasRef.current) {
+      toast({
+        title: "Save Error",
+        description: "Canvas not ready. Please try again.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    console.log('💾 HARD CAPTURE from Fabric.js canvas...');
+    const capturedFields = fabricToFieldConfigs(fabricCanvasRef.current, 1);
+    
+    console.log('✅ Captured fields:', capturedFields);
+    
     const designConfig = {
-      fields,
+      fields: capturedFields, // ✅ Fresh capture from canvas, not React state!
       canvasSettings: {
         backgroundColor: settings.backgroundColor,
         showGrid: settings.showGrid,
@@ -435,8 +451,9 @@ export function TemplateDesignCanvas({
                 finalizeFieldPositions();
               }}
               onCanvasReady={(canvas) => {
-                // Canvas is ready - can add custom event handlers here if needed
-                console.log('✅ Fabric canvas initialized');
+                // Store canvas reference for hard capture at save time
+                fabricCanvasRef.current = canvas;
+                console.log('✅ Fabric canvas initialized and stored for capture');
               }}
               onFieldSelected={(fieldId) => {
                 setSelectedFieldId(fieldId);

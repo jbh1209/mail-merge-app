@@ -3,8 +3,12 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FabricLabelCanvas } from './canvas/FabricLabelCanvas';
 import { CanvasToolbar } from './canvas/CanvasToolbar';
+import { AddElementPanel } from './canvas/AddElementPanel';
+import { SequenceConfigDialog } from './canvas/SequenceConfigDialog';
+import { QRCodeConfigDialog } from './canvas/QRCodeConfigDialog';
+import { BarcodeConfigDialog } from './canvas/BarcodeConfigDialog';
 import { useCanvasState } from '@/hooks/useCanvasState';
-import { mmToPx } from '@/lib/canvas-utils';
+import { mmToPx, FieldConfig } from '@/lib/canvas-utils';
 import { CheckCircle2, Info, ChevronLeft, ChevronRight, Bug } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
@@ -52,6 +56,12 @@ export function TemplateDesignCanvas({
   const [lastLayoutData, setLastLayoutData] = useState<any>(null);
   const [labelAnalysis, setLabelAnalysis] = useState<any>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // Add element panel state
+  const [showAddElementPanel, setShowAddElementPanel] = useState(false);
+  const [showSequenceDialog, setShowSequenceDialog] = useState(false);
+  const [showQRDialog, setShowQRDialog] = useState(false);
+  const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
 
   const currentSample = sampleData?.[currentDataIndex];
   
@@ -110,6 +120,7 @@ export function TemplateDesignCanvas({
     updateSettings,
     autoLayout: autoLayoutFn,
     deleteField,
+    addField,
     toggleFieldLabels,
     toggleAllFieldLabels,
     updateFieldType,
@@ -255,6 +266,15 @@ export function TemplateDesignCanvas({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentDataIndex, sampleData]);
 
+  const handleAddElementField = (newField: Partial<FieldConfig>) => {
+    const fullField = newField as FieldConfig;
+    addField(fullField);
+    toast({
+      title: "Element Added",
+      description: `${fullField.fieldType.replace('_', ' ')} added to canvas. Drag to reposition.`,
+    });
+  };
+
   const handleSave = () => {
     // HARD CAPTURE: Get exact state from Fabric.js canvas
     if (!fabricCanvasRef.current) {
@@ -395,6 +415,7 @@ export function TemplateDesignCanvas({
               updateFieldType(selectedFieldId, fieldType, typeConfig);
             }
           }}
+          onAddElement={() => setShowAddElementPanel(!showAddElementPanel)}
         />
       </div>
 
@@ -493,6 +514,49 @@ export function TemplateDesignCanvas({
         onOpenChange={setIsDiagnosticOpen}
         diagnostic={diagnosticResult}
         isLoading={isDiagnosticLoading}
+      />
+
+      {/* Add Element Panel */}
+      {showAddElementPanel && (
+        <AddElementPanel
+          onAddSequence={() => {
+            setShowAddElementPanel(false);
+            setShowSequenceDialog(true);
+          }}
+          onAddQRCode={() => {
+            setShowAddElementPanel(false);
+            setShowQRDialog(true);
+          }}
+          onAddBarcode={() => {
+            setShowAddElementPanel(false);
+            setShowBarcodeDialog(true);
+          }}
+          onClose={() => setShowAddElementPanel(false)}
+        />
+      )}
+
+      {/* Element Configuration Dialogs */}
+      <SequenceConfigDialog
+        open={showSequenceDialog}
+        onOpenChange={setShowSequenceDialog}
+        onConfirm={handleAddElementField}
+        templateSize={templateSize}
+      />
+
+      <QRCodeConfigDialog
+        open={showQRDialog}
+        onOpenChange={setShowQRDialog}
+        onConfirm={handleAddElementField}
+        templateSize={templateSize}
+        availableFields={fieldNames}
+      />
+
+      <BarcodeConfigDialog
+        open={showBarcodeDialog}
+        onOpenChange={setShowBarcodeDialog}
+        onConfirm={handleAddElementField}
+        templateSize={templateSize}
+        availableFields={fieldNames}
       />
     </div>
   );

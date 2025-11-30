@@ -250,7 +250,7 @@ export function FabricLabelCanvas({
             obj = createAddressBlock(fieldConfig, sampleData, 1);
             break;
           case 'barcode':
-            obj = createBarcodeField(fieldConfig, 1);
+            obj = createBarcodeField(fieldConfig, sampleData, 1);
             break;
           case 'text':
           default:

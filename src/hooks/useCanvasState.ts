@@ -424,6 +424,7 @@ export const useCanvasState = ({
     selectedFieldId,
     settings,
     setSelectedFieldId,
+    updateField,  // EXPOSED: Needed for style sync from FabricLabelCanvas
     moveField,
     resizeField,
     updateFieldStyle,

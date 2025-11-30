@@ -79,6 +79,15 @@ export function FabricLabelCanvas({
 
   // Clear objects when sample data changes (page navigation)
   useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (canvas) {
+      // Actually REMOVE objects from the Fabric canvas
+      objectsRef.current.forEach((obj) => {
+        canvas.remove(obj);
+      });
+      canvas.renderAll();
+    }
+    // Then clear our tracking map
     objectsRef.current.clear();
   }, [sampleData]);
 

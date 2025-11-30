@@ -19,6 +19,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { fabricToFieldConfigs } from '@/lib/fabric-helpers';
 import { FieldSuggestion, shouldShowSuggestions } from '@/lib/field-detection-utils';
 import { LayersPanel } from './canvas/LayersPanel';
+import { CanvasContextMenu } from './canvas/CanvasContextMenu';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
@@ -70,6 +71,7 @@ export function TemplateDesignCanvas({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestions, setActiveSuggestions] = useState<FieldSuggestion[]>([]);
   const [showLayersPanel, setShowLayersPanel] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; fieldId: string } | null>(null);
 
   const currentSample = sampleData?.[currentDataIndex];
   
@@ -492,14 +494,28 @@ export function TemplateDesignCanvas({
             </div>
             
             {/* Fabric.js Canvas */}
-            <FabricLabelCanvas
-              templateSize={templateSize}
-              fields={fields}
-              sampleData={sampleRow}
-              recordIndex={currentDataIndex}
-              scale={settings.scale}
-              showGrid={settings.showGrid}
-              onFieldsChange={(updatedFields) => {
+            <div 
+              onContextMenu={(e) => {
+                e.preventDefault();
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'CANVAS' && selectedFieldIds.length === 1) {
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    fieldId: selectedFieldIds[0]
+                  });
+                }
+              }}
+            >
+              <div ref={canvasRef}>
+                <FabricLabelCanvas
+                  templateSize={templateSize}
+                  fields={fields}
+                  sampleData={sampleRow}
+                  recordIndex={currentDataIndex}
+                  scale={settings.scale}
+                  showGrid={settings.showGrid}
+                  onFieldsChange={(updatedFields) => {
                 // CRITICAL: Handle ALL field updates including style sync from fitTextToBox
                 updatedFields.forEach((updatedField) => {
                   const originalField = fields.find(f => f.id === updatedField.id);
@@ -544,9 +560,11 @@ export function TemplateDesignCanvas({
                 setSelection(fieldIds);
               }}
             />
+            </div>
+            </div>
           </div>
         </div>
-      </div>
+        </div>
 
         {/* Layers Panel */}
         {showLayersPanel && (
@@ -591,6 +609,38 @@ export function TemplateDesignCanvas({
         </Button>
       </div>
 
+      {/* Context Menu */}
+      {contextMenu && selectedField && (
+        <CanvasContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          fieldId={contextMenu.fieldId}
+          isLocked={selectedField.locked || false}
+          isVisible={selectedField.visible !== false}
+          onDelete={() => {
+            deleteField(contextMenu.fieldId);
+            setContextMenu(null);
+          }}
+          onToggleLock={() => {
+            toggleFieldLock(contextMenu.fieldId);
+            setContextMenu(null);
+          }}
+          onToggleVisibility={() => {
+            toggleFieldVisibility(contextMenu.fieldId);
+            setContextMenu(null);
+          }}
+          onBringToFront={() => {
+            bringToFront(contextMenu.fieldId);
+            setContextMenu(null);
+          }}
+          onSendToBack={() => {
+            sendToBack(contextMenu.fieldId);
+            setContextMenu(null);
+          }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+      
       {/* Diagnostic Modal */}
       <DiagnosticModal
         open={isDiagnosticOpen}

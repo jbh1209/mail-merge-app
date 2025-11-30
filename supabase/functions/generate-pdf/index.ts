@@ -175,7 +175,7 @@ function renderTextField(
   }
 }
 
-// Render barcode using pattern-based approach (SVG-compatible)
+// Render barcode using bwip-js for production-quality output
 function renderBarcodeField(
   page: PDFPage,
   pdfDoc: PDFDocument,
@@ -188,38 +188,86 @@ function renderBarcodeField(
   height: number
 ) {
   const value = dataColumn ? String(dataRow[dataColumn] || '') : field.typeConfig?.staticValue || '123456789012';
+  const format = field.typeConfig?.barcodeFormat || 'CODE128';
   
-  // Generate barcode pattern based on value (simplified but recognizable)
-  const barCount = Math.min(value.length * 2, 40);
-  const barWidth = (width - 12) / barCount;
-  
-  for (let i = 0; i < barCount; i++) {
-    // Create pattern based on character codes in the value
-    const charIndex = Math.floor(i / 2) % value.length;
-    const charCode = value.charCodeAt(charIndex);
-    const shouldDraw = (charCode + i) % 3 !== 0;
+  try {
+    // Map format names to bwip-js bcid values
+    const bcidMap: Record<string, string> = {
+      'CODE128': 'code128',
+      'CODE39': 'code39',
+      'EAN13': 'ean13',
+      'UPCA': 'upca',
+    };
     
-    if (shouldDraw) {
+    const bcid = bcidMap[format] || 'code128';
+    
+    // Generate barcode SVG using bwip-js
+    const svg = bwipjs.toSVG({
+      bcid: bcid,
+      text: value,
+      scale: 3,
+      height: 10,
+      includetext: field.typeConfig?.showText ?? true,
+      textxalign: 'center',
+    });
+    
+    // Parse SVG to extract rectangles
+    // SVG from bwip-js contains rect elements we can parse
+    const rectRegex = /<rect\s+x="([^"]+)"\s+y="([^"]+)"\s+width="([^"]+)"\s+height="([^"]+)"/g;
+    let match;
+    
+    // Get SVG dimensions
+    const viewBoxMatch = svg.match(/viewBox="0 0 ([0-9.]+) ([0-9.]+)"/);
+    if (!viewBoxMatch) throw new Error('Could not parse SVG viewBox');
+    
+    const svgWidth = parseFloat(viewBoxMatch[1]);
+    const svgHeight = parseFloat(viewBoxMatch[2]);
+    
+    // Calculate scale to fit in PDF space
+    const scaleX = (width - 4) / svgWidth;
+    const scaleY = (height - 4) / svgHeight;
+    const scale = Math.min(scaleX, scaleY);
+    
+    // Center the barcode
+    const offsetX = x + (width - (svgWidth * scale)) / 2;
+    const offsetY = y + (height - (svgHeight * scale)) / 2;
+    
+    // Draw each rectangle from the SVG
+    while ((match = rectRegex.exec(svg)) !== null) {
+      const rectX = parseFloat(match[1]);
+      const rectY = parseFloat(match[2]);
+      const rectW = parseFloat(match[3]);
+      const rectH = parseFloat(match[4]);
+      
       page.drawRectangle({
-        x: x + 6 + (i * barWidth),
-        y: y + height * 0.25,
-        width: barWidth * 0.8,
-        height: height * 0.5,
+        x: offsetX + (rectX * scale),
+        y: offsetY + ((svgHeight - rectY - rectH) * scale),
+        width: rectW * scale,
+        height: rectH * scale,
         color: rgb(0, 0, 0)
       });
     }
+  } catch (error) {
+    console.error('Barcode generation error:', error);
+    // Fallback to placeholder
+    page.drawRectangle({
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      borderColor: rgb(0.8, 0, 0),
+      borderWidth: 1
+    });
+    page.drawText('BARCODE ERROR', {
+      x: x + 6,
+      y: y + height / 2,
+      size: 8,
+      color: rgb(1, 0, 0)
+    });
   }
-  
-  // Draw value below barcode
-  page.drawText(value.slice(0, 25), {
-    x: x + 6,
-    y: y + 4,
-    size: 7,
-    color: rgb(0, 0, 0)
-  });
 }
 
-// Render real QR code using qrcode-svg
+// Render real QR code using qrcode-svg with proper module rendering
 function renderQRCodeField(
   page: PDFPage,
   pdfDoc: PDFDocument,
@@ -234,12 +282,14 @@ function renderQRCodeField(
   const value = dataColumn ? String(dataRow[dataColumn] || '') : field.typeConfig?.staticValue || 'https://example.com';
   
   try {
+    const size = Math.min(width, height) - 4;
+    
     // Generate QR code SVG
     const qr = new QRCode({
       content: value,
       padding: 0,
-      width: Math.min(width, height),
-      height: Math.min(width, height),
+      width: size,
+      height: size,
       color: '#000000',
       background: '#ffffff',
       ecl: field.typeConfig?.qrErrorCorrection || 'M',
@@ -247,59 +297,51 @@ function renderQRCodeField(
     
     const svg = qr.svg();
     
-    // Parse SVG and draw modules as rectangles
-    // QR codes are made of square modules, we'll create a simplified pattern
-    const size = Math.min(width, height) - 4;
-    const modules = 25; // Approximate module count for typical QR
-    const moduleSize = size / modules;
-    const startX = x + (width - size) / 2;
-    const startY = y + (height - size) / 2;
+    // Parse SVG to extract rect elements (QR code modules)
+    const rectRegex = /<rect\s+x="([^"]+)"\s+y="([^"]+)"\s+width="([^"]+)"\s+height="([^"]+)"/g;
+    let match;
     
-    // Draw a QR-like pattern based on the data
-    for (let row = 0; row < modules; row++) {
-      for (let col = 0; col < modules; col++) {
-        // Create pseudo-random pattern based on value
-        const hash = (value.charCodeAt((row * modules + col) % value.length) + row + col) % 3;
-        if (hash === 0) {
-          page.drawRectangle({
-            x: startX + (col * moduleSize),
-            y: startY + size - ((row + 1) * moduleSize),
-            width: moduleSize,
-            height: moduleSize,
-            color: rgb(0, 0, 0)
-          });
-        }
-      }
+    // Get SVG dimensions
+    const viewBoxMatch = svg.match(/viewBox="0 0 ([0-9.]+) ([0-9.]+)"/);
+    if (!viewBoxMatch) {
+      throw new Error('Could not parse QR code SVG viewBox');
     }
     
-    // Draw finder patterns (corners)
-    const finderSize = moduleSize * 7;
-    const drawFinderPattern = (fx: number, fy: number) => {
-      // Outer square
+    const svgWidth = parseFloat(viewBoxMatch[1]);
+    const svgHeight = parseFloat(viewBoxMatch[2]);
+    
+    // Calculate scale and centering
+    const scaleX = size / svgWidth;
+    const scaleY = size / svgHeight;
+    const scale = Math.min(scaleX, scaleY);
+    
+    const offsetX = x + (width - size) / 2;
+    const offsetY = y + (height - size) / 2;
+    
+    // Draw white background
+    page.drawRectangle({
+      x: offsetX,
+      y: offsetY,
+      width: size,
+      height: size,
+      color: rgb(1, 1, 1)
+    });
+    
+    // Draw each QR code module from the SVG
+    while ((match = rectRegex.exec(svg)) !== null) {
+      const rectX = parseFloat(match[1]);
+      const rectY = parseFloat(match[2]);
+      const rectW = parseFloat(match[3]);
+      const rectH = parseFloat(match[4]);
+      
       page.drawRectangle({
-        x: fx,
-        y: fy,
-        width: finderSize,
-        height: finderSize,
-        borderColor: rgb(0, 0, 0),
-        borderWidth: moduleSize
-      });
-      // Inner square
-      page.drawRectangle({
-        x: fx + moduleSize * 2,
-        y: fy + moduleSize * 2,
-        width: moduleSize * 3,
-        height: moduleSize * 3,
+        x: offsetX + (rectX * scale),
+        y: offsetY + size - ((rectY + rectH) * scale),
+        width: rectW * scale,
+        height: rectH * scale,
         color: rgb(0, 0, 0)
       });
-    };
-    
-    // Top-left
-    drawFinderPattern(startX, startY + size - finderSize);
-    // Top-right
-    drawFinderPattern(startX + size - finderSize, startY + size - finderSize);
-    // Bottom-left
-    drawFinderPattern(startX, startY);
+    }
     
   } catch (error) {
     console.error('QR code generation error:', error);

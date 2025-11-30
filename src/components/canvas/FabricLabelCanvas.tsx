@@ -215,10 +215,13 @@ export function FabricLabelCanvas({
 
       if (existingObj) {
         // UPDATE existing object properties without recreating
+        // CRITICAL: Always normalize scale to prevent compounding
         const updates: any = {
           left: mmToPx(fieldConfig.position.x),
           top: mmToPx(fieldConfig.position.y),
           width: mmToPx(fieldConfig.size.width),
+          scaleX: 1,  // Always reset scale
+          scaleY: 1,  // Always reset scale
           textAlign: fieldConfig.style.textAlign,
           fontWeight: fieldConfig.style.fontWeight,
           fontFamily: fieldConfig.style.fontFamily,
@@ -226,8 +229,13 @@ export function FabricLabelCanvas({
         };
 
         // Apply fontSize ONLY if user has explicitly set one
-        // This prevents overriding auto-fitted font sizes
         if (fieldConfig.userOverrideFontSize) {
+          console.log('🔧 Applying user font size:', {
+            fieldId: fieldConfig.id,
+            fontSize: fieldConfig.userOverrideFontSize,
+            previousFontSize: existingObj.fontSize,
+            previousScale: { x: existingObj.scaleX, y: existingObj.scaleY }
+          });
           updates.fontSize = fieldConfig.userOverrideFontSize;
         }
 

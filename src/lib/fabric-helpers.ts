@@ -224,28 +224,191 @@ export function createAddressBlock(
   return textbox as LabelFieldObject;
 }
 
-export function createBarcodeField(
+export async function createBarcodeField(
   fieldConfig: FieldConfig,
   sampleData?: Record<string, any>,
   scale: number = 1
-): Group {
+): Promise<Group> {
+  const { generateBarcodeSVG } = await import('./barcode-svg-utils');
   const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
   
-  // Placeholder for now - real implementation in next phase
-  const rect = new Rect({
-    width: pxCoords.size.width,
-    height: pxCoords.size.height,
-    fill: '#e0e0e0',
-    stroke: '#999',
-  });
+  // Get barcode value from data
+  const value = getFieldValue(fieldConfig.templateField, sampleData) || '123456789012';
+  const format = fieldConfig.typeConfig?.barcodeFormat || 'CODE128';
   
-  const group = new Group([rect], {
+  try {
+    // Generate SVG barcode
+    const svgString = generateBarcodeSVG(value, format, {
+      width: pxCoords.size.width,
+      height: pxCoords.size.height,
+    });
+    
+    // Load SVG into Fabric.js
+    const { loadSVGFromString } = await import('fabric');
+    
+    return new Promise((resolve) => {
+      loadSVGFromString(svgString).then(({ objects, options }) => {
+        const group = new Group(objects, {
+          left: pxCoords.position.x,
+          top: pxCoords.position.y,
+          originX: 'left',
+          originY: 'top',
+          selectable: true,
+          hasControls: true,
+          lockRotation: true,
+        });
+        
+        (group as any).fieldType = 'barcode';
+        (group as any).templateField = fieldConfig.templateField;
+        (group as any).typeConfig = fieldConfig.typeConfig;
+        
+        resolve(group);
+      });
+    });
+  } catch (error) {
+    console.error('Error creating barcode:', error);
+    // Fallback to placeholder
+    const rect = new Rect({
+      width: pxCoords.size.width,
+      height: pxCoords.size.height,
+      fill: '#e0e0e0',
+      stroke: '#999',
+    });
+    
+    const text = new Text('BARCODE\nERROR', {
+      fontSize: 12,
+      fill: '#ff0000',
+      textAlign: 'center',
+      originX: 'center',
+      originY: 'center',
+    });
+    
+    const group = new Group([rect, text], {
+      left: pxCoords.position.x,
+      top: pxCoords.position.y,
+      originX: 'left',
+      originY: 'top',
+    });
+    
+    (group as any).fieldType = 'barcode';
+    (group as any).templateField = fieldConfig.templateField;
+    return group;
+  }
+}
+
+export async function createQRCodeField(
+  fieldConfig: FieldConfig,
+  sampleData?: Record<string, any>,
+  scale: number = 1
+): Promise<Group> {
+  const { generateQRCodeSVG } = await import('./barcode-svg-utils');
+  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  
+  // Get QR code value from data
+  const value = getFieldValue(fieldConfig.templateField, sampleData) || 'https://example.com';
+  
+  try {
+    // Generate SVG QR code
+    const svgString = generateQRCodeSVG(value, {
+      width: pxCoords.size.width,
+      height: pxCoords.size.height,
+      ecLevel: fieldConfig.typeConfig?.qrErrorCorrection || 'M',
+    });
+    
+    // Load SVG into Fabric.js
+    const { loadSVGFromString } = await import('fabric');
+    
+    return new Promise((resolve) => {
+      loadSVGFromString(svgString).then(({ objects, options }) => {
+        const group = new Group(objects, {
+          left: pxCoords.position.x,
+          top: pxCoords.position.y,
+          originX: 'left',
+          originY: 'top',
+          selectable: true,
+          hasControls: true,
+          lockRotation: true,
+        });
+        
+        (group as any).fieldType = 'qrcode';
+        (group as any).templateField = fieldConfig.templateField;
+        (group as any).typeConfig = fieldConfig.typeConfig;
+        
+        resolve(group);
+      });
+    });
+  } catch (error) {
+    console.error('Error creating QR code:', error);
+    // Fallback to placeholder
+    const rect = new Rect({
+      width: pxCoords.size.width,
+      height: pxCoords.size.height,
+      fill: '#e0e0e0',
+      stroke: '#999',
+    });
+    
+    const text = new Text('QR CODE\nERROR', {
+      fontSize: 12,
+      fill: '#ff0000',
+      textAlign: 'center',
+      originX: 'center',
+      originY: 'center',
+    });
+    
+    const group = new Group([rect, text], {
+      left: pxCoords.position.x,
+      top: pxCoords.position.y,
+      originX: 'left',
+      originY: 'top',
+    });
+    
+    (group as any).fieldType = 'qrcode';
+    (group as any).templateField = fieldConfig.templateField;
+    return group;
+  }
+}
+
+export function createSequenceField(
+  fieldConfig: FieldConfig,
+  recordIndex: number,
+  scale: number = 1
+): LabelFieldObject {
+  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  
+  // Calculate sequence value
+  const config = fieldConfig.typeConfig || {};
+  const start = config.sequenceStart || 1;
+  const prefix = config.sequencePrefix || '';
+  const suffix = config.sequenceSuffix || '';
+  const padding = config.sequencePadding || 0;
+  
+  const number = start + recordIndex;
+  const paddedNumber = String(number).padStart(padding, '0');
+  const displayText = prefix + paddedNumber + suffix;
+  
+  const textbox = new Textbox(displayText, {
     left: pxCoords.position.x,
     top: pxCoords.position.y,
+    width: pxCoords.size.width,
+    fontSize: fieldConfig.style.fontSize || 24,
+    fontFamily: fieldConfig.style.fontFamily || 'Arial',
+    fontWeight: fieldConfig.style.fontWeight || 'normal',
+    fill: fieldConfig.style.color || '#000000',
+    textAlign: fieldConfig.style.textAlign || 'center',
+    originX: 'left',
+    originY: 'top',
+    selectable: true,
+    hasControls: true,
+    hasBorders: true,
+    lockRotation: true,
   });
-  (group as any).fieldType = 'barcode';
-  (group as any).templateField = fieldConfig.templateField;
-  return group;
+  
+  (textbox as any).fieldName = fieldConfig.templateField;
+  (textbox as any).fieldType = 'sequence';
+  (textbox as any).templateField = fieldConfig.templateField;
+  (textbox as any).typeConfig = fieldConfig.typeConfig;
+  
+  return textbox as LabelFieldObject;
 }
 
 /**

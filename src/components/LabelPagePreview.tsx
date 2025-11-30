@@ -55,13 +55,18 @@ export function LabelPagePreview({
     const width = mmToPx(field.size.width, scale);
     const height = mmToPx(field.size.height, scale);
 
+    // Convert pt to px at base scale, then scale proportionally
+    const baseFontSizePx = (field.style.fontSize / 72) * 96;
+    const scaledFontSizePx = baseFontSizePx * scale;
+
     const style = {
-      fontSize: `${field.style.fontSize}pt`,
+      fontSize: `${scaledFontSizePx}px`,
       fontFamily: field.style.fontFamily,
       fontWeight: field.style.fontWeight,
       textAlign: field.style.textAlign,
       color: field.style.color,
       whiteSpace: field.fieldType === 'address_block' ? 'pre-line' : 'normal',
+      lineHeight: '1.2',
     };
 
     return (
@@ -81,7 +86,7 @@ export function LabelPagePreview({
             {field.templateField}
           </div>
         )}
-        <div className={field.fieldType === 'address_block' ? 'whitespace-pre-line' : 'truncate'}>{value}</div>
+        <div className="whitespace-pre-line">{value}</div>
       </div>
     );
   };

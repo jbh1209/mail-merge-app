@@ -483,6 +483,7 @@ export function TemplateDesignCanvas({
               templateSize={templateSize}
               fields={fields}
               sampleData={sampleRow}
+              recordIndex={currentDataIndex}
               scale={settings.scale}
               showGrid={settings.showGrid}
               onFieldsChange={(updatedFields) => {

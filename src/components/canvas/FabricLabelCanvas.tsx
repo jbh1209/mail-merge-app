@@ -15,6 +15,7 @@ interface FabricLabelCanvasProps {
   templateSize: { width: number; height: number }; // in mm
   fields: FieldConfig[];
   sampleData?: Record<string, any>;
+  recordIndex?: number;
   scale: number;
   showGrid?: boolean;
   onFieldsChange?: (fields: FieldConfig[]) => void;
@@ -26,6 +27,7 @@ export function FabricLabelCanvas({
   templateSize,
   fields,
   sampleData,
+  recordIndex = 0,
   scale,
   showGrid = true,
   onFieldsChange,
@@ -285,7 +287,7 @@ export function FabricLabelCanvas({
               obj = await createQRCodeField(fieldConfig, sampleData, 1);
               break;
             case 'sequence':
-              obj = createSequenceField(fieldConfig, 0, 1); // recordIndex 0 for preview
+              obj = createSequenceField(fieldConfig, recordIndex, 1);
               break;
             case 'text':
             default:
@@ -371,7 +373,7 @@ export function FabricLabelCanvas({
     };
 
     processFields();
-  }, [fields]); // Only depend on fields, not sampleData (text updates handled separately)
+  }, [fields, sampleData, recordIndex]); // Depend on fields, sampleData, and recordIndex
 
   return (
     <div className="relative border-2 border-border rounded-lg overflow-hidden shadow-lg bg-muted/20">

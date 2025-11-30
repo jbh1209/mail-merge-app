@@ -31,6 +31,7 @@ export interface FieldConfig {
   overflow: 'truncate' | 'wrap' | 'shrink';
   autoFit?: boolean; // Enable auto-sizing for best fit
   autoFitApplied?: boolean; // Track if autoFit has already been applied
+  userOverrideFontSize?: number; // Explicitly set font size by user (overrides autoFit)
   showLabel?: boolean;
   labelStyle?: {
     fontSize: number;

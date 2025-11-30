@@ -77,14 +77,28 @@ export function FabricLabelCanvas({
       const obj = e.target as any;
       if (!obj?.fieldId || !onFieldsChange) return;
       
-      // Convert pixel positions back to mm
+      // Get the ACTUAL rendered dimensions (including scale)
+      const actualWidth = obj.getScaledWidth();
+      const actualHeight = obj.getScaledHeight();
+      
+      // CRITICAL: Reset the object to use actual dimensions without scale
+      // This prevents scale from compounding with future updates
+      obj.set({
+        width: actualWidth,
+        height: actualHeight,
+        scaleX: 1,
+        scaleY: 1
+      });
+      obj.setCoords();
+      
+      // Convert pixel positions back to mm using normalized dimensions
       const newPosition = {
         x: pxToMm(obj.left),
         y: pxToMm(obj.top)
       };
       const newSize = {
-        width: pxToMm(obj.getScaledWidth()),
-        height: pxToMm(obj.getScaledHeight())
+        width: pxToMm(actualWidth),
+        height: pxToMm(actualHeight)
       };
       
       // Sync back to React state via callback
@@ -98,6 +112,7 @@ export function FabricLabelCanvas({
 
     return () => {
       canvas.dispose();
+      objectsRef.current.clear();
       fabricCanvasRef.current = null;
     };
   }, [templateSize.width, templateSize.height]);
@@ -163,6 +178,11 @@ export function FabricLabelCanvas({
         canvas.add(line);
         gridObjectsRef.current.push(line);
       }
+      
+      // CRITICAL: Send all grid lines to the back so they don't cover text
+      gridObjectsRef.current.forEach(line => {
+        canvas.sendObjectToBack(line);
+      });
     }
 
     canvas.renderAll();
@@ -205,10 +225,10 @@ export function FabricLabelCanvas({
           fill: fieldConfig.style.color,
         };
 
-        // Only apply fontSize when autoFit is DISABLED
-        // When autoFit is enabled, preserve the Fabric object's fitted size
-        if (!fieldConfig.autoFit) {
-          updates.fontSize = fieldConfig.style.fontSize;
+        // Apply fontSize ONLY if user has explicitly set one
+        // This prevents overriding auto-fitted font sizes
+        if (fieldConfig.userOverrideFontSize) {
+          updates.fontSize = fieldConfig.userOverrideFontSize;
         }
 
         existingObj.set(updates);
@@ -262,6 +282,14 @@ export function FabricLabelCanvas({
         canvas.remove(obj);
         objectsRef.current.delete(fieldId);
       }
+    });
+
+    // Debugging: Track object lifecycle
+    console.log('📊 Canvas field sync:', {
+      fieldsCount: fields.length,
+      objectsRefSize: objectsRef.current.size,
+      fieldIds: fields.map(f => f.id),
+      objectIds: Array.from(objectsRef.current.keys())
     });
 
     canvas.renderAll();

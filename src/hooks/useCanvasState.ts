@@ -291,6 +291,7 @@ export const useCanvasState = ({
           fieldType: (field.fieldType as any) || 'text' as const,
           overflow: 'wrap' as const,
           autoFit: true, // Allow auto-fit on first render
+          autoFitApplied: false, // Explicitly mark as not yet applied
           ...(field.combinedFields && { combinedFields: field.combinedFields })
         }));
         

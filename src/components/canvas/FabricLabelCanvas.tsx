@@ -205,8 +205,9 @@ export function FabricLabelCanvas({
           fill: fieldConfig.style.color,
         };
 
-        // Only apply fontSize if user explicitly set it (autoFit disabled or not applied yet)
-        if (fieldConfig.autoFit === false || !fieldConfig.autoFitApplied) {
+        // Only apply fontSize when autoFit is DISABLED
+        // When autoFit is enabled, preserve the Fabric object's fitted size
+        if (!fieldConfig.autoFit) {
           updates.fontSize = fieldConfig.style.fontSize;
         }
 
@@ -233,6 +234,24 @@ export function FabricLabelCanvas({
           (obj as any).fieldId = fieldConfig.id;
           canvas.add(obj);
           objectsRef.current.set(fieldConfig.id, obj);
+          
+          // If autoFit was applied, sync the fitted fontSize back to React state
+          if (fieldConfig.autoFit && !fieldConfig.autoFitApplied && onFieldsChange) {
+            const fittedFontSize = (obj as any).fontSize;
+            if (fittedFontSize) {
+              const updatedFields = fields.map(f => 
+                f.id === fieldConfig.id 
+                  ? { 
+                      ...f, 
+                      autoFitApplied: true,
+                      style: { ...f.style, fontSize: fittedFontSize }
+                    }
+                  : f
+              );
+              // Defer the state update to avoid render loop
+              setTimeout(() => onFieldsChange(updatedFields), 0);
+            }
+          }
         }
       }
     });
@@ -246,7 +265,7 @@ export function FabricLabelCanvas({
     });
 
     canvas.renderAll();
-  }, [fields, sampleData]);
+  }, [fields]); // Only depend on fields, not sampleData (text updates handled separately)
 
   return (
     <div className="relative border-2 border-border rounded-lg overflow-hidden shadow-lg bg-muted/20">

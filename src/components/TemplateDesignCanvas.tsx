@@ -473,7 +473,7 @@ export function TemplateDesignCanvas({
 
       {/* Main canvas area - takes all available space */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 overflow-auto bg-muted/20 p-4 min-h-0">
+        <div className="flex-1 overflow-auto bg-muted/20 p-4 flex items-center justify-center">
           {/* Smart Suggestions Panel */}
           {showSuggestions && activeSuggestions.length > 0 && (
           <div className="mb-4">

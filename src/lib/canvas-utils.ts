@@ -206,7 +206,7 @@ export const autoLayoutFieldsSimple = (
   const fieldHeight = (usableHeight - (fieldCount - 1) * 2) / fieldCount; // 2mm spacing
   
   return fieldNames.map((name, index) => ({
-    id: `field-${crypto.randomUUID()}`,
+    id: `field-${name}-${crypto.randomUUID().slice(0, 8)}`,
     templateField: name,
     position: { x: padding, y: padding + index * (fieldHeight + 2) },
     size: { width: usableWidth, height: fieldHeight },

@@ -39,11 +39,23 @@ export function FabricLabelCanvas({
   const objectsRef = useRef<Map<string, any>>(new Map());
   const gridObjectsRef = useRef<any[]>([]);
 
+  // Refs for callbacks to avoid canvas recreation
+  const onFieldsChangeRef = useRef(onFieldsChange);
+  const onFieldsSelectedRef = useRef(onFieldsSelected);
+  const fieldsRef = useRef(fields);
+
+  // Keep refs updated
+  useEffect(() => {
+    onFieldsChangeRef.current = onFieldsChange;
+    onFieldsSelectedRef.current = onFieldsSelected;
+    fieldsRef.current = fields;
+  });
+
   // Single conversion function - everything at base scale
   const mmToPx = (mm: number) => mm * 3.7795;
   const pxToMm = (px: number) => px / 3.7795;
 
-  // Initialize canvas once
+  // Initialize canvas once (only on mount or size change)
   useEffect(() => {
     if (!canvasRef.current) return;
 
@@ -64,44 +76,52 @@ export function FabricLabelCanvas({
       onCanvasReady(canvas);
     }
 
-    // Multi-selection events
-    canvas.on('selection:created', (e) => {
-      if (!onFieldsSelected) return;
+    return () => {
+      canvas.dispose();
+      objectsRef.current.clear();
+      fabricCanvasRef.current = null;
+    };
+  }, [templateSize.width, templateSize.height]);
+
+  // Setup event handlers (uses refs to avoid recreating canvas)
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+
+    const handleSelectionCreated = (e: any) => {
+      if (!onFieldsSelectedRef.current) return;
       const selectedIds = (e.selected || [])
         .map((obj: any) => obj.fieldId)
         .filter(Boolean);
-      onFieldsSelected(selectedIds);
-    });
+      onFieldsSelectedRef.current(selectedIds);
+    };
 
-    canvas.on('selection:updated', (e) => {
-      if (!onFieldsSelected) return;
+    const handleSelectionUpdated = (e: any) => {
+      if (!onFieldsSelectedRef.current) return;
       const selectedIds = (e.selected || [])
         .map((obj: any) => obj.fieldId)
         .filter(Boolean);
-      onFieldsSelected(selectedIds);
-    });
+      onFieldsSelectedRef.current(selectedIds);
+    };
 
-    canvas.on('selection:cleared', () => {
-      if (onFieldsSelected) {
-        onFieldsSelected([]);
+    const handleSelectionCleared = () => {
+      if (onFieldsSelectedRef.current) {
+        onFieldsSelectedRef.current([]);
       }
-    });
+    };
 
-    // Handle object modifications (drag, resize)
-    canvas.on('object:modified', (e) => {
+    const handleObjectModified = (e: any) => {
       const obj = e.target as any;
-      if (!obj?.fieldId || !onFieldsChange) return;
+      if (!obj?.fieldId || !onFieldsChangeRef.current) return;
       
       // Get the ACTUAL rendered dimensions (including scale)
       const actualWidth = obj.getScaledWidth();
       const actualHeight = obj.getScaledHeight();
       
       // CRITICAL: Handle Groups (barcodes/QR codes) differently
-      // Groups should keep their scale, not normalize to width/height
       const isGroup = obj.type === 'Group' || obj.type === 'group';
       
       if (!isGroup) {
-        // For normal objects: Reset to use actual dimensions without scale
         obj.set({
           width: actualWidth,
           height: actualHeight,
@@ -110,9 +130,7 @@ export function FabricLabelCanvas({
         });
         obj.setCoords();
       }
-      // For Groups: Keep scale values as-is, they handle sizing differently
       
-      // Convert pixel positions back to mm using normalized dimensions
       const newPosition = {
         x: pxToMm(obj.left),
         y: pxToMm(obj.top)
@@ -123,19 +141,17 @@ export function FabricLabelCanvas({
       };
       
       // Find the field config to validate
-      const fieldConfig = fields.find(f => f.id === obj.fieldId);
+      const fieldConfig = fieldsRef.current.find(f => f.id === obj.fieldId);
       if (fieldConfig) {
         const updatedField = { ...fieldConfig, position: newPosition, size: newSize };
         const validation = validateFieldSize(updatedField);
         
-        // Apply validation border color
         const borderColor = getValidationBorderColor(validation);
         obj.set({
           stroke: borderColor,
           strokeWidth: borderColor ? 2 : 0
         });
         
-        // Show toast warning/error if size is problematic
         if (validation.message) {
           toast({
             title: validation.severity === 'error' ? 'Size Too Small' : 'Size Warning',
@@ -145,27 +161,43 @@ export function FabricLabelCanvas({
         }
       }
       
-      // Sync back to React state via callback
-      const updatedFields = fields.map(f => 
+      const updatedFields = fieldsRef.current.map(f => 
         f.id === obj.fieldId 
           ? { ...f, position: newPosition, size: newSize }
           : f
       );
-      onFieldsChange(updatedFields);
-    });
+      onFieldsChangeRef.current(updatedFields);
+    };
 
-    // Keyboard event handler for Delete key
+    canvas.on('selection:created', handleSelectionCreated);
+    canvas.on('selection:updated', handleSelectionUpdated);
+    canvas.on('selection:cleared', handleSelectionCleared);
+    canvas.on('object:modified', handleObjectModified);
+
+    return () => {
+      canvas.off('selection:created', handleSelectionCreated);
+      canvas.off('selection:updated', handleSelectionUpdated);
+      canvas.off('selection:cleared', handleSelectionCleared);
+      canvas.off('object:modified', handleObjectModified);
+    };
+  }, []);
+
+  // Keyboard handler (uses refs to avoid recreating canvas)
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const canvas = fabricCanvasRef.current;
+      if (!canvas) return;
+      
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const activeObj = canvas.getActiveObject();
-        if (activeObj && (activeObj as any).fieldId && onFieldsChange) {
+        if (activeObj && (activeObj as any).fieldId && onFieldsChangeRef.current) {
           const fieldId = (activeObj as any).fieldId;
-          const updatedFields = fields.filter(f => f.id !== fieldId);
-          onFieldsChange(updatedFields);
+          const updatedFields = fieldsRef.current.filter(f => f.id !== fieldId);
+          onFieldsChangeRef.current(updatedFields);
           canvas.remove(activeObj);
           canvas.renderAll();
-          if (onFieldsSelected) {
-            onFieldsSelected([]);
+          if (onFieldsSelectedRef.current) {
+            onFieldsSelectedRef.current([]);
           }
           e.preventDefault();
         }
@@ -173,14 +205,8 @@ export function FabricLabelCanvas({
     };
     
     window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      canvas.dispose();
-      objectsRef.current.clear();
-      fabricCanvasRef.current = null;
-    };
-  }, [templateSize.width, templateSize.height, fields, onFieldsChange, onFieldsSelected]);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Update text content when sample data changes (page navigation)
   useEffect(() => {

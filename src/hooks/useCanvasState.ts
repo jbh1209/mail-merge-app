@@ -283,7 +283,7 @@ export const useCanvasState = ({
           showLabel: settings.showAllLabels,
           fieldType: (field.fieldType as any) || 'text' as const,
           overflow: 'wrap' as const,
-          autoFitApplied: true, // Mark as applied to prevent re-fitting on zoom
+          autoFit: true, // Allow auto-fit on first render
           ...(field.combinedFields && { combinedFields: field.combinedFields })
         }));
         
@@ -335,7 +335,7 @@ export const useCanvasState = ({
           },
           showLabel: settings.showAllLabels,
           fieldType: 'text' as const,
-          autoFitApplied: true // Mark as applied to prevent re-fitting on zoom
+          autoFit: true // Allow auto-fit on first render
         }));
         
         setFields(newFields);

@@ -190,9 +190,15 @@ export default function ProjectDetail() {
   const handleSaveDesign = async (updatedConfig: any) => {
     if (!editingTemplate) return;
     
+    // Merge with existing design_config to preserve metadata (averyCode, baseTemplate, etc.)
+    const mergedConfig = {
+      ...editingTemplate.design_config,
+      ...updatedConfig,
+    };
+    
     const { error } = await supabase
       .from('templates')
-      .update({ design_config: updatedConfig })
+      .update({ design_config: mergedConfig })
       .eq('id', editingTemplate.id);
     
     if (error) {
@@ -338,16 +344,14 @@ export default function ProjectDetail() {
                           <Badge variant="secondary">
                             {new Date(template.created_at).toLocaleDateString()}
                           </Badge>
-                          {template.design_config && (
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => handleEditTemplate(template)}
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit Design
-                            </Button>
-                          )}
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleEditTemplate(template)}
+                          >
+                            <Edit className="h-4 w-4 mr-2" />
+                            {(template.design_config as any)?.fields ? 'Edit Design' : 'Design Layout'}
+                          </Button>
                         </div>
                       </div>
                     </div>

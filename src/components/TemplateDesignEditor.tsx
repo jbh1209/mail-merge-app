@@ -35,13 +35,30 @@ export function TemplateDesignEditor({
     enabled: open,
   });
 
+  // Fetch field names from field_mappings if design_config.fields doesn't exist
+  const { data: fieldMapping } = useQuery({
+    queryKey: ["field-mapping-for-template", template.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("field_mappings")
+        .select("mappings")
+        .eq("template_id", template.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      return data;
+    },
+    enabled: open && !template.design_config?.fields,
+  });
+
   // Extract sample data from parsed_fields
   const sampleData = (dataSource?.parsed_fields as any)?.rows || 
                      (dataSource?.parsed_fields as any)?.preview || 
                      [];
 
-  // Extract field names from the existing design config
-  const fieldNames = template.design_config?.fields?.map((f: any) => f.templateField) || [];
+  // Extract field names from design_config or field_mappings
+  const fieldNames = template.design_config?.fields?.map((f: any) => f.templateField) 
+    || (fieldMapping?.mappings ? Object.keys(fieldMapping.mappings) : []);
 
   const handleSave = (updatedConfig: any) => {
     onSave(updatedConfig);

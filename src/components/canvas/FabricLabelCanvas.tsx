@@ -4,7 +4,9 @@ import { FieldConfig } from '@/lib/canvas-utils';
 import { 
   createLabelTextField, 
   createAddressBlock, 
-  createBarcodeField
+  createBarcodeField,
+  createQRCodeField,
+  createSequenceField
 } from '@/lib/fabric-helpers';
 
 interface FabricLabelCanvasProps {
@@ -210,104 +212,115 @@ export function FabricLabelCanvas({
     // Track which fields exist in current data
     const currentFieldIds = new Set(fields.map(f => f.id));
 
-    fields.forEach(fieldConfig => {
-      const existingObj = objectsRef.current.get(fieldConfig.id);
+    // Process fields with async support for barcode/qrcode
+    const processFields = async () => {
+      for (const fieldConfig of fields) {
+        const existingObj = objectsRef.current.get(fieldConfig.id);
 
-      if (existingObj) {
-        // UPDATE existing object properties without recreating
-        // CRITICAL: Always normalize scale to prevent compounding
-        const updates: any = {
-          left: mmToPx(fieldConfig.position.x),
-          top: mmToPx(fieldConfig.position.y),
-          width: mmToPx(fieldConfig.size.width),
-          scaleX: 1,  // Always reset scale
-          scaleY: 1,  // Always reset scale
-          textAlign: fieldConfig.style.textAlign,
-          fontWeight: fieldConfig.style.fontWeight,
-          fontFamily: fieldConfig.style.fontFamily,
-          fill: fieldConfig.style.color,
-        };
+        if (existingObj) {
+          // UPDATE existing object properties without recreating
+          // CRITICAL: Always normalize scale to prevent compounding
+          const updates: any = {
+            left: mmToPx(fieldConfig.position.x),
+            top: mmToPx(fieldConfig.position.y),
+            width: mmToPx(fieldConfig.size.width),
+            scaleX: 1,  // Always reset scale
+            scaleY: 1,  // Always reset scale
+            textAlign: fieldConfig.style.textAlign,
+            fontWeight: fieldConfig.style.fontWeight,
+            fontFamily: fieldConfig.style.fontFamily,
+            fill: fieldConfig.style.color,
+          };
 
-        // Apply fontSize ONLY if user has explicitly set one
-        if (fieldConfig.userOverrideFontSize) {
-          console.log('🔧 Applying user font size:', {
-            fieldId: fieldConfig.id,
-            fontSize: fieldConfig.userOverrideFontSize,
-            previousFontSize: existingObj.fontSize,
-            previousScale: { x: existingObj.scaleX, y: existingObj.scaleY }
-          });
-          updates.fontSize = fieldConfig.userOverrideFontSize;
-        }
+          // Apply fontSize ONLY if user has explicitly set one
+          if (fieldConfig.userOverrideFontSize) {
+            console.log('🔧 Applying user font size:', {
+              fieldId: fieldConfig.id,
+              fontSize: fieldConfig.userOverrideFontSize,
+              previousFontSize: existingObj.fontSize,
+              previousScale: { x: existingObj.scaleX, y: existingObj.scaleY }
+            });
+            updates.fontSize = fieldConfig.userOverrideFontSize;
+          }
 
-        existingObj.set(updates);
-        existingObj.setCoords();
-      } else {
-        // CREATE new object only if it doesn't exist
-        let obj;
+          existingObj.set(updates);
+          existingObj.setCoords();
+        } else {
+          // CREATE new object only if it doesn't exist
+          let obj;
 
-        switch (fieldConfig.fieldType) {
-          case 'address_block':
-            obj = createAddressBlock(fieldConfig, sampleData, 1);
-            break;
-          case 'barcode':
-            obj = createBarcodeField(fieldConfig, sampleData, 1);
-            break;
-          case 'text':
-          default:
-            obj = createLabelTextField(fieldConfig, sampleData, 1);
-            break;
-        }
+          switch (fieldConfig.fieldType) {
+            case 'address_block':
+              obj = createAddressBlock(fieldConfig, sampleData, 1);
+              break;
+            case 'barcode':
+              obj = await createBarcodeField(fieldConfig, sampleData, 1);
+              break;
+            case 'qrcode':
+              obj = await createQRCodeField(fieldConfig, sampleData, 1);
+              break;
+            case 'sequence':
+              obj = createSequenceField(fieldConfig, 0, 1); // recordIndex 0 for preview
+              break;
+            case 'text':
+            default:
+              obj = createLabelTextField(fieldConfig, sampleData, 1);
+              break;
+          }
 
-        if (obj) {
-          (obj as any).fieldId = fieldConfig.id;
-          canvas.add(obj);
-          objectsRef.current.set(fieldConfig.id, obj);
-          
-          // If autoFit was applied, sync the fitted fontSize back to React state IMMEDIATELY
-          if (fieldConfig.autoFit && !fieldConfig.autoFitApplied && onFieldsChange) {
-            const fittedFontSize = (obj as any).fontSize;
-            if (fittedFontSize) {
-              console.log('✅ fitTextToBox calculated fontSize:', {
-                fieldId: fieldConfig.id,
-                fittedFontSize,
-                originalFontSize: fieldConfig.style.fontSize
-              });
-              
-              // Create update just for this specific field
-              const fieldUpdate = {
-                ...fieldConfig,
-                autoFitApplied: true,
-                style: { ...fieldConfig.style, fontSize: fittedFontSize }
-              };
-              
-              // Send single field update immediately to sync React state
-              setTimeout(() => {
-                console.log('🔄 Sending fitted fontSize to parent:', fieldUpdate);
-                onFieldsChange([fieldUpdate]);
-              }, 0);
+          if (obj) {
+            (obj as any).fieldId = fieldConfig.id;
+            canvas.add(obj);
+            objectsRef.current.set(fieldConfig.id, obj);
+            
+            // If autoFit was applied, sync the fitted fontSize back to React state IMMEDIATELY
+            if (fieldConfig.autoFit && !fieldConfig.autoFitApplied && onFieldsChange) {
+              const fittedFontSize = (obj as any).fontSize;
+              if (fittedFontSize) {
+                console.log('✅ fitTextToBox calculated fontSize:', {
+                  fieldId: fieldConfig.id,
+                  fittedFontSize,
+                  originalFontSize: fieldConfig.style.fontSize
+                });
+                
+                // Create update just for this specific field
+                const fieldUpdate = {
+                  ...fieldConfig,
+                  autoFitApplied: true,
+                  style: { ...fieldConfig.style, fontSize: fittedFontSize }
+                };
+                
+                // Send single field update immediately to sync React state
+                setTimeout(() => {
+                  console.log('🔄 Sending fitted fontSize to parent:', fieldUpdate);
+                  onFieldsChange([fieldUpdate]);
+                }, 0);
+              }
             }
           }
         }
       }
-    });
 
-    // Remove objects that no longer exist in fields
-    objectsRef.current.forEach((obj, fieldId) => {
-      if (!currentFieldIds.has(fieldId)) {
-        canvas.remove(obj);
-        objectsRef.current.delete(fieldId);
-      }
-    });
+      // Remove objects that no longer exist in fields
+      objectsRef.current.forEach((obj, fieldId) => {
+        if (!currentFieldIds.has(fieldId)) {
+          canvas.remove(obj);
+          objectsRef.current.delete(fieldId);
+        }
+      });
 
-    // Debugging: Track object lifecycle
-    console.log('📊 Canvas field sync:', {
-      fieldsCount: fields.length,
-      objectsRefSize: objectsRef.current.size,
-      fieldIds: fields.map(f => f.id),
-      objectIds: Array.from(objectsRef.current.keys())
-    });
+      // Debugging: Track object lifecycle
+      console.log('📊 Canvas field sync:', {
+        fieldsCount: fields.length,
+        objectsRefSize: objectsRef.current.size,
+        fieldIds: fields.map(f => f.id),
+        objectIds: Array.from(objectsRef.current.keys())
+      });
 
-    canvas.renderAll();
+      canvas.renderAll();
+    };
+
+    processFields();
   }, [fields]); // Only depend on fields, not sampleData (text updates handled separately)
 
   return (

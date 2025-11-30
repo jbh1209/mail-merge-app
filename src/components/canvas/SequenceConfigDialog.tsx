@@ -45,6 +45,7 @@ export function SequenceConfigDialog({
       typeConfig: {
         sequenceStart: startNumber,
         sequencePrefix: prefix,
+        sequenceSuffix: suffix,
         sequencePadding: padding
       },
       showLabel: false,

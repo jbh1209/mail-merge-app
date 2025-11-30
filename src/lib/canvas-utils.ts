@@ -48,6 +48,7 @@ export interface FieldConfig {
     // For sequence
     sequenceStart?: number;
     sequencePrefix?: string;
+    sequenceSuffix?: string;
     sequencePadding?: number;
   };
   combinedFields?: string[]; // For address_block type - contains all field names to render

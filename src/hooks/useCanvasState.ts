@@ -130,16 +130,17 @@ export const useCanvasState = ({
     const field = fields.find(f => f.id === fieldId);
     if (!field) return;
     
-    // If user explicitly changes font size, disable auto-fit
-    const shouldDisableAutoFit = 'fontSize' in styleUpdates;
+    // When user changes font size, store it as an override and disable autoFit
+    const updates: Partial<FieldConfig> = {
+      style: { ...field.style, ...styleUpdates }
+    };
     
-    updateField(fieldId, {
-      style: { ...field.style, ...styleUpdates },
-      ...(shouldDisableAutoFit && { 
-        autoFit: false, 
-        autoFitApplied: false  // Mark as user-controlled
-      })
-    });
+    if ('fontSize' in styleUpdates) {
+      updates.autoFit = false;
+      updates.userOverrideFontSize = styleUpdates.fontSize;
+    }
+    
+    updateField(fieldId, updates);
   }, [fields, updateField]);
 
   const deleteField = useCallback((fieldId: string) => {

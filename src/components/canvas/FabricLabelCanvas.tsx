@@ -263,21 +263,28 @@ export function FabricLabelCanvas({
           canvas.add(obj);
           objectsRef.current.set(fieldConfig.id, obj);
           
-          // If autoFit was applied, sync the fitted fontSize back to React state
+          // If autoFit was applied, sync the fitted fontSize back to React state IMMEDIATELY
           if (fieldConfig.autoFit && !fieldConfig.autoFitApplied && onFieldsChange) {
             const fittedFontSize = (obj as any).fontSize;
             if (fittedFontSize) {
-              const updatedFields = fields.map(f => 
-                f.id === fieldConfig.id 
-                  ? { 
-                      ...f, 
-                      autoFitApplied: true,
-                      style: { ...f.style, fontSize: fittedFontSize }
-                    }
-                  : f
-              );
-              // Defer the state update to avoid render loop
-              setTimeout(() => onFieldsChange(updatedFields), 0);
+              console.log('✅ fitTextToBox calculated fontSize:', {
+                fieldId: fieldConfig.id,
+                fittedFontSize,
+                originalFontSize: fieldConfig.style.fontSize
+              });
+              
+              // Create update just for this specific field
+              const fieldUpdate = {
+                ...fieldConfig,
+                autoFitApplied: true,
+                style: { ...fieldConfig.style, fontSize: fittedFontSize }
+              };
+              
+              // Send single field update immediately to sync React state
+              setTimeout(() => {
+                console.log('🔄 Sending fitted fontSize to parent:', fieldUpdate);
+                onFieldsChange([fieldUpdate]);
+              }, 0);
             }
           }
         }

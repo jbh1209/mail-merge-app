@@ -101,6 +101,7 @@ export function TemplateDesignCanvas({
     selectedFieldId,
     settings,
     setSelectedFieldId,
+    updateField,  // ADD: For syncing style changes from canvas
     moveField,
     resizeField,
     updateFieldStyle,
@@ -116,7 +117,7 @@ export function TemplateDesignCanvas({
     canRedo,
     finalizeFieldPositions,
     getFieldData
-  } = useCanvasState({ 
+  } = useCanvasState({
     templateSize, 
     initialFields: fieldNames,
     initialDesignConfig,
@@ -398,17 +399,34 @@ export function TemplateDesignCanvas({
               scale={settings.scale}
               showGrid={settings.showGrid}
               onFieldsChange={(updatedFields) => {
-                // Update fields when modified on canvas
-                updatedFields.forEach((updatedField, index) => {
-                  const originalField = fields[index];
+                // CRITICAL: Handle ALL field updates including style sync from fitTextToBox
+                updatedFields.forEach((updatedField) => {
+                  const originalField = fields.find(f => f.id === updatedField.id);
                   if (!originalField) return;
                   
-                  // Update position and size if changed
+                  // Check if this is a style/autoFit sync from fitTextToBox
+                  if (updatedField.autoFitApplied !== originalField.autoFitApplied ||
+                      updatedField.style?.fontSize !== originalField.style?.fontSize) {
+                    console.log('🔄 Syncing fitted fontSize back to React state:', {
+                      fieldId: updatedField.id,
+                      oldFontSize: originalField.style?.fontSize,
+                      newFontSize: updatedField.style?.fontSize,
+                      autoFitApplied: updatedField.autoFitApplied
+                    });
+                    // Use updateField to sync style changes back
+                    updateField(updatedField.id, {
+                      style: updatedField.style,
+                      autoFitApplied: updatedField.autoFitApplied
+                    });
+                  }
+                  
+                  // Handle position changes
                   if (updatedField.position.x !== originalField.position.x || 
                       updatedField.position.y !== originalField.position.y) {
                     moveField(originalField.id, updatedField.position);
                   }
                   
+                  // Handle size changes  
                   if (updatedField.size.width !== originalField.size.width || 
                       updatedField.size.height !== originalField.size.height) {
                     resizeField(originalField.id, updatedField.size);

@@ -420,13 +420,17 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
   const pxToMm = (px: number) => px / (3.7795 * scale);
   
   return canvas.getObjects()
-    .filter((obj: any) => obj.type === 'textbox') // Skip grid lines
+    .filter((obj: any) => obj.type === 'textbox' || obj.type === 'Group' || obj.type === 'group')
     .map((obj: any, index: number) => {
       const labelObj = obj as LabelFieldObject;
+      const isGroup = obj.type === 'Group' || obj.type === 'group';
+      
+      // Preserve the existing field ID instead of generating new ones
+      const fieldId = (obj as any).fieldId || `field-${index}`;
       
       // Since originX/Y is 'left'/'top', these ARE top-left coordinates!
-      return {
-        id: `field-${index}`,
+      const baseConfig = {
+        id: fieldId,
         templateField: labelObj.templateField || labelObj.fieldName || 'field',
         position: {
           x: pxToMm(obj.left || 0),  // Already top-left
@@ -436,6 +440,35 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
           width: pxToMm(obj.getScaledWidth()),
           height: pxToMm(obj.getScaledHeight())
         },
+        zIndex: index,
+        locked: (obj as any).locked || false,
+        visible: (obj as any).visible !== false
+      };
+      
+      // For Groups (QR/barcode), preserve their typeConfig and fieldType
+      if (isGroup) {
+        return {
+          ...baseConfig,
+          fieldType: (obj as any).fieldType || 'qrcode',
+          typeConfig: (obj as any).typeConfig || {},
+          style: {
+            fontSize: 12,
+            fontFamily: 'Arial',
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            textAlign: 'center',
+            color: '#000000',
+            verticalAlign: 'middle'
+          },
+          overflow: 'shrink',
+          autoFit: false,
+          showLabel: false
+        };
+      }
+      
+      // For textboxes, preserve all existing properties
+      return {
+        ...baseConfig,
         style: {
           fontSize: (obj as Textbox).fontSize || 12,
           fontFamily: (obj as Textbox).fontFamily || 'Arial',
@@ -446,13 +479,11 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
           verticalAlign: 'top'
         },
         overflow: 'shrink',
-        autoFit: true,
-        showLabel: false,
+        autoFit: (obj as any).autoFit !== false,
+        showLabel: (obj as any).showLabel || false,
         fieldType: labelObj.fieldType || 'text',
         combinedFields: labelObj.combinedFields,
-        zIndex: index,
-        locked: false,
-        visible: true
+        typeConfig: (obj as any).typeConfig
       };
     });
 }

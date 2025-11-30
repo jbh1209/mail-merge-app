@@ -25,7 +25,7 @@ export function SequenceConfigDialog({
 
   const handleConfirm = () => {
     const fieldConfig: Partial<FieldConfig> = {
-      id: `field-${crypto.randomUUID()}`,
+      id: `field-SEQUENCE-${crypto.randomUUID().slice(0, 8)}`,
       templateField: 'SEQUENCE',
       position: { 
         x: Math.max(5, (templateSize.width - 30) / 2), 

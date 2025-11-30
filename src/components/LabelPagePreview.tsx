@@ -56,7 +56,7 @@ export function LabelPagePreview({
     const height = mmToPx(field.size.height, scale);
 
     const style = {
-      fontSize: `${field.style.fontSize * scale}pt`,
+      fontSize: `${field.style.fontSize}pt`,
       fontFamily: field.style.fontFamily,
       fontWeight: field.style.fontWeight,
       textAlign: field.style.textAlign,

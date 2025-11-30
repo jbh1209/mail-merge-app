@@ -60,9 +60,8 @@ export function SimpleLabelPreview({
     const scaledWidth = mmToPx(field.size.width, previewScale);
     const scaledHeight = mmToPx(field.size.height, previewScale);
     
-    // Convert font size from points to pixels, then scale
-    const fontSizeInPixels = (field.style.fontSize / 72) * 96;
-    const scaledFontSize = fontSizeInPixels * previewScale;
+    // Scale the font size (pt) directly - CSS handles pt natively
+    const scaledFontSize = field.style.fontSize * previewScale;
 
     return (
       <div
@@ -79,7 +78,7 @@ export function SimpleLabelPreview({
       >
         <div
           style={{
-            fontSize: `${scaledFontSize}px`,
+            fontSize: `${scaledFontSize}pt`,
             fontFamily: field.style.fontFamily,
             fontWeight: field.style.fontWeight,
             textAlign: field.style.textAlign,

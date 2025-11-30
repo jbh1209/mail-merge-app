@@ -158,10 +158,12 @@ export function FabricLabelCanvas({
       for (let x = 0; x <= width; x += gridSize) {
         const line = new Line([x, 0, x, height], gridOptions);
         canvas.add(line);
+        canvas.sendObjectToBack(line); // Keep grid behind all objects
       }
       for (let y = 0; y <= height; y += gridSize) {
         const line = new Line([0, y, width, y], gridOptions);
         canvas.add(line);
+        canvas.sendObjectToBack(line); // Keep grid behind all objects
       }
     }
 
@@ -298,43 +300,11 @@ export function FabricLabelCanvas({
     });
 
     canvas.renderAll();
-  }, [fields, sampleData, templateSize, scale]); // Removed showGrid from deps
+  }, [fields, sampleData, templateSize]); // scale removed - zoom handled separately
 
   return (
     <div className="relative border-2 border-border rounded-lg overflow-hidden shadow-lg bg-muted/20">
       <canvas ref={canvasRef} />
-      
-      {/* Debug Panel - Development Only */}
-      {process.env.NODE_ENV === 'development' && sampleData && (
-        <div className="absolute top-2 right-2 bg-black/90 text-white text-xs p-3 rounded-lg max-w-xs space-y-1 font-mono">
-          <div className="font-bold text-yellow-400">Debug Info</div>
-          <div>Fields: {fields.length}</div>
-          <div>Scale: {scale.toFixed(2)}</div>
-          <div className="border-t border-gray-600 pt-1 mt-1">
-            <div className="text-yellow-300">Sample Data Keys:</div>
-            <div className="text-xs opacity-75">
-              {Object.keys(sampleData).slice(0, 5).join(', ')}
-              {Object.keys(sampleData).length > 5 && '...'}
-            </div>
-          </div>
-          <div className="border-t border-gray-600 pt-1 mt-1">
-            <div className="text-yellow-300">Field Matches:</div>
-            {fields.slice(0, 3).map((f) => {
-              const hasData = f.combinedFields 
-                ? f.combinedFields.some(field => sampleData[field])
-                : sampleData[f.templateField];
-              return (
-                <div key={f.id} className="flex items-center gap-1">
-                  <span className={hasData ? 'text-green-400' : 'text-red-400'}>
-                    {hasData ? '✓' : '✗'}
-                  </span>
-                  <span className="truncate">{f.templateField}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

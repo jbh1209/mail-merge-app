@@ -42,6 +42,7 @@ export interface FieldConfig {
   typeConfig?: {
     // For barcode
     barcodeFormat?: 'CODE128' | 'CODE39' | 'EAN13' | 'UPC';
+    staticValue?: string;
     // For QR code
     qrErrorCorrection?: 'L' | 'M' | 'Q' | 'H';
     // For sequence

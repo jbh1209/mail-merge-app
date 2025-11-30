@@ -1,4 +1,4 @@
-import { ZoomIn, ZoomOut, Grid3x3, Undo2, Redo2, Wand2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Tag, BarChart3, QrCode, Hash } from 'lucide-react';
+import { ZoomIn, ZoomOut, Grid3x3, Undo2, Redo2, Wand2, Type, AlignLeft, AlignCenter, AlignRight, Bold, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -33,6 +33,7 @@ interface CanvasToolbarProps {
   onUpdateFieldStyle: (updates: Partial<FieldConfig['style']>) => void;
   onToggleLabel: () => void;
   onUpdateFieldType: (fieldType: FieldType, typeConfig?: any) => void;
+  onAddElement: () => void;
 }
 
 export function CanvasToolbar({
@@ -54,7 +55,8 @@ export function CanvasToolbar({
   selectedField,
   onUpdateFieldStyle,
   onToggleLabel,
-  onUpdateFieldType
+  onUpdateFieldType,
+  onAddElement
 }: CanvasToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2 px-2 py-1.5">
@@ -120,6 +122,19 @@ export function CanvasToolbar({
           <Redo2 className="h-3.5 w-3.5" />
         </Button>
       </div>
+
+      <Separator orientation="vertical" className="h-5" />
+
+      {/* Add Element */}
+      <Button 
+        size="sm" 
+        variant="ghost" 
+        className="h-7 px-2" 
+        onClick={onAddElement}
+      >
+        <Plus className="h-3.5 w-3.5 mr-1.5" />
+        <span className="text-xs">Add Element</span>
+      </Button>
 
       <Separator orientation="vertical" className="h-5" />
 

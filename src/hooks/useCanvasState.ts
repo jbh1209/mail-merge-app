@@ -155,6 +155,16 @@ export const useCanvasState = ({
     }
   }, [saveToHistory, selectedFieldId]);
 
+  const addField = useCallback((newField: FieldConfig) => {
+    setFields(prev => {
+      const newFields = [...prev, newField];
+      saveToHistory(newFields);
+      return newFields;
+    });
+    // Select the newly added field
+    setSelectedFieldId(newField.id);
+  }, [saveToHistory]);
+
   const undo = useCallback(() => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
@@ -434,6 +444,7 @@ export const useCanvasState = ({
     updateSettings,
     autoLayout,
     deleteField,
+    addField,
     undo,
     redo,
     canUndo: historyIndex > 0,

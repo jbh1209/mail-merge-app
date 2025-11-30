@@ -1,5 +1,5 @@
 // Fabric.js helper functions for label field creation and text sizing
-import { Canvas, Textbox, Group, Rect, Text, FabricObject } from 'fabric';
+import { Canvas, Textbox, Group, Rect, Text, FabricObject, Image as FabricImage } from 'fabric';
 import { FieldConfig, FieldType } from './canvas-utils';
 import { CoordinateSystem } from './canvas-coordinate-system';
 
@@ -226,18 +226,26 @@ export function createAddressBlock(
 
 export function createBarcodeField(
   fieldConfig: FieldConfig,
+  sampleData?: Record<string, any>,
   scale: number = 1
 ): Group {
-  // Convert mm to px using centralized coordinate system
   const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
   
-  // Barcode implementation - for now returns empty group
-  return new Group([], {
+  // Placeholder for now - real implementation in next phase
+  const rect = new Rect({
+    width: pxCoords.size.width,
+    height: pxCoords.size.height,
+    fill: '#e0e0e0',
+    stroke: '#999',
+  });
+  
+  const group = new Group([rect], {
     left: pxCoords.position.x,
     top: pxCoords.position.y,
-    width: pxCoords.size.width,
-    height: pxCoords.size.height
   });
+  (group as any).fieldType = 'barcode';
+  (group as any).templateField = fieldConfig.templateField;
+  return group;
 }
 
 /**

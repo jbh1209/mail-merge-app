@@ -5,7 +5,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FieldConfig } from '@/lib/canvas-utils';
+import { AlertTriangle } from 'lucide-react';
 
 interface BarcodeConfigDialogProps {
   open: boolean;
@@ -186,6 +188,14 @@ export function BarcodeConfigDialog({
               </p>
             </div>
           )}
+          
+          <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-xs text-amber-900 dark:text-amber-200">
+              <strong>Minimum size for scanning:</strong> {info.minSize}<br />
+              Smaller barcodes may not scan reliably. Recommended: 40×30mm for best results.
+            </AlertDescription>
+          </Alert>
         </div>
 
         <DialogFooter>

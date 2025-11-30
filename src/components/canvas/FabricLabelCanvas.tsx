@@ -8,6 +8,8 @@ import {
   createQRCodeField,
   createSequenceField
 } from '@/lib/fabric-helpers';
+import { validateFieldSize, getValidationBorderColor } from '@/lib/element-size-validation';
+import { toast } from '@/hooks/use-toast';
 
 interface FabricLabelCanvasProps {
   templateSize: { width: number; height: number }; // in mm
@@ -102,6 +104,29 @@ export function FabricLabelCanvas({
         width: pxToMm(actualWidth),
         height: pxToMm(actualHeight)
       };
+      
+      // Find the field config to validate
+      const fieldConfig = fields.find(f => f.id === obj.fieldId);
+      if (fieldConfig) {
+        const updatedField = { ...fieldConfig, position: newPosition, size: newSize };
+        const validation = validateFieldSize(updatedField);
+        
+        // Apply validation border color
+        const borderColor = getValidationBorderColor(validation);
+        obj.set({
+          stroke: borderColor,
+          strokeWidth: borderColor ? 2 : 0
+        });
+        
+        // Show toast warning/error if size is problematic
+        if (validation.message) {
+          toast({
+            title: validation.severity === 'error' ? 'Size Too Small' : 'Size Warning',
+            description: validation.message,
+            variant: validation.severity === 'error' ? 'destructive' : 'default',
+          });
+        }
+      }
       
       // Sync back to React state via callback
       const updatedFields = fields.map(f => 
@@ -270,6 +295,31 @@ export function FabricLabelCanvas({
 
           if (obj) {
             (obj as any).fieldId = fieldConfig.id;
+            
+            // Validate size and apply visual indicator
+            const validation = validateFieldSize(fieldConfig);
+            const borderColor = getValidationBorderColor(validation);
+            if (borderColor) {
+              obj.set({
+                stroke: borderColor,
+                strokeWidth: 2
+              });
+            }
+            
+            // Show toast warning for new elements that are undersized
+            if (validation.message && validation.severity === 'error') {
+              toast({
+                title: 'Size Too Small',
+                description: validation.message,
+                variant: 'destructive',
+              });
+            } else if (validation.message && validation.severity === 'warning') {
+              toast({
+                title: 'Size Warning',
+                description: validation.message,
+              });
+            }
+            
             canvas.add(obj);
             objectsRef.current.set(fieldConfig.id, obj);
             

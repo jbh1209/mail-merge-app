@@ -5,7 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FieldConfig } from '@/lib/canvas-utils';
+import { AlertTriangle } from 'lucide-react';
 
 interface QRCodeConfigDialogProps {
   open: boolean;
@@ -156,11 +158,13 @@ export function QRCodeConfigDialog({
             </p>
           </div>
 
-          <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3">
-            <div className="text-xs text-amber-700 dark:text-amber-400">
-              <strong>Minimum Size:</strong> 20×20mm recommended for reliable scanning
-            </div>
-          </div>
+          <Alert className="border-amber-500/50 bg-amber-50 dark:bg-amber-950/20">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-xs text-amber-900 dark:text-amber-200">
+              <strong>Minimum size for QR scanning:</strong> 20×20mm<br />
+              Smaller QR codes may not scan reliably. Recommended: 25×25mm or larger for best results.
+            </AlertDescription>
+          </Alert>
         </div>
 
         <DialogFooter>

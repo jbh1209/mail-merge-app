@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { detectSpecialFields } from "@/lib/field-detection-utils";
 
 interface DataUploadProps {
   projectId: string;
@@ -15,6 +16,7 @@ interface DataUploadProps {
     preview: Record<string, any>[];
     filePath: string;
     fileName: string;
+    fieldSuggestions?: any[]; // Smart field detection suggestions
   }) => void;
 }
 
@@ -87,12 +89,20 @@ export function DataUpload({ projectId, workspaceId, onUploadComplete }: DataUpl
 
       setProgress(100);
       
-      toast.success(`File uploaded! ${parseData.rowCount} rows parsed.`);
+      // Detect special fields (barcode, QR, sequence)
+      const fieldSuggestions = detectSpecialFields(parseData.columns);
+      
+      if (fieldSuggestions.length > 0) {
+        toast.success(`File uploaded! ${parseData.rowCount} rows parsed. Found ${fieldSuggestions.length} suggested field${fieldSuggestions.length > 1 ? 's' : ''}.`);
+      } else {
+        toast.success(`File uploaded! ${parseData.rowCount} rows parsed.`);
+      }
 
       onUploadComplete({
         ...parseData,
         filePath,
         fileName: file.name,
+        fieldSuggestions,
       });
 
     } catch (error) {

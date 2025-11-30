@@ -111,7 +111,19 @@ export function validateFieldSize(field: FieldConfig): ValidationResult {
   if (isBelowMinimum) {
     severity = 'error';
     const elementName = getFieldTypeName(fieldType, format);
-    message = `⚠️ ${elementName} is too small to scan reliably. Minimum: ${minimumSize.width}×${minimumSize.height}mm, Current: ${size.width.toFixed(1)}×${size.height.toFixed(1)}mm`;
+    const widthIssue = size.width < minimumSize.width;
+    const heightIssue = size.height < minimumSize.height;
+    
+    let issueDescription = '';
+    if (widthIssue && heightIssue) {
+      issueDescription = `Both dimensions too small. Current: ${size.width.toFixed(1)}×${size.height.toFixed(1)}mm, Minimum: ${minimumSize.width}×${minimumSize.height}mm`;
+    } else if (widthIssue) {
+      issueDescription = `Width too narrow: ${size.width.toFixed(1)}mm (minimum: ${minimumSize.width}mm)`;
+    } else {
+      issueDescription = `Height too short: ${size.height.toFixed(1)}mm (minimum: ${minimumSize.height}mm)`;
+    }
+    
+    message = `⚠️ ${elementName}: ${issueDescription}`;
   } else if (isBelowRecommended) {
     severity = 'warning';
     const elementName = getFieldTypeName(fieldType, format);

@@ -114,13 +114,15 @@ export function FabricLabelCanvas({
       const obj = e.target as any;
       if (!obj?.fieldId || !onFieldsChangeRef.current) return;
       
+      const isGroup = obj.type === 'Group' || obj.type === 'group';
+      
       // Get the ACTUAL rendered dimensions (including scale)
       const actualWidth = obj.getScaledWidth();
       const actualHeight = obj.getScaledHeight();
       
       // CRITICAL: Handle Groups (barcodes/QR codes) differently
-      const isGroup = obj.type === 'Group' || obj.type === 'group';
-      
+      // For textboxes: reset scale to 1 after getting dimensions
+      // For groups: DON'T reset scale (causes distortion)
       if (!isGroup) {
         obj.set({
           width: actualWidth,
@@ -435,24 +437,34 @@ export function FabricLabelCanvas({
         }
       });
       
-      // Apply z-index ordering by moving objects in canvas
-      // Sort fields by zIndex (lowest first = back, highest last = front)
+      // Apply z-index ordering while preserving selection
+      const activeObject = canvas.getActiveObject();
+      const activeObjectFieldId = (activeObject as any)?.fieldId;
+      
       const sortedFields = [...fields].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
       
-      // Remove all objects and re-add in correct order
-      const tempObjects: any[] = [];
+      // Collect objects in correct order
+      const orderedObjects: any[] = [];
       sortedFields.forEach((field) => {
         const obj = objectsRef.current.get(field.id);
         if (obj) {
           canvas.remove(obj);
-          tempObjects.push(obj);
+          orderedObjects.push(obj);
         }
       });
       
       // Re-add in sorted order (back to front)
-      tempObjects.forEach(obj => {
+      orderedObjects.forEach(obj => {
         canvas.add(obj);
       });
+      
+      // Restore selection
+      if (activeObjectFieldId) {
+        const objToSelect = objectsRef.current.get(activeObjectFieldId);
+        if (objToSelect) {
+          canvas.setActiveObject(objToSelect);
+        }
+      }
       
       // Re-add grid lines to back
       gridObjectsRef.current.forEach(line => {

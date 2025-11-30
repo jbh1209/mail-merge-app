@@ -39,7 +39,7 @@ export const useCanvasState = ({
     return autoLayoutFieldsSimple(initialFields, templateSize, 6, false);
   });
   
-  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [selectedFieldIds, setSelectedFieldIds] = useState<string[]>([]);
   
   // Calculate smart default scale based on template size
   const calculateDefaultScale = () => {
@@ -149,21 +149,138 @@ export const useCanvasState = ({
       saveToHistory(newFields);
       return newFields;
     });
-    // Clear selection if deleted field was selected
-    if (selectedFieldId === fieldId) {
-      setSelectedFieldId(null);
-    }
-  }, [saveToHistory, selectedFieldId]);
+    // Clear from selection if deleted field was selected
+    setSelectedFieldIds(prev => prev.filter(id => id !== fieldId));
+  }, [saveToHistory]);
 
   const addField = useCallback((newField: FieldConfig) => {
     setFields(prev => {
-      const newFields = [...prev, newField];
+      const maxZIndex = Math.max(0, ...prev.map(f => f.zIndex || 0));
+      const newFields = [...prev, { ...newField, zIndex: maxZIndex + 1, visible: true }];
       saveToHistory(newFields);
       return newFields;
     });
     // Select the newly added field
-    setSelectedFieldId(newField.id);
+    setSelectedFieldIds([newField.id]);
   }, [saveToHistory]);
+
+  // Layer management
+  const reorderField = useCallback((fieldId: string, newIndex: number) => {
+    setFields(prev => {
+      const sorted = [...prev].sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+      const fieldIndex = sorted.findIndex(f => f.id === fieldId);
+      if (fieldIndex === -1) return prev;
+      
+      const [removed] = sorted.splice(fieldIndex, 1);
+      sorted.splice(newIndex, 0, removed);
+      
+      // Reassign zIndex based on new order (higher index = higher zIndex)
+      const newFields = sorted.map((f, i) => ({
+        ...f,
+        zIndex: sorted.length - i
+      }));
+      
+      saveToHistory(newFields);
+      return newFields;
+    });
+  }, [saveToHistory]);
+
+  const toggleFieldLock = useCallback((fieldId: string) => {
+    updateField(fieldId, { locked: !fields.find(f => f.id === fieldId)?.locked });
+  }, [fields, updateField]);
+
+  const toggleFieldVisibility = useCallback((fieldId: string) => {
+    updateField(fieldId, { visible: !(fields.find(f => f.id === fieldId)?.visible ?? true) });
+  }, [fields, updateField]);
+
+  const bringToFront = useCallback((fieldId: string) => {
+    setFields(prev => {
+      const maxZIndex = Math.max(...prev.map(f => f.zIndex || 0));
+      const newFields = prev.map(f =>
+        f.id === fieldId ? { ...f, zIndex: maxZIndex + 1 } : f
+      );
+      saveToHistory(newFields);
+      return newFields;
+    });
+  }, [saveToHistory]);
+
+  const sendToBack = useCallback((fieldId: string) => {
+    setFields(prev => {
+      const minZIndex = Math.min(...prev.map(f => f.zIndex || 0));
+      const newFields = prev.map(f =>
+        f.id === fieldId ? { ...f, zIndex: minZIndex - 1 } : f
+      );
+      saveToHistory(newFields);
+      return newFields;
+    });
+  }, [saveToHistory]);
+
+  // Alignment functions
+  const alignSelectedFields = useCallback(async (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    if (selectedFieldIds.length === 0) return;
+    
+    const selectedFields = fields.filter(f => selectedFieldIds.includes(f.id));
+    const {
+      alignFieldsLeft,
+      alignFieldsCenter,
+      alignFieldsRight,
+      alignFieldsTop,
+      alignFieldsMiddle,
+      alignFieldsBottom
+    } = await import('@/lib/alignment-utils');
+    
+    let alignedFields: FieldConfig[] = [];
+    switch (alignment) {
+      case 'left': alignedFields = alignFieldsLeft(selectedFields, templateSize); break;
+      case 'center': alignedFields = alignFieldsCenter(selectedFields, templateSize); break;
+      case 'right': alignedFields = alignFieldsRight(selectedFields, templateSize); break;
+      case 'top': alignedFields = alignFieldsTop(selectedFields, templateSize); break;
+      case 'middle': alignedFields = alignFieldsMiddle(selectedFields, templateSize); break;
+      case 'bottom': alignedFields = alignFieldsBottom(selectedFields, templateSize); break;
+    }
+    
+    setFields(prev => {
+      const newFields = prev.map(f => {
+        const aligned = alignedFields.find(af => af.id === f.id);
+        return aligned || f;
+      });
+      saveToHistory(newFields);
+      return newFields;
+    });
+  }, [selectedFieldIds, fields, templateSize, saveToHistory]);
+
+  const distributeSelectedFields = useCallback(async (direction: 'horizontal' | 'vertical') => {
+    if (selectedFieldIds.length < 3) return;
+    
+    const selectedFields = fields.filter(f => selectedFieldIds.includes(f.id));
+    const { distributeHorizontally, distributeVertically } = await import('@/lib/alignment-utils');
+    
+    const distributedFields = direction === 'horizontal'
+      ? distributeHorizontally(selectedFields, templateSize)
+      : distributeVertically(selectedFields, templateSize);
+    
+    setFields(prev => {
+      const newFields = prev.map(f => {
+        const distributed = distributedFields.find(df => df.id === f.id);
+        return distributed || f;
+      });
+      saveToHistory(newFields);
+      return newFields;
+    });
+  }, [selectedFieldIds, fields, templateSize, saveToHistory]);
+
+  // Selection management
+  const setSelection = useCallback((fieldIds: string[]) => {
+    setSelectedFieldIds(fieldIds);
+  }, []);
+
+  const addToSelection = useCallback((fieldId: string) => {
+    setSelectedFieldIds(prev => [...prev, fieldId]);
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedFieldIds([]);
+  }, []);
 
   const undo = useCallback(() => {
     if (historyIndex > 0) {
@@ -431,9 +548,11 @@ export const useCanvasState = ({
 
   return {
     fields,
-    selectedFieldId,
+    selectedFieldIds,
     settings,
-    setSelectedFieldId,
+    setSelection,
+    addToSelection,
+    clearSelection,
     updateField,  // EXPOSED: Needed for style sync from FabricLabelCanvas
     moveField,
     resizeField,
@@ -450,6 +569,15 @@ export const useCanvasState = ({
     canUndo: historyIndex > 0,
     canRedo: historyIndex < history.length - 1,
     finalizeFieldPositions,
-    getFieldData
+    getFieldData,
+    // Layer management
+    reorderField,
+    toggleFieldLock,
+    toggleFieldVisibility,
+    bringToFront,
+    sendToBack,
+    // Alignment
+    alignSelectedFields,
+    distributeSelectedFields
   };
 };

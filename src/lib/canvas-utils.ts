@@ -52,6 +52,9 @@ export interface FieldConfig {
     sequencePadding?: number;
   };
   combinedFields?: string[]; // For address_block type - contains all field names to render
+  zIndex?: number;       // Layer order (higher = on top)
+  locked?: boolean;      // Prevent selection/modification
+  visible?: boolean;     // Show/hide on canvas
 }
 
 /**
@@ -221,7 +224,9 @@ export const autoLayoutFieldsSimple = (
     showLabel: showLabels,
     labelStyle: showLabels ? { fontSize: 6, color: '#666666', position: 'above' as const } : undefined,
     fieldType: detectFieldType(name),
-    typeConfig: undefined
+    typeConfig: undefined,
+    zIndex: fieldNames.length - index,  // First field has highest zIndex
+    visible: true
   }));
 };
 

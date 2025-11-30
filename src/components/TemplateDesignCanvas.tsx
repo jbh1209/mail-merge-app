@@ -18,6 +18,7 @@ import html2canvas from 'html2canvas';
 import { supabase } from '@/integrations/supabase/client';
 import { fabricToFieldConfigs } from '@/lib/fabric-helpers';
 import { FieldSuggestion, shouldShowSuggestions } from '@/lib/field-detection-utils';
+import { LayersPanel } from './canvas/LayersPanel';
 
 interface TemplateDesignCanvasProps {
   templateSize: { width: number; height: number };
@@ -68,6 +69,7 @@ export function TemplateDesignCanvas({
   const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestions, setActiveSuggestions] = useState<FieldSuggestion[]>([]);
+  const [showLayersPanel, setShowLayersPanel] = useState(false);
 
   const currentSample = sampleData?.[currentDataIndex];
   
@@ -148,9 +150,11 @@ export function TemplateDesignCanvas({
 
   const {
     fields,
-    selectedFieldId,
+    selectedFieldIds,
     settings,
-    setSelectedFieldId,
+    setSelection,
+    addToSelection,
+    clearSelection,
     updateField,  // ADD: For syncing style changes from canvas
     moveField,
     resizeField,
@@ -167,7 +171,14 @@ export function TemplateDesignCanvas({
     canUndo,
     canRedo,
     finalizeFieldPositions,
-    getFieldData
+    getFieldData,
+    reorderField,
+    toggleFieldLock,
+    toggleFieldVisibility,
+    bringToFront,
+    sendToBack,
+    alignSelectedFields,
+    distributeSelectedFields
   } = useCanvasState({
     templateSize, 
     initialFields: fieldNames,
@@ -286,7 +297,9 @@ export function TemplateDesignCanvas({
     }
   }, []); // Empty deps = only run once on mount
 
-  const selectedField = fields.find(f => f.id === selectedFieldId) || null;
+  const selectedField = selectedFieldIds.length === 1 
+    ? fields.find(f => f.id === selectedFieldIds[0]) || null 
+    : null;
   const sampleRow = sampleData?.[currentDataIndex];
 
   // Keyboard navigation for sample data
@@ -344,7 +357,7 @@ export function TemplateDesignCanvas({
   };
 
   const handleCanvasClick = () => {
-    setSelectedFieldId(null);
+    clearSelection();
   };
 
   return (
@@ -438,29 +451,29 @@ export function TemplateDesignCanvas({
           showAllLabels={settings.showAllLabels}
           onToggleAllLabels={() => toggleAllFieldLabels(!settings.showAllLabels)}
           selectedField={selectedField}
+          selectedCount={selectedFieldIds.length}
           onUpdateFieldStyle={(updates) => {
-            if (selectedFieldId) {
-              updateFieldStyle(selectedFieldId, updates);
-            }
+            selectedFieldIds.forEach(id => updateFieldStyle(id, updates));
           }}
           onToggleLabel={() => {
-            if (selectedFieldId) {
-              toggleFieldLabels(selectedFieldId);
-            }
+            selectedFieldIds.forEach(id => toggleFieldLabels(id));
           }}
           onUpdateFieldType={(fieldType, typeConfig) => {
-            if (selectedFieldId) {
-              updateFieldType(selectedFieldId, fieldType, typeConfig);
-            }
+            selectedFieldIds.forEach(id => updateFieldType(id, fieldType, typeConfig));
           }}
           onAddElement={() => setShowAddElementPanel(!showAddElementPanel)}
+          showLayers={showLayersPanel}
+          onToggleLayers={() => setShowLayersPanel(!showLayersPanel)}
+          onAlign={alignSelectedFields}
+          onDistribute={distributeSelectedFields}
         />
       </div>
 
       {/* Main canvas area - takes all available space */}
-      <div className="flex-1 overflow-auto bg-muted/20 p-4 min-h-0">
-        {/* Smart Suggestions Panel */}
-        {showSuggestions && activeSuggestions.length > 0 && (
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-auto bg-muted/20 p-4 min-h-0">
+          {/* Smart Suggestions Panel */}
+          {showSuggestions && activeSuggestions.length > 0 && (
           <div className="mb-4">
             <SmartSuggestionsPanel
               suggestions={activeSuggestions}
@@ -527,12 +540,31 @@ export function TemplateDesignCanvas({
                 fabricCanvasRef.current = canvas;
                 console.log('✅ Fabric canvas initialized and stored for capture');
               }}
-              onFieldSelected={(fieldId) => {
-                setSelectedFieldId(fieldId);
+              onFieldsSelected={(fieldIds) => {
+                setSelection(fieldIds);
               }}
             />
           </div>
         </div>
+      </div>
+
+        {/* Layers Panel */}
+        {showLayersPanel && (
+          <LayersPanel
+            fields={fields}
+            selectedFieldIds={selectedFieldIds}
+            onReorder={reorderField}
+            onToggleLock={toggleFieldLock}
+            onToggleVisibility={toggleFieldVisibility}
+            onSelect={(fieldId, isAdditive) => {
+              if (isAdditive) {
+                addToSelection(fieldId);
+              } else {
+                setSelection([fieldId]);
+              }
+            }}
+          />
+        )}
       </div>
 
       {/* Compact action buttons - fixed at bottom */}

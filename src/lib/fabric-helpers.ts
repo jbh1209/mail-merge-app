@@ -425,7 +425,6 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
       const labelObj = obj as LabelFieldObject;
       
       // Since originX/Y is 'left'/'top', these ARE top-left coordinates!
-      // No conversion needed!
       return {
         id: `field-${index}`,
         templateField: labelObj.templateField || labelObj.fieldName || 'field',
@@ -450,7 +449,10 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
         autoFit: true,
         showLabel: false,
         fieldType: labelObj.fieldType || 'text',
-        combinedFields: labelObj.combinedFields
+        combinedFields: labelObj.combinedFields,
+        zIndex: index,
+        locked: false,
+        visible: true
       };
     });
 }

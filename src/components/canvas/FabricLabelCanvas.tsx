@@ -35,6 +35,7 @@ export function FabricLabelCanvas({
 
   // Single conversion function - everything at base scale
   const mmToPx = (mm: number) => mm * 3.7795;
+  const pxToMm = (px: number) => px / 3.7795;
 
   // Initialize canvas once
   useEffect(() => {
@@ -71,25 +72,64 @@ export function FabricLabelCanvas({
       }
     });
 
+    // Handle object modifications (drag, resize)
+    canvas.on('object:modified', (e) => {
+      const obj = e.target as any;
+      if (!obj?.fieldId || !onFieldsChange) return;
+      
+      // Convert pixel positions back to mm
+      const newPosition = {
+        x: pxToMm(obj.left),
+        y: pxToMm(obj.top)
+      };
+      const newSize = {
+        width: pxToMm(obj.getScaledWidth()),
+        height: pxToMm(obj.getScaledHeight())
+      };
+      
+      // Sync back to React state via callback
+      const updatedFields = fields.map(f => 
+        f.id === obj.fieldId 
+          ? { ...f, position: newPosition, size: newSize }
+          : f
+      );
+      onFieldsChange(updatedFields);
+    });
+
     return () => {
       canvas.dispose();
       fabricCanvasRef.current = null;
     };
   }, [templateSize.width, templateSize.height]);
 
-  // Clear objects when sample data changes (page navigation)
+  // Update text content when sample data changes (page navigation)
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
-    if (canvas) {
-      // Actually REMOVE objects from the Fabric canvas
-      objectsRef.current.forEach((obj) => {
-        canvas.remove(obj);
-      });
-      canvas.renderAll();
-    }
-    // Then clear our tracking map
-    objectsRef.current.clear();
-  }, [sampleData]);
+    if (!canvas) return;
+
+    // Update text content of existing objects instead of recreating
+    objectsRef.current.forEach((obj, fieldId) => {
+      const fieldConfig = fields.find(f => f.id === fieldId);
+      if (!fieldConfig) return;
+      
+      // Get new text value for this field
+      let newText = '';
+      if (fieldConfig.combinedFields) {
+        // Address block - combine multiple fields
+        newText = fieldConfig.combinedFields
+          .map(f => sampleData?.[f] || '')
+          .filter(Boolean)
+          .join('\n');
+      } else {
+        newText = sampleData?.[fieldConfig.templateField] || '';
+      }
+      
+      // Update only the text, preserve all other properties
+      obj.set('text', newText);
+    });
+    
+    canvas.renderAll();
+  }, [sampleData, fields]);
 
   // Draw grid
   useEffect(() => {
@@ -155,8 +195,6 @@ export function FabricLabelCanvas({
 
       if (existingObj) {
         // UPDATE existing object properties without recreating
-        // NOTE: Do NOT update fontSize here - it may have been auto-fitted by fitTextToBox
-        // and we want to preserve that fitted value
         const updates: any = {
           left: mmToPx(fieldConfig.position.x),
           top: mmToPx(fieldConfig.position.y),
@@ -166,6 +204,11 @@ export function FabricLabelCanvas({
           fontFamily: fieldConfig.style.fontFamily,
           fill: fieldConfig.style.color,
         };
+
+        // Only apply fontSize if user explicitly set it (autoFit disabled or not applied yet)
+        if (fieldConfig.autoFit === false || !fieldConfig.autoFitApplied) {
+          updates.fontSize = fieldConfig.style.fontSize;
+        }
 
         existingObj.set(updates);
         existingObj.setCoords();

@@ -127,11 +127,18 @@ export const useCanvasState = ({
   }, [templateSize]);
 
   const updateFieldStyle = useCallback((fieldId: string, styleUpdates: Partial<FieldConfig['style']>) => {
+    const field = fields.find(f => f.id === fieldId);
+    if (!field) return;
+    
+    // If user explicitly changes font size, disable auto-fit
+    const shouldDisableAutoFit = 'fontSize' in styleUpdates;
+    
     updateField(fieldId, {
-      style: {
-        ...fields.find(f => f.id === fieldId)?.style!,
-        ...styleUpdates
-      }
+      style: { ...field.style, ...styleUpdates },
+      ...(shouldDisableAutoFit && { 
+        autoFit: false, 
+        autoFitApplied: false  // Mark as user-controlled
+      })
     });
   }, [fields, updateField]);
 

@@ -155,11 +155,12 @@ export function FabricLabelCanvas({
 
       if (existingObj) {
         // UPDATE existing object properties without recreating
+        // NOTE: Do NOT update fontSize here - it may have been auto-fitted by fitTextToBox
+        // and we want to preserve that fitted value
         const updates: any = {
           left: mmToPx(fieldConfig.position.x),
           top: mmToPx(fieldConfig.position.y),
           width: mmToPx(fieldConfig.size.width),
-          fontSize: fieldConfig.style.fontSize,
           textAlign: fieldConfig.style.textAlign,
           fontWeight: fieldConfig.style.fontWeight,
           fontFamily: fieldConfig.style.fontFamily,

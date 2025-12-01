@@ -521,29 +521,35 @@ export function TemplateDesignCanvas({
                   const originalField = fields.find(f => f.id === updatedField.id);
                   if (!originalField) return;
                   
-                  // Check if this is a style/autoFit sync from fitTextToBox
-                  if (updatedField.autoFitApplied !== originalField.autoFitApplied ||
-                      updatedField.style?.fontSize !== originalField.style?.fontSize) {
-                    console.log('🔄 Syncing fitted fontSize back to React state:', {
+                  // Check if this is ONLY an autoFit sync (no position/size change)
+                  const isAutoFitSyncOnly = 
+                    (updatedField.autoFitApplied !== originalField.autoFitApplied) &&
+                    updatedField.position.x === originalField.position.x &&
+                    updatedField.position.y === originalField.position.y &&
+                    updatedField.size.width === originalField.size.width &&
+                    updatedField.size.height === originalField.size.height;
+                  
+                  if (isAutoFitSyncOnly) {
+                    console.log('🔄 AutoFit sync (skipHistory):', {
                       fieldId: updatedField.id,
                       oldFontSize: originalField.style?.fontSize,
-                      newFontSize: updatedField.style?.fontSize,
-                      autoFitApplied: updatedField.autoFitApplied
+                      newFontSize: updatedField.style?.fontSize
                     });
-                    // Use updateField to sync style changes back
+                    // Skip history for autoFit syncs - not user-initiated
                     updateField(updatedField.id, {
                       style: updatedField.style,
                       autoFitApplied: updatedField.autoFitApplied
-                    });
+                    }, true); // skipHistory = true
+                    return; // Don't process position/size changes
                   }
                   
-                  // Handle position changes
+                  // Handle position changes (user-initiated)
                   if (updatedField.position.x !== originalField.position.x || 
                       updatedField.position.y !== originalField.position.y) {
                     moveField(originalField.id, updatedField.position);
                   }
                   
-                  // Handle size changes  
+                  // Handle size changes (user-initiated)
                   if (updatedField.size.width !== originalField.size.width || 
                       updatedField.size.height !== originalField.size.height) {
                     resizeField(originalField.id, updatedField.size);

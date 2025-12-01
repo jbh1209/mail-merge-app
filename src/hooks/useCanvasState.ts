@@ -78,12 +78,14 @@ export const useCanvasState = ({
     setHistoryIndex(newHistory.length - 1);
   }, [history, historyIndex]);
 
-  const updateField = useCallback((fieldId: string, updates: Partial<FieldConfig>) => {
+  const updateField = useCallback((fieldId: string, updates: Partial<FieldConfig>, skipHistory = false) => {
     setFields(prev => {
       const newFields = prev.map(f => 
         f.id === fieldId ? { ...f, ...updates } : f
       );
-      saveToHistory(newFields);
+      if (!skipHistory) {
+        saveToHistory(newFields);
+      }
       return newFields;
     });
   }, [saveToHistory]);

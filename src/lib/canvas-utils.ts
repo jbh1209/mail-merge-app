@@ -220,7 +220,7 @@ export const autoLayoutFieldsSimple = (
       verticalAlign: 'top' as const
     },
     overflow: 'shrink' as const,
-    autoFit: true,
+    autoFit: false, // Don't autoFit on simple fallback layout
     showLabel: showLabels,
     labelStyle: showLabels ? { fontSize: 6, color: '#666666', position: 'above' as const } : undefined,
     fieldType: detectFieldType(name),

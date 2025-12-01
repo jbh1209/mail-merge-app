@@ -305,6 +305,8 @@ export function FabricLabelCanvas({
 
     // Process fields with async support for barcode/qrcode
     const processFields = async () => {
+      const autoFitUpdates: FieldConfig[] = []; // BATCH: Collect all autoFit updates
+      
       for (const fieldConfig of fields) {
         const existingObj = objectsRef.current.get(fieldConfig.id);
 
@@ -401,8 +403,8 @@ export function FabricLabelCanvas({
             
             // Z-index will be handled by render order
             
-            // If autoFit was applied, sync the fitted fontSize back to React state IMMEDIATELY
-            if (fieldConfig.autoFit && !fieldConfig.autoFitApplied && onFieldsChange) {
+            // BATCH: Collect autoFit update instead of sending immediately
+            if (fieldConfig.autoFit && !fieldConfig.autoFitApplied) {
               const fittedFontSize = (obj as any).fontSize;
               if (fittedFontSize) {
                 console.log('✅ fitTextToBox calculated fontSize:', {
@@ -411,18 +413,11 @@ export function FabricLabelCanvas({
                   originalFontSize: fieldConfig.style.fontSize
                 });
                 
-                // Create update just for this specific field
-                const fieldUpdate = {
+                autoFitUpdates.push({
                   ...fieldConfig,
                   autoFitApplied: true,
                   style: { ...fieldConfig.style, fontSize: fittedFontSize }
-                };
-                
-                // Send single field update immediately to sync React state
-                setTimeout(() => {
-                  console.log('🔄 Sending fitted fontSize to parent:', fieldUpdate);
-                  onFieldsChange([fieldUpdate]);
-                }, 0);
+                });
               }
             }
           }
@@ -470,6 +465,14 @@ export function FabricLabelCanvas({
       gridObjectsRef.current.forEach(line => {
         canvas.sendObjectToBack(line);
       });
+
+      // BATCH: Send ALL autoFit updates at once AFTER the loop completes
+      if (autoFitUpdates.length > 0 && onFieldsChangeRef.current) {
+        setTimeout(() => {
+          console.log('🔄 Batch sending autoFit updates:', autoFitUpdates.length);
+          onFieldsChangeRef.current(autoFitUpdates);
+        }, 0);
+      }
 
       // Debugging: Track object lifecycle
       console.log('📊 Canvas field sync:', {

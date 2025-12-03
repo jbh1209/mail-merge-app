@@ -42,17 +42,22 @@ export function FabricLabelCanvas({
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
   const gridObjectsRef = useRef<any[]>([]);
   
-  // Refs for callbacks to avoid stale closures
+  // Refs for callbacks to avoid stale closures and prevent effect re-runs
   const onFieldsChangeRef = useRef(onFieldsChange);
   const onFieldsSelectedRef = useRef(onFieldsSelected);
+  const onCanvasReadyRef = useRef(onCanvasReady);
   const fieldsRef = useRef(fields);
   const sampleDataRef = useRef(sampleData);
   const recordIndexRef = useRef(recordIndex);
+  
+  // Track which fields have had autoFit updates sent to prevent infinite loops
+  const autoFitSentRef = useRef<Set<string>>(new Set());
 
-  // Keep refs updated
+  // Keep refs updated on every render
   useEffect(() => {
     onFieldsChangeRef.current = onFieldsChange;
     onFieldsSelectedRef.current = onFieldsSelected;
+    onCanvasReadyRef.current = onCanvasReady;
     fieldsRef.current = fields;
     sampleDataRef.current = sampleData;
     recordIndexRef.current = recordIndex;
@@ -169,6 +174,14 @@ export function FabricLabelCanvas({
       onFieldsChangeRef.current(updatedFields);
     };
 
+    // ---- Object Removed Handler (for cleanup tracking) ----
+    const handleObjectRemoved = (e: any) => {
+      const obj = e.target;
+      if (obj?.fieldId) {
+        autoFitSentRef.current.delete(obj.fieldId);
+      }
+    };
+
     // ---- Keyboard Handler ----
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -176,7 +189,7 @@ export function FabricLabelCanvas({
         if (activeObj && (activeObj as any).fieldId && onFieldsChangeRef.current) {
           const fieldId = (activeObj as any).fieldId;
           
-          // Remove from canvas (Fabric handles cleanup)
+          // Remove from canvas (Fabric handles cleanup via object:removed event)
           canvas.remove(activeObj);
           
           // Notify parent - send filtered array (deletion signal)
@@ -199,11 +212,12 @@ export function FabricLabelCanvas({
     canvas.on('selection:updated', handleSelection);
     canvas.on('selection:cleared', handleSelectionCleared);
     canvas.on('object:modified', handleObjectModified);
+    canvas.on('object:removed', handleObjectRemoved);
     window.addEventListener('keydown', handleKeyDown);
 
-    // Notify parent that canvas is ready
-    if (onCanvasReady) {
-      onCanvasReady(canvas);
+    // Notify parent that canvas is ready (use ref to avoid stale closure)
+    if (onCanvasReadyRef.current) {
+      onCanvasReadyRef.current(canvas);
     }
 
     return () => {
@@ -212,11 +226,12 @@ export function FabricLabelCanvas({
       canvas.off('selection:updated', handleSelection);
       canvas.off('selection:cleared', handleSelectionCleared);
       canvas.off('object:modified', handleObjectModified);
+      canvas.off('object:removed', handleObjectRemoved);
       window.removeEventListener('keydown', handleKeyDown);
       canvas.dispose();
       fabricCanvasRef.current = null;
     };
-  }, [templateSize.width, templateSize.height, onCanvasReady, findObjectByFieldId]);
+  }, [templateSize.width, templateSize.height]); // ONLY size - callbacks use refs
 
   // =============================================================================
   // EFFECT 2: Field Synchronization (runs when fields/data change)
@@ -282,10 +297,11 @@ export function FabricLabelCanvas({
             
             canvas.add(newObj);
             
-            // Collect autoFit updates
-            if (fieldConfig.autoFit && !fieldConfig.autoFitApplied) {
+            // Collect autoFit updates ONLY if not already sent
+            if (fieldConfig.autoFit && !fieldConfig.autoFitApplied && !autoFitSentRef.current.has(fieldConfig.id)) {
               const fittedFontSize = (newObj as any).fontSize;
               if (fittedFontSize) {
+                autoFitSentRef.current.add(fieldConfig.id); // Mark as sent
                 autoFitUpdates.push({
                   ...fieldConfig,
                   autoFitApplied: true,
@@ -297,10 +313,9 @@ export function FabricLabelCanvas({
         }
       }
 
-      // 3. Z-INDEX: Reorder objects using canvas methods
+      // 3. Z-INDEX: Reorder by bringing to front in sorted order (lowest first, highest last)
       const sortedFields = [...fields].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
       
-      // Bring objects to front in order (lowest zIndex first, highest last)
       sortedFields.forEach((field) => {
         const obj = findObjectByFieldId(canvas, field.id);
         if (obj) {
@@ -313,7 +328,7 @@ export function FabricLabelCanvas({
         canvas.sendObjectToBack(line);
       });
 
-      // 4. BATCH: Send autoFit updates after processing
+      // 4. BATCH: Send autoFit updates after processing (only new ones)
       if (autoFitUpdates.length > 0 && onFieldsChangeRef.current) {
         setTimeout(() => {
           onFieldsChangeRef.current!(autoFitUpdates);
@@ -326,23 +341,30 @@ export function FabricLabelCanvas({
 
     // Helper: Update existing object properties
     const updateExistingObject = (obj: any, fieldConfig: FieldConfig) => {
+      // Core positioning - always update
       obj.set({
         left: mmToPx(fieldConfig.position.x),
         top: mmToPx(fieldConfig.position.y),
         width: mmToPx(fieldConfig.size.width),
         scaleX: 1,
         scaleY: 1,
-        textAlign: fieldConfig.style.textAlign,
-        fontWeight: fieldConfig.style.fontWeight,
-        fontFamily: fieldConfig.style.fontFamily,
-        fill: fieldConfig.style.color,
         selectable: !fieldConfig.locked,
         evented: !fieldConfig.locked,
         visible: fieldConfig.visible !== false,
       });
 
-      // Apply user-specified fontSize if set
-      if (fieldConfig.userOverrideFontSize) {
+      // Style properties (safe to always apply except fontSize)
+      obj.set({
+        textAlign: fieldConfig.style.textAlign,
+        fontWeight: fieldConfig.style.fontWeight,
+        fontFamily: fieldConfig.style.fontFamily,
+        fill: fieldConfig.style.color,
+      });
+
+      // Only apply fontSize if explicitly set and not overridden by user
+      if (fieldConfig.style.fontSize && !fieldConfig.userOverrideFontSize) {
+        obj.set({ fontSize: fieldConfig.style.fontSize });
+      } else if (fieldConfig.userOverrideFontSize) {
         obj.set({ fontSize: fieldConfig.userOverrideFontSize });
       }
 

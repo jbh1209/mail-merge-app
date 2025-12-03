@@ -137,13 +137,20 @@ export function FabricLabelCanvas({
         x: pxToMm(obj.left),
         y: pxToMm(obj.top)
       };
+      
+      // Find the field config to get original height for textboxes
+      const fieldConfig = fieldsRef.current.find(f => f.id === obj.fieldId);
+      const isTextbox = obj.type === 'textbox';
+      
+      // CRITICAL: For textboxes, preserve the CONFIGURED height
+      // Textbox height is content-dependent (based on font size); we only track width changes
+      // This prevents validation errors when the rendered height differs from configured height
       const newSize = {
         width: pxToMm(actualWidth),
-        height: pxToMm(actualHeight)
+        height: isTextbox && fieldConfig ? fieldConfig.size.height : pxToMm(actualHeight)
       };
       
-      // Find the field config to validate
-      const fieldConfig = fieldsRef.current.find(f => f.id === obj.fieldId);
+      // Validate the updated field
       if (fieldConfig) {
         const updatedField = { ...fieldConfig, position: newPosition, size: newSize };
         const validation = validateFieldSize(updatedField);

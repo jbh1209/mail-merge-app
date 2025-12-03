@@ -123,13 +123,22 @@ export function FabricLabelCanvas({
       // CRITICAL: Handle Groups (barcodes/QR codes) differently
       // For textboxes: reset scale to 1 after getting dimensions
       // For groups: DON'T reset scale (causes distortion)
+      const isTextbox = obj.type === 'textbox';
+      
       if (!isGroup) {
-        obj.set({
+        const updateProps: any = {
           width: actualWidth,
-          height: actualHeight,
           scaleX: 1,
           scaleY: 1
-        });
+        };
+        
+        // CRITICAL: Don't set height on Textbox - it auto-calculates from content
+        // Setting it directly can corrupt the rendering and make it go blank
+        if (!isTextbox) {
+          updateProps.height = actualHeight;
+        }
+        
+        obj.set(updateProps);
         obj.setCoords();
       }
       
@@ -140,7 +149,6 @@ export function FabricLabelCanvas({
       
       // Find the field config to get original height for textboxes
       const fieldConfig = fieldsRef.current.find(f => f.id === obj.fieldId);
-      const isTextbox = obj.type === 'textbox';
       
       // CRITICAL: For textboxes, preserve the CONFIGURED height
       // Textbox height is content-dependent (based on font size); we only track width changes
@@ -229,7 +237,19 @@ export function FabricLabelCanvas({
       
       // Get new text value for this field
       let newText = '';
-      if (fieldConfig.combinedFields) {
+      
+      if (fieldConfig.fieldType === 'sequence') {
+        // CRITICAL: Sequence fields calculate text from recordIndex, NOT sampleData
+        const config = fieldConfig.typeConfig || {};
+        const start = config.sequenceStart || 1;
+        const prefix = config.sequencePrefix || '';
+        const suffix = config.sequenceSuffix || '';
+        const padding = config.sequencePadding || 0;
+        
+        const number = start + recordIndex;
+        const paddedNumber = String(number).padStart(padding, '0');
+        newText = prefix + paddedNumber + suffix;
+      } else if (fieldConfig.combinedFields) {
         // Address block - combine multiple fields
         newText = fieldConfig.combinedFields
           .map(f => sampleData?.[f] || '')
@@ -244,7 +264,7 @@ export function FabricLabelCanvas({
     });
     
     canvas.renderAll();
-  }, [sampleData, fields]);
+  }, [sampleData, fields, recordIndex]);
 
   // Draw grid
   useEffect(() => {

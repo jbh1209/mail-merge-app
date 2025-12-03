@@ -516,7 +516,18 @@ export function TemplateDesignCanvas({
                   scale={settings.scale}
                   showGrid={settings.showGrid}
                   onFieldsChange={(updatedFields) => {
-                // CRITICAL: Handle ALL field updates including style sync from fitTextToBox
+                // CRITICAL: Detect DELETIONS first (array is smaller)
+                if (updatedFields.length < fields.length) {
+                  const updatedIds = new Set(updatedFields.map(f => f.id));
+                  const deletedField = fields.find(f => !updatedIds.has(f.id));
+                  if (deletedField) {
+                    console.log('🗑️ Field deleted:', deletedField.id);
+                    deleteField(deletedField.id);
+                    return; // Don't process other changes for deletion
+                  }
+                }
+                
+                // Handle updates (autoFit sync, position, size changes)
                 updatedFields.forEach((updatedField) => {
                   const originalField = fields.find(f => f.id === updatedField.id);
                   if (!originalField) return;
@@ -535,12 +546,11 @@ export function TemplateDesignCanvas({
                       oldFontSize: originalField.style?.fontSize,
                       newFontSize: updatedField.style?.fontSize
                     });
-                    // Skip history for autoFit syncs - not user-initiated
                     updateField(updatedField.id, {
                       style: updatedField.style,
                       autoFitApplied: updatedField.autoFitApplied
                     }, true); // skipHistory = true
-                    return; // Don't process position/size changes
+                    return;
                   }
                   
                   // Handle position changes (user-initiated)

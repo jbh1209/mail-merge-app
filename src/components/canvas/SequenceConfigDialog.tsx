@@ -33,7 +33,7 @@ export function SequenceConfigDialog({
       },
       size: { width: 30, height: 10 },
       style: {
-        fontSize: 12,
+        fontSize: 24, // Larger default ensures rendered height meets 8mm minimum
         fontFamily: 'Arial',
         fontWeight: 'normal',
         fontStyle: 'normal',

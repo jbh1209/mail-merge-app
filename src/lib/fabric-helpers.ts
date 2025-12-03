@@ -408,6 +408,10 @@ export function createSequenceField(
   (textbox as any).templateField = fieldConfig.templateField;
   (textbox as any).typeConfig = fieldConfig.typeConfig;
   
+  // Store intended dimensions for validation preservation
+  (textbox as any).intendedWidth = fieldConfig.size.width;
+  (textbox as any).intendedHeight = fieldConfig.size.height;
+  
   return textbox as LabelFieldObject;
 }
 

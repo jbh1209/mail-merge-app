@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { Canvas as FabricCanvas, Line } from 'fabric';
 import { FieldConfig } from '@/lib/canvas-utils';
 import { 
@@ -23,6 +23,10 @@ interface FabricLabelCanvasProps {
   onFieldsSelected?: (fieldIds: string[]) => void;
 }
 
+// Single conversion function - everything at base scale
+const mmToPx = (mm: number) => mm * 3.7795;
+const pxToMm = (px: number) => px / 3.7795;
+
 export function FabricLabelCanvas({
   templateSize,
   fields,
@@ -36,26 +40,32 @@ export function FabricLabelCanvas({
 }: FabricLabelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
-  const objectsRef = useRef<Map<string, any>>(new Map());
   const gridObjectsRef = useRef<any[]>([]);
-
-  // Refs for callbacks to avoid canvas recreation
+  
+  // Refs for callbacks to avoid stale closures
   const onFieldsChangeRef = useRef(onFieldsChange);
   const onFieldsSelectedRef = useRef(onFieldsSelected);
   const fieldsRef = useRef(fields);
+  const sampleDataRef = useRef(sampleData);
+  const recordIndexRef = useRef(recordIndex);
 
   // Keep refs updated
   useEffect(() => {
     onFieldsChangeRef.current = onFieldsChange;
     onFieldsSelectedRef.current = onFieldsSelected;
     fieldsRef.current = fields;
+    sampleDataRef.current = sampleData;
+    recordIndexRef.current = recordIndex;
   });
 
-  // Single conversion function - everything at base scale
-  const mmToPx = (mm: number) => mm * 3.7795;
-  const pxToMm = (px: number) => px / 3.7795;
+  // Helper: Find object by fieldId using Fabric's native method
+  const findObjectByFieldId = useCallback((canvas: FabricCanvas, fieldId: string) => {
+    return canvas.getObjects().find((obj: any) => obj.fieldId === fieldId);
+  }, []);
 
-  // Initialize canvas once (only on mount or size change)
+  // =============================================================================
+  // EFFECT 1: Canvas Initialization + ALL Event Handlers (runs once on mount/size change)
+  // =============================================================================
   useEffect(() => {
     if (!canvasRef.current) return;
 
@@ -72,31 +82,8 @@ export function FabricLabelCanvas({
 
     fabricCanvasRef.current = canvas;
 
-    if (onCanvasReady) {
-      onCanvasReady(canvas);
-    }
-
-    return () => {
-      canvas.dispose();
-      objectsRef.current.clear();
-      fabricCanvasRef.current = null;
-    };
-  }, [templateSize.width, templateSize.height]);
-
-  // Setup event handlers (uses refs to avoid recreating canvas)
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current;
-    if (!canvas) return;
-
-    const handleSelectionCreated = (e: any) => {
-      if (!onFieldsSelectedRef.current) return;
-      const selectedIds = (e.selected || [])
-        .map((obj: any) => obj.fieldId)
-        .filter(Boolean);
-      onFieldsSelectedRef.current(selectedIds);
-    };
-
-    const handleSelectionUpdated = (e: any) => {
+    // ---- Selection Event Handlers ----
+    const handleSelection = (e: any) => {
       if (!onFieldsSelectedRef.current) return;
       const selectedIds = (e.selected || [])
         .map((obj: any) => obj.fieldId)
@@ -110,21 +97,19 @@ export function FabricLabelCanvas({
       }
     };
 
+    // ---- Object Modified Handler ----
     const handleObjectModified = (e: any) => {
       const obj = e.target as any;
       if (!obj?.fieldId || !onFieldsChangeRef.current) return;
       
       const isGroup = obj.type === 'Group' || obj.type === 'group';
+      const isTextbox = obj.type === 'textbox';
       
       // Get the ACTUAL rendered dimensions (including scale)
       const actualWidth = obj.getScaledWidth();
       const actualHeight = obj.getScaledHeight();
       
-      // CRITICAL: Handle Groups (barcodes/QR codes) differently
-      // For textboxes: reset scale to 1 after getting dimensions
-      // For groups: DON'T reset scale (causes distortion)
-      const isTextbox = obj.type === 'textbox';
-      
+      // For non-groups: normalize scale to 1 after capturing dimensions
       if (!isGroup) {
         const updateProps: any = {
           width: actualWidth,
@@ -133,7 +118,6 @@ export function FabricLabelCanvas({
         };
         
         // CRITICAL: Don't set height on Textbox - it auto-calculates from content
-        // Setting it directly can corrupt the rendering and make it go blank
         if (!isTextbox) {
           updateProps.height = actualHeight;
         }
@@ -147,18 +131,16 @@ export function FabricLabelCanvas({
         y: pxToMm(obj.top)
       };
       
-      // Find the field config to get original height for textboxes
+      // Find the field config to preserve textbox height
       const fieldConfig = fieldsRef.current.find(f => f.id === obj.fieldId);
       
-      // CRITICAL: For textboxes, preserve the CONFIGURED height
-      // Textbox height is content-dependent (based on font size); we only track width changes
-      // This prevents validation errors when the rendered height differs from configured height
+      // For textboxes, preserve the CONFIGURED height (not rendered height)
       const newSize = {
         width: pxToMm(actualWidth),
         height: isTextbox && fieldConfig ? fieldConfig.size.height : pxToMm(actualHeight)
       };
       
-      // Validate the updated field
+      // Validate and show visual feedback
       if (fieldConfig) {
         const updatedField = { ...fieldConfig, position: newPosition, size: newSize };
         const validation = validateFieldSize(updatedField);
@@ -178,6 +160,7 @@ export function FabricLabelCanvas({
         }
       }
       
+      // Notify parent of position/size changes
       const updatedFields = fieldsRef.current.map(f => 
         f.id === obj.fieldId 
           ? { ...f, position: newPosition, size: newSize }
@@ -186,60 +169,191 @@ export function FabricLabelCanvas({
       onFieldsChangeRef.current(updatedFields);
     };
 
-    canvas.on('selection:created', handleSelectionCreated);
-    canvas.on('selection:updated', handleSelectionUpdated);
-    canvas.on('selection:cleared', handleSelectionCleared);
-    canvas.on('object:modified', handleObjectModified);
-
-    return () => {
-      canvas.off('selection:created', handleSelectionCreated);
-      canvas.off('selection:updated', handleSelectionUpdated);
-      canvas.off('selection:cleared', handleSelectionCleared);
-      canvas.off('object:modified', handleObjectModified);
-    };
-  }, []);
-
-  // Keyboard handler (uses refs to avoid recreating canvas)
-  useEffect(() => {
+    // ---- Keyboard Handler ----
     const handleKeyDown = (e: KeyboardEvent) => {
-      const canvas = fabricCanvasRef.current;
-      if (!canvas) return;
-      
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const activeObj = canvas.getActiveObject();
         if (activeObj && (activeObj as any).fieldId && onFieldsChangeRef.current) {
           const fieldId = (activeObj as any).fieldId;
+          
+          // Remove from canvas (Fabric handles cleanup)
+          canvas.remove(activeObj);
+          
+          // Notify parent - send filtered array (deletion signal)
           const updatedFields = fieldsRef.current.filter(f => f.id !== fieldId);
           onFieldsChangeRef.current(updatedFields);
-          canvas.remove(activeObj);
-          canvas.renderAll();
+          
+          // Clear selection
           if (onFieldsSelectedRef.current) {
             onFieldsSelectedRef.current([]);
           }
+          
+          canvas.requestRenderAll();
           e.preventDefault();
         }
       }
     };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
-  // Update text content when sample data changes (page navigation)
+    // Register ALL event handlers
+    canvas.on('selection:created', handleSelection);
+    canvas.on('selection:updated', handleSelection);
+    canvas.on('selection:cleared', handleSelectionCleared);
+    canvas.on('object:modified', handleObjectModified);
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Notify parent that canvas is ready
+    if (onCanvasReady) {
+      onCanvasReady(canvas);
+    }
+
+    return () => {
+      // Cleanup
+      canvas.off('selection:created', handleSelection);
+      canvas.off('selection:updated', handleSelection);
+      canvas.off('selection:cleared', handleSelectionCleared);
+      canvas.off('object:modified', handleObjectModified);
+      window.removeEventListener('keydown', handleKeyDown);
+      canvas.dispose();
+      fabricCanvasRef.current = null;
+    };
+  }, [templateSize.width, templateSize.height, onCanvasReady, findObjectByFieldId]);
+
+  // =============================================================================
+  // EFFECT 2: Field Synchronization (runs when fields/data change)
+  // =============================================================================
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
 
-    // Update text content of existing objects instead of recreating
-    objectsRef.current.forEach((obj, fieldId) => {
-      const fieldConfig = fields.find(f => f.id === fieldId);
-      if (!fieldConfig) return;
+    const syncFieldsToCanvas = async () => {
+      const currentFieldIds = new Set(fields.map(f => f.id));
+      const autoFitUpdates: FieldConfig[] = [];
       
-      // Get new text value for this field
+      // Get all current field objects (excluding grid)
+      const existingObjects = canvas.getObjects().filter((obj: any) => obj.fieldId);
+      const existingFieldIds = new Set(existingObjects.map((obj: any) => obj.fieldId));
+
+      // 1. REMOVE objects that no longer exist in fields
+      existingObjects.forEach((obj: any) => {
+        if (!currentFieldIds.has(obj.fieldId)) {
+          canvas.remove(obj);
+        }
+      });
+
+      // 2. CREATE or UPDATE objects for each field
+      for (const fieldConfig of fields) {
+        const existingObj = findObjectByFieldId(canvas, fieldConfig.id);
+
+        if (existingObj) {
+          // UPDATE existing object - just update properties, don't recreate
+          updateExistingObject(existingObj, fieldConfig);
+          
+          // Update text content based on field type
+          updateObjectText(existingObj, fieldConfig);
+        } else {
+          // CREATE new object
+          const newObj = await createFieldObject(fieldConfig);
+          
+          if (newObj) {
+            (newObj as any).fieldId = fieldConfig.id;
+            
+            // Apply layer properties
+            newObj.set({
+              selectable: !fieldConfig.locked,
+              evented: !fieldConfig.locked,
+              visible: fieldConfig.visible !== false,
+            });
+            
+            // Validate and apply visual indicator
+            const validation = validateFieldSize(fieldConfig);
+            const borderColor = getValidationBorderColor(validation);
+            if (borderColor) {
+              newObj.set({ stroke: borderColor, strokeWidth: 2 });
+            }
+            
+            // Show toast for size issues
+            if (validation.message) {
+              toast({
+                title: validation.severity === 'error' ? 'Size Too Small' : 'Size Warning',
+                description: validation.message,
+                variant: validation.severity === 'error' ? 'destructive' : 'default',
+              });
+            }
+            
+            canvas.add(newObj);
+            
+            // Collect autoFit updates
+            if (fieldConfig.autoFit && !fieldConfig.autoFitApplied) {
+              const fittedFontSize = (newObj as any).fontSize;
+              if (fittedFontSize) {
+                autoFitUpdates.push({
+                  ...fieldConfig,
+                  autoFitApplied: true,
+                  style: { ...fieldConfig.style, fontSize: fittedFontSize }
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Z-INDEX: Reorder objects using canvas methods
+      const sortedFields = [...fields].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+      
+      // Bring objects to front in order (lowest zIndex first, highest last)
+      sortedFields.forEach((field) => {
+        const obj = findObjectByFieldId(canvas, field.id);
+        if (obj) {
+          canvas.bringObjectToFront(obj);
+        }
+      });
+      
+      // Ensure grid stays at the back
+      gridObjectsRef.current.forEach(line => {
+        canvas.sendObjectToBack(line);
+      });
+
+      // 4. BATCH: Send autoFit updates after processing
+      if (autoFitUpdates.length > 0 && onFieldsChangeRef.current) {
+        setTimeout(() => {
+          onFieldsChangeRef.current!(autoFitUpdates);
+        }, 0);
+      }
+
+      // SINGLE renderAll at the end
+      canvas.requestRenderAll();
+    };
+
+    // Helper: Update existing object properties
+    const updateExistingObject = (obj: any, fieldConfig: FieldConfig) => {
+      obj.set({
+        left: mmToPx(fieldConfig.position.x),
+        top: mmToPx(fieldConfig.position.y),
+        width: mmToPx(fieldConfig.size.width),
+        scaleX: 1,
+        scaleY: 1,
+        textAlign: fieldConfig.style.textAlign,
+        fontWeight: fieldConfig.style.fontWeight,
+        fontFamily: fieldConfig.style.fontFamily,
+        fill: fieldConfig.style.color,
+        selectable: !fieldConfig.locked,
+        evented: !fieldConfig.locked,
+        visible: fieldConfig.visible !== false,
+      });
+
+      // Apply user-specified fontSize if set
+      if (fieldConfig.userOverrideFontSize) {
+        obj.set({ fontSize: fieldConfig.userOverrideFontSize });
+      }
+
+      obj.setCoords();
+    };
+
+    // Helper: Update text content based on field type
+    const updateObjectText = (obj: any, fieldConfig: FieldConfig) => {
       let newText = '';
       
       if (fieldConfig.fieldType === 'sequence') {
-        // CRITICAL: Sequence fields calculate text from recordIndex, NOT sampleData
         const config = fieldConfig.typeConfig || {};
         const start = config.sequenceStart || 1;
         const prefix = config.sequencePrefix || '';
@@ -250,7 +364,6 @@ export function FabricLabelCanvas({
         const paddedNumber = String(number).padStart(padding, '0');
         newText = prefix + paddedNumber + suffix;
       } else if (fieldConfig.combinedFields) {
-        // Address block - combine multiple fields
         newText = fieldConfig.combinedFields
           .map(f => sampleData?.[f] || '')
           .filter(Boolean)
@@ -259,22 +372,51 @@ export function FabricLabelCanvas({
         newText = sampleData?.[fieldConfig.templateField] || '';
       }
       
-      // Update only the text, preserve all other properties
-      obj.set('text', newText);
-    });
-    
-    canvas.renderAll();
-  }, [sampleData, fields, recordIndex]);
+      // Only update if object has text property (textbox)
+      if (obj.type === 'textbox' && obj.text !== newText) {
+        obj.set('text', newText);
+      }
+    };
 
-  // Draw grid
+    // Helper: Create new field object
+    const createFieldObject = async (fieldConfig: FieldConfig) => {
+      switch (fieldConfig.fieldType) {
+        case 'address_block':
+          return createAddressBlock(fieldConfig, sampleData, 1);
+        case 'barcode':
+          return await createBarcodeField(fieldConfig, sampleData, 1);
+        case 'qrcode':
+          return await createQRCodeField(fieldConfig, sampleData, 1);
+        case 'sequence':
+          return createSequenceField(fieldConfig, recordIndex, 1);
+        case 'text':
+        default:
+          return createLabelTextField(fieldConfig, sampleData, 1);
+      }
+    };
+
+    syncFieldsToCanvas();
+  }, [fields, sampleData, recordIndex, findObjectByFieldId]);
+
+  // =============================================================================
+  // EFFECT 3: Visual Settings (grid, zoom - runs when display settings change)
+  // =============================================================================
   useEffect(() => {
     const canvas = fabricCanvasRef.current;
     if (!canvas) return;
+
+    // Update zoom and dimensions
+    canvas.setZoom(scale);
+    canvas.setDimensions({
+      width: mmToPx(templateSize.width) * scale,
+      height: mmToPx(templateSize.height) * scale
+    });
 
     // Remove old grid objects
     gridObjectsRef.current.forEach(obj => canvas.remove(obj));
     gridObjectsRef.current = [];
 
+    // Draw grid if enabled
     if (showGrid) {
       const width = mmToPx(templateSize.width);
       const height = mmToPx(templateSize.height);
@@ -290,230 +432,20 @@ export function FabricLabelCanvas({
       for (let x = 0; x <= width; x += gridSize) {
         const line = new Line([x, 0, x, height], gridOptions);
         canvas.add(line);
+        canvas.sendObjectToBack(line);
         gridObjectsRef.current.push(line);
       }
       // Horizontal lines
       for (let y = 0; y <= height; y += gridSize) {
         const line = new Line([0, y, width, y], gridOptions);
         canvas.add(line);
+        canvas.sendObjectToBack(line);
         gridObjectsRef.current.push(line);
       }
-      
-      // CRITICAL: Send all grid lines to the back so they don't cover text
-      gridObjectsRef.current.forEach(line => {
-        canvas.sendObjectToBack(line);
-      });
     }
 
-    canvas.renderAll();
-  }, [showGrid, templateSize.width, templateSize.height]);
-
-  // Update zoom and dimensions
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current;
-    if (!canvas) return;
-
-    canvas.setZoom(scale);
-    canvas.setDimensions({
-      width: mmToPx(templateSize.width) * scale,
-      height: mmToPx(templateSize.height) * scale
-    });
-
-    canvas.renderAll();
-  }, [scale, templateSize.width, templateSize.height]);
-
-  // Smart update: modify existing objects or create new ones
-  useEffect(() => {
-    const canvas = fabricCanvasRef.current;
-    if (!canvas) return;
-
-    // Track which fields exist in current data
-    const currentFieldIds = new Set(fields.map(f => f.id));
-
-    // Process fields with async support for barcode/qrcode
-    const processFields = async () => {
-      const autoFitUpdates: FieldConfig[] = []; // BATCH: Collect all autoFit updates
-      
-      for (const fieldConfig of fields) {
-        const existingObj = objectsRef.current.get(fieldConfig.id);
-
-          if (existingObj) {
-          // UPDATE existing object properties without recreating
-          // CRITICAL: Always normalize scale to prevent compounding
-          const updates: any = {
-            left: mmToPx(fieldConfig.position.x),
-            top: mmToPx(fieldConfig.position.y),
-            width: mmToPx(fieldConfig.size.width),
-            scaleX: 1,  // Always reset scale
-            scaleY: 1,  // Always reset scale
-            textAlign: fieldConfig.style.textAlign,
-            fontWeight: fieldConfig.style.fontWeight,
-            fontFamily: fieldConfig.style.fontFamily,
-            fill: fieldConfig.style.color,
-            selectable: !fieldConfig.locked,
-            evented: !fieldConfig.locked,
-            visible: fieldConfig.visible !== false,
-          };
-
-          // Apply fontSize ONLY if user has explicitly set one
-          if (fieldConfig.userOverrideFontSize) {
-            console.log('🔧 Applying user font size:', {
-              fieldId: fieldConfig.id,
-              fontSize: fieldConfig.userOverrideFontSize,
-              previousFontSize: existingObj.fontSize,
-              previousScale: { x: existingObj.scaleX, y: existingObj.scaleY }
-            });
-            updates.fontSize = fieldConfig.userOverrideFontSize;
-          }
-
-          existingObj.set(updates);
-          existingObj.setCoords();
-        } else {
-          // CREATE new object only if it doesn't exist
-          let obj;
-
-          switch (fieldConfig.fieldType) {
-            case 'address_block':
-              obj = createAddressBlock(fieldConfig, sampleData, 1);
-              break;
-            case 'barcode':
-              obj = await createBarcodeField(fieldConfig, sampleData, 1);
-              break;
-            case 'qrcode':
-              obj = await createQRCodeField(fieldConfig, sampleData, 1);
-              break;
-            case 'sequence':
-              obj = createSequenceField(fieldConfig, recordIndex, 1);
-              break;
-            case 'text':
-            default:
-              obj = createLabelTextField(fieldConfig, sampleData, 1);
-              break;
-          }
-
-          if (obj) {
-            (obj as any).fieldId = fieldConfig.id;
-            
-            // Apply layer properties
-            obj.set({
-              selectable: !fieldConfig.locked,
-              evented: !fieldConfig.locked,
-              visible: fieldConfig.visible !== false,
-            });
-            
-            // Validate size and apply visual indicator
-            const validation = validateFieldSize(fieldConfig);
-            const borderColor = getValidationBorderColor(validation);
-            if (borderColor) {
-              obj.set({
-                stroke: borderColor,
-                strokeWidth: 2
-              });
-            }
-            
-            // Show toast warning for new elements that are undersized
-            if (validation.message && validation.severity === 'error') {
-              toast({
-                title: 'Size Too Small',
-                description: validation.message,
-                variant: 'destructive',
-              });
-            } else if (validation.message && validation.severity === 'warning') {
-              toast({
-                title: 'Size Warning',
-                description: validation.message,
-              });
-            }
-            
-            canvas.add(obj);
-            objectsRef.current.set(fieldConfig.id, obj);
-            
-            // Z-index will be handled by render order
-            
-            // BATCH: Collect autoFit update instead of sending immediately
-            if (fieldConfig.autoFit && !fieldConfig.autoFitApplied) {
-              const fittedFontSize = (obj as any).fontSize;
-              if (fittedFontSize) {
-                console.log('✅ fitTextToBox calculated fontSize:', {
-                  fieldId: fieldConfig.id,
-                  fittedFontSize,
-                  originalFontSize: fieldConfig.style.fontSize
-                });
-                
-                autoFitUpdates.push({
-                  ...fieldConfig,
-                  autoFitApplied: true,
-                  style: { ...fieldConfig.style, fontSize: fittedFontSize }
-                });
-              }
-            }
-          }
-        }
-      }
-
-      // Remove objects that no longer exist in fields
-      objectsRef.current.forEach((obj, fieldId) => {
-        if (!currentFieldIds.has(fieldId)) {
-          canvas.remove(obj);
-          objectsRef.current.delete(fieldId);
-        }
-      });
-      
-      // Apply z-index ordering while preserving selection
-      const activeObject = canvas.getActiveObject();
-      const activeObjectFieldId = (activeObject as any)?.fieldId;
-      
-      const sortedFields = [...fields].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
-      
-      // Collect objects in correct order
-      const orderedObjects: any[] = [];
-      sortedFields.forEach((field) => {
-        const obj = objectsRef.current.get(field.id);
-        if (obj) {
-          canvas.remove(obj);
-          orderedObjects.push(obj);
-        }
-      });
-      
-      // Re-add in sorted order (back to front)
-      orderedObjects.forEach(obj => {
-        canvas.add(obj);
-      });
-      
-      // Restore selection
-      if (activeObjectFieldId) {
-        const objToSelect = objectsRef.current.get(activeObjectFieldId);
-        if (objToSelect) {
-          canvas.setActiveObject(objToSelect);
-        }
-      }
-      
-      // Re-add grid lines to back
-      gridObjectsRef.current.forEach(line => {
-        canvas.sendObjectToBack(line);
-      });
-
-      // BATCH: Send ALL autoFit updates at once AFTER the loop completes
-      if (autoFitUpdates.length > 0 && onFieldsChangeRef.current) {
-        setTimeout(() => {
-          console.log('🔄 Batch sending autoFit updates:', autoFitUpdates.length);
-          onFieldsChangeRef.current(autoFitUpdates);
-        }, 0);
-      }
-
-      // Debugging: Track object lifecycle
-      console.log('📊 Canvas field sync:', {
-        fieldsCount: fields.length,
-        objectsRefSize: objectsRef.current.size,
-        fieldIds: fields.map(f => f.id),
-        objectIds: Array.from(objectsRef.current.keys())
-      });
-
-      canvas.renderAll();
-    };
-
-    processFields();
-  }, [fields, sampleData, recordIndex]); // Depend on fields, sampleData, and recordIndex
+    canvas.requestRenderAll();
+  }, [scale, showGrid, templateSize.width, templateSize.height]);
 
   return (
     <div className="relative border-2 border-border rounded-lg overflow-hidden shadow-lg bg-muted/20">

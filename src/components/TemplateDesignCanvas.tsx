@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { FabricLabelCanvas } from './canvas/FabricLabelCanvas';
@@ -515,7 +515,7 @@ export function TemplateDesignCanvas({
                   recordIndex={currentDataIndex}
                   scale={settings.scale}
                   showGrid={settings.showGrid}
-                  onFieldsChange={(updatedFields) => {
+                  onFieldsChange={useCallback((updatedFields: FieldConfig[]) => {
                 // CRITICAL: Detect DELETIONS first (array is smaller)
                 if (updatedFields.length < fields.length) {
                   const updatedIds = new Set(updatedFields.map(f => f.id));
@@ -566,15 +566,14 @@ export function TemplateDesignCanvas({
                   }
                 });
                 finalizeFieldPositions();
-              }}
-              onCanvasReady={(canvas) => {
-                // Store canvas reference for hard capture at save time
+              }, [fields, deleteField, updateField, moveField, resizeField, finalizeFieldPositions])}
+              onCanvasReady={useCallback((canvas: any) => {
                 fabricCanvasRef.current = canvas;
                 console.log('✅ Fabric canvas initialized and stored for capture');
-              }}
-              onFieldsSelected={(fieldIds) => {
+              }, [])}
+              onFieldsSelected={useCallback((fieldIds: string[]) => {
                 setSelection(fieldIds);
-              }}
+              }, [setSelection])}
             />
             </div>
             </div>

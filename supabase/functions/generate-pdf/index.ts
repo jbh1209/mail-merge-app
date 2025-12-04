@@ -281,6 +281,8 @@ function renderQRCodeField(
 ) {
   const value = dataColumn ? String(dataRow[dataColumn] || '') : field.typeConfig?.staticValue || 'https://example.com';
   
+  console.log(`   🔲 QR Code value: "${value}"`);
+  
   try {
     const size = Math.min(width, height) - 4;
     
@@ -288,27 +290,41 @@ function renderQRCodeField(
     const qr = new QRCode({
       content: value,
       padding: 0,
-      width: size,
-      height: size,
+      width: 256,  // Fixed size for generation, we'll scale to fit
+      height: 256,
       color: '#000000',
       background: '#ffffff',
       ecl: field.typeConfig?.qrErrorCorrection || 'M',
     });
     
     const svg = qr.svg();
+    console.log(`   QR SVG sample: ${svg.substring(0, 150)}...`);
     
     // Parse SVG to extract rect elements (QR code modules)
     const rectRegex = /<rect\s+x="([^"]+)"\s+y="([^"]+)"\s+width="([^"]+)"\s+height="([^"]+)"/g;
     let match;
     
-    // Get SVG dimensions
-    const viewBoxMatch = svg.match(/viewBox="0 0 ([0-9.]+) ([0-9.]+)"/);
-    if (!viewBoxMatch) {
-      throw new Error('Could not parse QR code SVG viewBox');
-    }
+    // Get SVG dimensions - try width/height attributes first (qrcode-svg format), then viewBox
+    let svgWidth: number;
+    let svgHeight: number;
     
-    const svgWidth = parseFloat(viewBoxMatch[1]);
-    const svgHeight = parseFloat(viewBoxMatch[2]);
+    const widthMatch = svg.match(/width="([0-9.]+)"/);
+    const heightMatch = svg.match(/height="([0-9.]+)"/);
+    
+    if (widthMatch && heightMatch) {
+      svgWidth = parseFloat(widthMatch[1]);
+      svgHeight = parseFloat(heightMatch[1]);
+      console.log(`   Parsed from width/height attrs: ${svgWidth}x${svgHeight}`);
+    } else {
+      // Fallback to viewBox
+      const viewBoxMatch = svg.match(/viewBox="0 0 ([0-9.]+) ([0-9.]+)"/);
+      if (!viewBoxMatch) {
+        throw new Error('Could not parse QR code SVG dimensions');
+      }
+      svgWidth = parseFloat(viewBoxMatch[1]);
+      svgHeight = parseFloat(viewBoxMatch[2]);
+      console.log(`   Parsed from viewBox: ${svgWidth}x${svgHeight}`);
+    }
     
     // Calculate scale and centering
     const scaleX = size / svgWidth;
@@ -328,6 +344,7 @@ function renderQRCodeField(
     });
     
     // Draw each QR code module from the SVG
+    let rectCount = 0;
     while ((match = rectRegex.exec(svg)) !== null) {
       const rectX = parseFloat(match[1]);
       const rectY = parseFloat(match[2]);
@@ -341,11 +358,13 @@ function renderQRCodeField(
         height: rectH * scale,
         color: rgb(0, 0, 0)
       });
+      rectCount++;
     }
+    console.log(`   ✅ QR code rendered with ${rectCount} modules`);
     
   } catch (error) {
     console.error('QR code generation error:', error);
-    // Fallback to placeholder
+    // Fallback to placeholder with actual value for debugging
     page.drawRectangle({
       x: x,
       y: y,
@@ -354,10 +373,11 @@ function renderQRCodeField(
       borderColor: rgb(0.8, 0, 0),
       borderWidth: 1
     });
-    page.drawText('QR ERROR', {
-      x: x + 6,
+    const displayValue = value.length > 25 ? value.substring(0, 22) + '...' : value;
+    page.drawText(`QR: ${displayValue}`, {
+      x: x + 4,
       y: y + height / 2,
-      size: 8,
+      size: 6,
       color: rgb(1, 0, 0)
     });
   }
@@ -427,6 +447,8 @@ function renderAddressBlock(
   const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
   const fontSize = field.style?.fontSize || 12;
   const lineHeight = 1.2;
+  
+  console.log(`   📏 Address block: fontSize=${fontSize}pt, box=${width.toFixed(1)}x${height.toFixed(1)}pt, lines=${lines.length}`);
   
   // Render lines from top
   let yOffset = y + height - fontSize - 4;

@@ -458,24 +458,37 @@ export const useCanvasState = ({
 
       if (error) throw error;
       
-      if (data?.fields) {
-        const newFields = data.fields.map((field: any) => ({
+      if (data?.fields && Array.isArray(data.fields)) {
+        // Validate AI response - ensure fields have required properties
+        const validFields = data.fields.filter((field: any) => 
+          field.templateField && 
+          field.position?.x >= 0 && 
+          field.position?.y >= 0 &&
+          field.size?.width > 0 &&
+          field.size?.height > 0
+        );
+        
+        if (validFields.length === 0) {
+          throw new Error('AI returned no valid fields - keeping existing layout');
+        }
+        
+        const newFields = validFields.map((field: any) => ({
           id: `field-${field.templateField}-${crypto.randomUUID().slice(0, 8)}`,
           templateField: field.templateField,
           position: { x: field.position.x, y: field.position.y },
           size: { width: field.size.width, height: field.size.height },
           style: {
-            fontSize: field.style.fontSize,
-            fontFamily: field.style.fontFamily || 'Arial',
-            fontWeight: field.style.fontWeight || 'normal',
-            fontStyle: field.style.fontStyle || 'normal',
-            textAlign: field.style.textAlign || 'left',
-            color: field.style.color || '#000000',
-            whiteSpace: field.style.whiteSpace,
-            wordWrap: field.style.wordWrap,
-            lineHeight: field.style.lineHeight,
-            display: field.style.display,
-            transformCommas: field.style.transformCommas
+            fontSize: field.style?.fontSize || 12,
+            fontFamily: field.style?.fontFamily || 'Arial',
+            fontWeight: field.style?.fontWeight || 'normal',
+            fontStyle: field.style?.fontStyle || 'normal',
+            textAlign: field.style?.textAlign || 'left',
+            color: field.style?.color || '#000000',
+            whiteSpace: field.style?.whiteSpace,
+            wordWrap: field.style?.wordWrap,
+            lineHeight: field.style?.lineHeight,
+            display: field.style?.display,
+            transformCommas: field.style?.transformCommas
           },
           showLabel: settings.showAllLabels,
           fieldType: 'text' as const,
@@ -495,7 +508,7 @@ export const useCanvasState = ({
         };
       }
       
-      throw new Error('Invalid AI response');
+      throw new Error('Invalid AI response - missing fields array');
     } catch (error) {
       console.error('❌ LAYOUT GENERATION FAILED:', error);
       

@@ -74,18 +74,24 @@ export function FabricLabelCanvas({
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    const width = mmToPx(templateSize.width);
-    const height = mmToPx(templateSize.height);
+    const baseWidth = mmToPx(templateSize.width);
+    const baseHeight = mmToPx(templateSize.height);
 
+    // Create canvas with scaled dimensions immediately
     const canvas = new FabricCanvas(canvasRef.current, {
-      width: width,
-      height: height,
+      width: baseWidth * scale,
+      height: baseHeight * scale,
       backgroundColor: '#ffffff',
       selection: true,
       preserveObjectStacking: true
     });
 
+    // Apply zoom immediately so objects render at correct size
+    canvas.setZoom(scale);
+
     fabricCanvasRef.current = canvas;
+    
+    console.log(`🎨 Canvas created: ${baseWidth.toFixed(0)}x${baseHeight.toFixed(0)}px base, ${(baseWidth * scale).toFixed(0)}x${(baseHeight * scale).toFixed(0)}px scaled at ${scale}x zoom`);
 
     // ---- Selection Event Handlers ----
     const handleSelection = (e: any) => {
@@ -231,7 +237,7 @@ export function FabricLabelCanvas({
       canvas.dispose();
       fabricCanvasRef.current = null;
     };
-  }, [templateSize.width, templateSize.height]); // ONLY size - callbacks use refs
+  }, [templateSize.width, templateSize.height, scale]); // Include scale for proper initial sizing
 
   // =============================================================================
   // EFFECT 2: Field Synchronization (runs when fields/data change)
@@ -386,12 +392,14 @@ export function FabricLabelCanvas({
         const paddedNumber = String(number).padStart(padding, '0');
         newText = prefix + paddedNumber + suffix;
       } else if (fieldConfig.combinedFields) {
-        newText = fieldConfig.combinedFields
+        const lines = fieldConfig.combinedFields
           .map(f => sampleData?.[f] || '')
-          .filter(Boolean)
-          .join('\n');
+          .filter(Boolean);
+        // Show placeholder if no data
+        newText = lines.length > 0 ? lines.join('\n') : `[${fieldConfig.combinedFields.join(', ')}]`;
       } else {
-        newText = sampleData?.[fieldConfig.templateField] || '';
+        // Show placeholder if no data found
+        newText = sampleData?.[fieldConfig.templateField] || `[${fieldConfig.templateField}]`;
       }
       
       // Only update if object has text property (textbox)

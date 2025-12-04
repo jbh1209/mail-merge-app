@@ -111,11 +111,11 @@ export function createLabelTextField(
   const { templateField, position, size, style } = fieldConfig;
   const value = getFieldValue(templateField, sampleData);
   
-  // If no data found, return empty string (no demo data!)
-  const displayText = value || '';
+  // Show placeholder with field name if no data found - visible for debugging
+  const displayText = value || `[${templateField}]`;
   
   if (!value) {
-    console.warn(`⚠️ No data for field "${templateField}"`);
+    console.warn(`⚠️ No data for field "${templateField}" - showing placeholder`);
   }
   
   // Convert mm to px using centralized coordinate system
@@ -177,11 +177,11 @@ export function createAddressBlock(
     }
   }
 
-  // No demo data - if empty, leave empty
-  const displayText = lines.join('\n') || '';
+  // Show placeholder with field names if no data found
+  const displayText = lines.length > 0 ? lines.join('\n') : `[${combinedFields.join(', ')}]`;
   
   if (lines.length === 0) {
-    console.warn(`⚠️ Address block empty - no data for fields:`, combinedFields);
+    console.warn(`⚠️ Address block empty - no data for fields:`, combinedFields, '- showing placeholder');
   }
   
   // Convert mm to px using centralized coordinate system

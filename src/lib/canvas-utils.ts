@@ -136,7 +136,7 @@ export const calculateOptimalFontSize = (
  * Check if a field type supports text formatting controls
  */
 export const isTextBasedFieldType = (fieldType: FieldType): boolean => {
-  return fieldType === 'text' || fieldType === 'address_block';
+  return fieldType === 'text' || fieldType === 'address_block' || fieldType === 'sequence';
 };
 
 /**

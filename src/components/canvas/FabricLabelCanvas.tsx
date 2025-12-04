@@ -52,6 +52,9 @@ export function FabricLabelCanvas({
   
   // Track which fields have had autoFit updates sent to prevent infinite loops
   const autoFitSentRef = useRef<Set<string>>(new Set());
+  
+  // Track if user is currently interacting (dragging/scaling) to prevent position overwrites
+  const isUserInteractingRef = useRef(false);
 
   // Keep refs updated on every render
   useEffect(() => {
@@ -213,11 +216,23 @@ export function FabricLabelCanvas({
       }
     };
 
+    // Track interaction start/end to prevent Effect 2 from overwriting drag positions
+    const handleInteractionStart = () => {
+      isUserInteractingRef.current = true;
+    };
+    
+    const handleInteractionEnd = (e: any) => {
+      isUserInteractingRef.current = false;
+      handleObjectModified(e);
+    };
+
     // Register ALL event handlers
     canvas.on('selection:created', handleSelection);
     canvas.on('selection:updated', handleSelection);
     canvas.on('selection:cleared', handleSelectionCleared);
-    canvas.on('object:modified', handleObjectModified);
+    canvas.on('object:moving', handleInteractionStart);
+    canvas.on('object:scaling', handleInteractionStart);
+    canvas.on('object:modified', handleInteractionEnd);
     canvas.on('object:removed', handleObjectRemoved);
     window.addEventListener('keydown', handleKeyDown);
 
@@ -231,7 +246,9 @@ export function FabricLabelCanvas({
       canvas.off('selection:created', handleSelection);
       canvas.off('selection:updated', handleSelection);
       canvas.off('selection:cleared', handleSelectionCleared);
-      canvas.off('object:modified', handleObjectModified);
+      canvas.off('object:moving', handleInteractionStart);
+      canvas.off('object:scaling', handleInteractionStart);
+      canvas.off('object:modified', handleInteractionEnd);
       canvas.off('object:removed', handleObjectRemoved);
       window.removeEventListener('keydown', handleKeyDown);
       canvas.dispose();
@@ -347,13 +364,19 @@ export function FabricLabelCanvas({
 
     // Helper: Update existing object properties
     const updateExistingObject = (obj: any, fieldConfig: FieldConfig) => {
-      // Core positioning - always update
+      // DON'T update position if user is currently dragging - prevents snapping back
+      if (!isUserInteractingRef.current) {
+        obj.set({
+          left: mmToPx(fieldConfig.position.x),
+          top: mmToPx(fieldConfig.position.y),
+          width: mmToPx(fieldConfig.size.width),
+          scaleX: 1,
+          scaleY: 1,
+        });
+      }
+      
+      // Always update non-positional properties
       obj.set({
-        left: mmToPx(fieldConfig.position.x),
-        top: mmToPx(fieldConfig.position.y),
-        width: mmToPx(fieldConfig.size.width),
-        scaleX: 1,
-        scaleY: 1,
         selectable: !fieldConfig.locked,
         evented: !fieldConfig.locked,
         visible: fieldConfig.visible !== false,

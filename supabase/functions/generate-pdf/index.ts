@@ -454,35 +454,44 @@ function renderLabelWithDesign(
   mappings: Record<string, string>,
   offsetX: number,
   offsetY: number,
-  pageHeight: number,
+  labelHeight: number,
   fonts: { regular: PDFFont; bold: PDFFont },
   recordIndex: number
 ) {
+  // Calculate the TOP of the label in PDF coordinates
+  // offsetY = bottom of label, labelHeight gives us the height to add
+  const labelTopY = offsetY + labelHeight;
+  
   try {
-    console.log(`🎨 Rendering label at offset (${offsetX}, ${offsetY})`);
+    console.log(`🎨 Rendering label at offset (${offsetX}, ${offsetY}), labelHeight: ${labelHeight}`);
     console.log(`📊 Data row keys:`, Object.keys(dataRow));
     console.log(`🗺️ Mappings:`, mappings);
     console.log(`📝 Fields to render:`, fields.length);
+    console.log(`📐 Label top Y in PDF coords: ${labelTopY}`);
 
     for (const field of fields) {
       const dataColumn = mappings[field.templateField] || null;
       
       console.log(`\n🔍 Processing field: ${field.templateField}`);
       console.log(`   Type: ${field.fieldType || 'text'}`);
+      console.log(`   Canvas position: (${field.position?.x}mm, ${field.position?.y}mm)`);
       console.log(`   Mapped to data column: ${dataColumn}`);
-      console.log(`   showLabel: ${field.showLabel}`);
       
       if (dataColumn) {
         const dataValue = dataRow[dataColumn];
         console.log(`   Data value: "${dataValue}"`);
       }
       
+      // Canvas uses TOP-LEFT origin, PDF uses BOTTOM-LEFT
+      // field.position.y = distance from TOP of label (canvas)
+      // We need: PDF Y = labelTopY - field.position.y - field.height
       const x = offsetX + mmToPoints(field.position?.x || 0);
-      const y = pageHeight - offsetY - mmToPoints(field.position?.y || 0) - mmToPoints(field.size?.height || 0);
-      const width = mmToPoints(field.size?.width || 0);
+      const fieldY = mmToPoints(field.position?.y || 0);
       const height = mmToPoints(field.size?.height || 0);
+      const y = labelTopY - fieldY - height;
+      const width = mmToPoints(field.size?.width || 0);
       
-      console.log(`   Position: (${x}, ${y}), Size: ${width}x${height}`);
+      console.log(`   PDF coords: x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}`);
       
       switch (field.fieldType) {
         case 'address_block':
@@ -512,7 +521,7 @@ function renderLabelWithDesign(
     console.error('❌ Error rendering label:', error);
     page.drawText('ERROR', {
       x: offsetX + 6,
-      y: pageHeight - offsetY - 20,
+      y: labelTopY - 20,
       size: 8,
       font: fonts.regular,
       color: rgb(1, 0, 0),
@@ -634,7 +643,7 @@ serve(async (req) => {
           fieldMappings,
           position.x,
           position.y,
-          pageHeight,
+          layout.labelHeight,
           fonts,
           i
         );

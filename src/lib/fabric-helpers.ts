@@ -1,7 +1,7 @@
 // Fabric.js helper functions for label field creation and text sizing
 import { Canvas, Textbox, Group, Rect, Text, FabricObject, Image as FabricImage } from 'fabric';
 import { FieldConfig, FieldType } from './canvas-utils';
-import { CoordinateSystem } from './canvas-coordinate-system';
+import { Coordinates, PX_PER_MM } from './coordinates';
 
 /**
  * Get field value from data with comprehensive matching strategies
@@ -119,7 +119,7 @@ export function createLabelTextField(
   }
   
   // Convert mm to px using centralized coordinate system
-  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  const pxCoords = Coordinates.fieldConfigToPx(fieldConfig, scale);
   
   const initialFontSize = style.fontSize || 24;
 
@@ -185,7 +185,7 @@ export function createAddressBlock(
   }
   
   // Convert mm to px using centralized coordinate system
-  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  const pxCoords = Coordinates.fieldConfigToPx(fieldConfig, scale);
   
   // Use user's font size setting instead of hardcoded value
   const initialFontSize = style.fontSize || 24;
@@ -230,7 +230,7 @@ export async function createBarcodeField(
   scale: number = 1
 ): Promise<Group> {
   const { generateBarcodeSVG } = await import('./barcode-svg-utils');
-  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  const pxCoords = Coordinates.fieldConfigToPx(fieldConfig, scale);
   
   // Get barcode value from data
   const value = getFieldValue(fieldConfig.templateField, sampleData) || '123456789012';
@@ -302,7 +302,7 @@ export async function createQRCodeField(
   scale: number = 1
 ): Promise<Group> {
   const { generateQRCodeSVG } = await import('./barcode-svg-utils');
-  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  const pxCoords = Coordinates.fieldConfigToPx(fieldConfig, scale);
   
   // Get QR code value from data
   const value = getFieldValue(fieldConfig.templateField, sampleData) || 'https://example.com';
@@ -373,7 +373,7 @@ export function createSequenceField(
   recordIndex: number,
   scale: number = 1
 ): LabelFieldObject {
-  const pxCoords = CoordinateSystem.fieldConfigToPx(fieldConfig, scale);
+  const pxCoords = Coordinates.fieldConfigToPx(fieldConfig, scale);
   
   // Calculate sequence value
   const config = fieldConfig.typeConfig || {};
@@ -421,7 +421,7 @@ export function createSequenceField(
  * This makes conversion trivial!
  */
 export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfig[] {
-  const pxToMm = (px: number) => px / (3.7795 * scale);
+  const pxToMm = (px: number) => Coordinates.pxToMm(px, scale);
   
   return canvas.getObjects()
     .filter((obj: any) => obj.type === 'textbox' || obj.type === 'Group' || obj.type === 'group')

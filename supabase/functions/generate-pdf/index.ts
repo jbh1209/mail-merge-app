@@ -11,9 +11,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Convert mm to PDF points (1 inch = 72 points, 1 inch = 25.4 mm)
+/**
+ * COORDINATE SYSTEM: Single source of truth
+ * - Storage/Design: millimeters (mm) with TOP-LEFT origin
+ * - PDF Output: points (pt) with BOTTOM-LEFT origin (flipped Y)
+ * - 1 inch = 72 points = 25.4 mm
+ * - PT_PER_MM = 72 / 25.4 = 2.8346456693
+ */
+const PT_PER_MM = 72 / 25.4;
+
 function mmToPoints(mm: number): number {
-  return (mm / 25.4) * 72;
+  return mm * PT_PER_MM;
 }
 
 // Wrap text to fit within maxWidth
@@ -149,6 +157,9 @@ function renderTextField(
   // For now, we map to standard PDF fonts based on style
   const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
   const fontSize = field.style?.fontSize || 12;
+  
+  console.log(`   📝 Text field "${field.templateField}": fontSize=${fontSize}pt, box=${width.toFixed(1)}x${height.toFixed(1)}pt`);
+  
   const lines = wrapText(value, font, width - 12, fontSize);
   
   for (const line of lines) {

@@ -10,6 +10,7 @@ import {
 } from '@/lib/fabric-helpers';
 import { validateFieldSize, getValidationBorderColor } from '@/lib/element-size-validation';
 import { toast } from '@/hooks/use-toast';
+import { Coordinates } from '@/lib/coordinates';
 
 interface FabricLabelCanvasProps {
   templateSize: { width: number; height: number }; // in mm
@@ -23,9 +24,9 @@ interface FabricLabelCanvasProps {
   onFieldsSelected?: (fieldIds: string[]) => void;
 }
 
-// Single conversion function - everything at base scale
-const mmToPx = (mm: number) => mm * 3.7795;
-const pxToMm = (px: number) => px / 3.7795;
+// Use centralized coordinate system
+const mmToPx = Coordinates.mmToPx;
+const pxToMm = Coordinates.pxToMm;
 
 export function FabricLabelCanvas({
   templateSize,

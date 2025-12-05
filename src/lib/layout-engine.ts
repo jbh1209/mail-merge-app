@@ -2,6 +2,7 @@
 // This engine takes high-level design intent from AI and executes it with exact measurements
 
 import { measureText, pointsToPixels } from './text-measurement-utils';
+import { PX_PER_MM } from './coordinates';
 
 export interface DesignIntent {
   strategy: string;
@@ -409,10 +410,9 @@ function calculateOptimalFontSize(
   config: LayoutConfig,
   importance: 'highest' | 'high' | 'medium' | 'low'
 ): number {
-  // Convert mm to pixels for Canvas API measurement
-  const MM_TO_PX = 3.7795275591; // 96 DPI
-  const widthPx = widthMm * MM_TO_PX;
-  const heightPx = heightMm * MM_TO_PX;
+  // Convert mm to pixels for Canvas API measurement using centralized constant
+  const widthPx = widthMm * PX_PER_MM;
+  const heightPx = heightMm * PX_PER_MM;
   
   // Check if text contains commas or newlines (multi-line)
   const isMultiLine = sampleText.includes(',') || sampleText.includes('\n');
@@ -445,7 +445,7 @@ function calculateOptimalFontSize(
       : measurement.height;
 
     // Check if fits with some padding
-    const paddingPx = config.padding * MM_TO_PX;
+    const paddingPx = config.padding * PX_PER_MM;
     const fits = measurement.width <= (widthPx - paddingPx) && 
                  adjustedHeight <= (heightPx - paddingPx);
 

@@ -1,5 +1,6 @@
 // Canvas utility functions for coordinate conversion and layout calculations
 import { calculateBestFitFontSize, measureText } from './text-measurement-utils';
+import { Coordinates, PX_PER_MM } from './coordinates';
 
 export interface Point {
   x: number;
@@ -59,24 +60,15 @@ export interface FieldConfig {
 
 /**
  * Convert millimeters to pixels for canvas display
- * @param mm - Value in millimeters
- * @param scale - Display scale factor
- * @returns Value in pixels
+ * Uses centralized coordinate system
  */
-export const mmToPx = (mm: number, scale: number = 1): number => {
-  // 1mm ≈ 3.7795px at 96 DPI
-  return mm * 3.7795 * scale;
-};
+export const mmToPx = Coordinates.mmToPx;
 
 /**
  * Convert pixels to millimeters
- * @param px - Value in pixels
- * @param scale - Display scale factor
- * @returns Value in millimeters
+ * Uses centralized coordinate system
  */
-export const pxToMm = (px: number, scale: number = 1): number => {
-  return px / (3.7795 * scale);
-};
+export const pxToMm = Coordinates.pxToMm;
 
 /**
  * Snap coordinate to grid

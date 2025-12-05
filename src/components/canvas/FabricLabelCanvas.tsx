@@ -367,13 +367,27 @@ export function FabricLabelCanvas({
     const updateExistingObject = (obj: any, fieldConfig: FieldConfig) => {
       // DON'T update position if user is currently dragging - prevents snapping back
       if (!isUserInteractingRef.current) {
-        obj.set({
-          left: mmToPx(fieldConfig.position.x),
-          top: mmToPx(fieldConfig.position.y),
-          width: mmToPx(fieldConfig.size.width),
-          scaleX: 1,
-          scaleY: 1,
-        });
+        const targetX = mmToPx(fieldConfig.position.x);
+        const targetY = mmToPx(fieldConfig.position.y);
+        const targetWidth = mmToPx(fieldConfig.size.width);
+        
+        // TOLERANCE CHECK: Only update if difference exceeds 0.5px
+        // This prevents micro-snapping from mm↔px conversion precision loss
+        const tolerance = 0.5;
+        const needsPositionUpdate = 
+          Math.abs(obj.left - targetX) > tolerance || 
+          Math.abs(obj.top - targetY) > tolerance ||
+          Math.abs(obj.width - targetWidth) > tolerance;
+        
+        if (needsPositionUpdate) {
+          obj.set({
+            left: targetX,
+            top: targetY,
+            width: targetWidth,
+            scaleX: 1,
+            scaleY: 1,
+          });
+        }
       }
       
       // Always update non-positional properties

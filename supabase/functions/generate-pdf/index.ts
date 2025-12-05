@@ -502,76 +502,73 @@ function renderLabelWithDesign(
   fonts: { regular: PDFFont; bold: PDFFont },
   recordIndex: number
 ) {
-  // Calculate the TOP of the label in PDF coordinates
-  // offsetY = bottom of label, labelHeight gives us the height to add
-  const labelTopY = offsetY + labelHeight;
+  // Debug: Log all fields with their critical properties
+  console.log(`📝 Fields to render: ${fields.length}`);
+  console.log(`📐 Label top Y in PDF coords: ${offsetY + labelHeight}`);
   
-  try {
-    console.log(`🎨 Rendering label at offset (${offsetX}, ${offsetY}), labelHeight: ${labelHeight}`);
-    console.log(`📊 Data row keys:`, Object.keys(dataRow));
-    console.log(`🗺️ Mappings:`, mappings);
-    console.log(`📝 Fields to render:`, fields.length);
-    console.log(`📐 Label top Y in PDF coords: ${labelTopY}`);
-
-    for (const field of fields) {
-      const dataColumn = mappings[field.templateField] || null;
-      
-      console.log(`\n🔍 Processing field: ${field.templateField}`);
-      console.log(`   Type: ${field.fieldType || 'text'}`);
-      console.log(`   Canvas position: (${field.position?.x}mm, ${field.position?.y}mm)`);
-      console.log(`   Mapped to data column: ${dataColumn}`);
-      
-      if (dataColumn) {
-        const dataValue = dataRow[dataColumn];
-        console.log(`   Data value: "${dataValue}"`);
-      }
-      
-      // Canvas uses TOP-LEFT origin, PDF uses BOTTOM-LEFT
-      // field.position.y = distance from TOP of label (canvas)
-      // We need: PDF Y = labelTopY - field.position.y - field.height
-      const x = offsetX + mmToPoints(field.position?.x || 0);
-      const fieldY = mmToPoints(field.position?.y || 0);
-      const height = mmToPoints(field.size?.height || 0);
-      const y = labelTopY - fieldY - height;
-      const width = mmToPoints(field.size?.width || 0);
-      
-      console.log(`   PDF coords: x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}`);
-      
-      switch (field.fieldType) {
-        case 'address_block':
-          console.log(`   ✏️ Rendering address block with ${field.combinedFields?.length || 0} fields`);
-          renderAddressBlock(page, field, dataRow, mappings, fonts, x, y, width, height);
-          break;
-        case 'barcode':
-          console.log(`   ✏️ Rendering barcode`);
-          renderBarcodeField(page, pdfDoc, field, dataRow, dataColumn, x, y, width, height);
-          break;
-        case 'qrcode':
-          console.log(`   ✏️ Rendering QR code`);
-          renderQRCodeField(page, pdfDoc, field, dataRow, dataColumn, x, y, width, height);
-          break;
-        case 'sequence':
-          console.log(`   ✏️ Rendering sequence #${recordIndex}`);
-          renderSequenceField(page, field, recordIndex, fonts, x, y, width, height);
-          break;
-        case 'text':
-        default:
-          console.log(`   ✏️ Rendering text field`);
-          renderTextField(page, field, dataRow, dataColumn, fonts, x, y, width, height);
-          break;
-      }
+  for (const field of fields) {
+    if (!field.position || !field.size) {
+      console.warn(`⚠️ Field "${field.templateField}" missing position or size, skipping`);
+      continue;
     }
-  } catch (error) {
-    console.error('❌ Error rendering label:', error);
-    page.drawText('ERROR', {
-      x: offsetX + 6,
-      y: labelTopY - 20,
-      size: 8,
-      font: fonts.regular,
-      color: rgb(1, 0, 0),
-    });
+    
+    // Get mapped data column
+    const dataColumn = mappings[field.templateField] || null;
+    
+    console.log(`\n🔍 Processing field: ${field.templateField}`);
+    console.log(`   Type: ${field.fieldType}`);
+    console.log(`   Mapped to data column: ${dataColumn}`);
+    console.log(`   Canvas position: (${field.position.x}mm, ${field.position.y}mm)`);
+    
+    // Convert field position from mm (top-left origin) to PDF points (bottom-left origin)
+    // Field position is RELATIVE to label, so add label offset
+    const fieldX = offsetX + mmToPoints(field.position.x);
+    const fieldWidth = mmToPoints(field.size.width);
+    const fieldHeight = mmToPoints(field.size.height);
+    
+    // PDF Y: Label top is at (offsetY + labelHeight)
+    // Field top in canvas coords is field.position.y from label top
+    // So field bottom in PDF coords = labelTop - field.position.y - field.height
+    const labelTopY = offsetY + labelHeight;
+    const fieldY = labelTopY - mmToPoints(field.position.y) - fieldHeight;
+    
+    console.log(`   PDF coords: x=${fieldX.toFixed(1)}, y=${fieldY.toFixed(1)}, w=${fieldWidth.toFixed(1)}, h=${fieldHeight.toFixed(1)}`);
+    
+    // Render based on field type
+    switch (field.fieldType) {
+      case 'text':
+        console.log(`   ✏️ Rendering text field with fontSize=${field.style?.fontSize}pt`);
+        renderTextField(page, field, dataRow, dataColumn, fonts, fieldX, fieldY, fieldWidth, fieldHeight);
+        break;
+        
+      case 'address_block':
+        console.log(`   ✏️ Rendering address block with ${field.combinedFields?.length || 1} fields`);
+        renderAddressBlock(page, field, dataRow, mappings, fonts, fieldX, fieldY, fieldWidth, fieldHeight);
+        break;
+        
+      case 'barcode':
+        console.log(`   ✏️ Rendering barcode`);
+        renderBarcodeField(page, pdfDoc, field, dataRow, dataColumn, fieldX, fieldY, fieldWidth, fieldHeight);
+        break;
+        
+      case 'qrcode':
+        console.log(`   ✏️ Rendering QR code`);
+        renderQRCodeField(page, pdfDoc, field, dataRow, dataColumn, fieldX, fieldY, fieldWidth, fieldHeight);
+        break;
+        
+      case 'sequence':
+        console.log(`   ✏️ Rendering sequence #${recordIndex}`);
+        renderSequenceField(page, field, recordIndex, fonts, fieldX, fieldY, fieldWidth, fieldHeight);
+        break;
+        
+      default:
+        console.log(`   ✏️ Rendering as text (default)`);
+        renderTextField(page, field, dataRow, dataColumn, fonts, fieldX, fieldY, fieldWidth, fieldHeight);
+    }
   }
 }
+
+// NOTE: renderLabelWithDesignWrapper removed - functionality consolidated into renderLabelWithDesign above
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {

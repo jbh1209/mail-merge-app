@@ -554,19 +554,22 @@ export function TemplateDesignCanvas({
                   }
                   
                   // Handle position changes (user-initiated)
+                  // IMPORTANT: Use updateField directly, NOT moveField
+                  // moveField applies snapToGrid/constrainToBounds again, causing unwanted snapping
+                  // The canvas already handles constraints, so we just sync the position
                   if (updatedField.position.x !== originalField.position.x || 
                       updatedField.position.y !== originalField.position.y) {
-                    moveField(originalField.id, updatedField.position);
+                    updateField(originalField.id, { position: updatedField.position }, true);
                   }
                   
                   // Handle size changes (user-initiated)
                   if (updatedField.size.width !== originalField.size.width || 
                       updatedField.size.height !== originalField.size.height) {
-                    resizeField(originalField.id, updatedField.size);
+                    updateField(originalField.id, { size: updatedField.size }, true);
                   }
                 });
                 finalizeFieldPositions();
-              }, [fields, deleteField, updateField, moveField, resizeField, finalizeFieldPositions])}
+              }, [fields, deleteField, updateField, finalizeFieldPositions])}
               onCanvasReady={useCallback((canvas: any) => {
                 fabricCanvasRef.current = canvas;
                 console.log('✅ Fabric canvas initialized and stored for capture');

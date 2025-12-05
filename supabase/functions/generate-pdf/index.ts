@@ -355,12 +355,23 @@ function renderQRCodeField(
     });
     
     // Draw each QR code module from the SVG
+    // IMPORTANT: Skip the first rect which is the white background (covers entire SVG)
     let rectCount = 0;
+    let isFirstRect = true;
+    
     while ((match = rectRegex.exec(svg)) !== null) {
       const rectX = parseFloat(match[1]);
       const rectY = parseFloat(match[2]);
       const rectW = parseFloat(match[3]);
       const rectH = parseFloat(match[4]);
+      
+      // Skip the first rect - it's the background that covers the entire QR code
+      // Drawing it as black causes the "black square" issue
+      if (isFirstRect) {
+        isFirstRect = false;
+        console.log(`   ⏭️ Skipping background rect: ${rectW}x${rectH}`);
+        continue;
+      }
       
       page.drawRectangle({
         x: offsetX + (rectX * scale),
@@ -371,7 +382,7 @@ function renderQRCodeField(
       });
       rectCount++;
     }
-    console.log(`   ✅ QR code rendered with ${rectCount} modules`);
+    console.log(`   ✅ QR code rendered with ${rectCount} modules (skipped bg)`);
     
   } catch (error) {
     console.error('QR code generation error:', error);

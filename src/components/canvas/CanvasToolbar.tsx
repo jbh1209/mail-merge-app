@@ -192,124 +192,108 @@ export function CanvasToolbar({
         onDistribute={onDistribute}
       />
 
-      {/* Field styling options - only show when single field is selected */}
-      {selectedField && selectedCount === 1 && (
-        <>
-          <Separator orientation="vertical" className="h-5" />
-          
-          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
-            Text Format
-          </span>
-          
-          {/* Field label toggle */}
-          <div className="flex items-center gap-1.5">
-            <Switch 
-              checked={selectedField.showLabel || false} 
-              onCheckedChange={onToggleLabel} 
-              className="scale-75" 
-            />
-            <Label className="text-xs">Field Label</Label>
-          </div>
+      <Separator orientation="vertical" className="h-5" />
 
-          <Separator orientation="vertical" className="h-5" />
-          
-          {/* Font family - only for text-based fields */}
-          {isTextBasedFieldType(selectedField.fieldType) && (
-            <>
-              <Separator orientation="vertical" className="h-5" />
-              <Select
-                value={selectedField.style.fontFamily || 'Arial, sans-serif'}
-                onValueChange={(value) => onUpdateFieldStyle({ fontFamily: value })}
-              >
-                <SelectTrigger className="h-7 w-[140px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  {POPULAR_GOOGLE_FONTS.map(font => (
-                    <SelectItem key={font.family} value={font.family}>
-                      <span style={{ fontFamily: font.family }}>{font.name}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
-          )}
+      {/* Text Format Controls - ALWAYS visible to prevent layout jump */}
+      <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
+        Text Format
+      </span>
+      
+      {/* Field label toggle */}
+      <div className="flex items-center gap-1.5">
+        <Switch 
+          checked={selectedField?.showLabel || false} 
+          onCheckedChange={onToggleLabel}
+          disabled={!selectedField || selectedCount !== 1}
+          className="scale-75" 
+        />
+        <Label className={`text-xs ${(!selectedField || selectedCount !== 1) ? 'text-muted-foreground/50' : ''}`}>
+          Field Label
+        </Label>
+      </div>
 
-          {/* Font size - only for text-based fields */}
-          {isTextBasedFieldType(selectedField.fieldType) && (
-            <>
-              <Separator orientation="vertical" className="h-5" />
-              <div className="flex items-center gap-1">
-                <Type className="h-3.5 w-3.5 text-muted-foreground" />
-                <Select
-                  value={Math.round(selectedField.style.fontSize).toString()}
-                  onValueChange={(value) => onUpdateFieldStyle({ fontSize: parseInt(value) })}
-                >
-                  <SelectTrigger className="w-16 h-7 text-xs">
-                    <SelectValue placeholder={`${Math.round(selectedField.style.fontSize)}pt`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(() => {
-                      const standardSizes = [6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36];
-                      const currentSize = Math.round(selectedField.style.fontSize);
-                      const allSizes = standardSizes.includes(currentSize) 
-                        ? standardSizes 
-                        : [...standardSizes, currentSize].sort((a, b) => a - b);
-                      return allSizes.map(size => (
-                        <SelectItem key={size} value={size.toString()}>{size}pt</SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          )}
-          
-          {/* Text align - only for text-based fields */}
-          {isTextBasedFieldType(selectedField.fieldType) && (
-            <div className="flex items-center gap-0.5">
-              <Button
-                variant={selectedField.style.textAlign === 'left' ? "default" : "ghost"}
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={() => onUpdateFieldStyle({ textAlign: 'left' })}
-              >
-                <AlignLeft className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant={selectedField.style.textAlign === 'center' ? "default" : "ghost"}
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={() => onUpdateFieldStyle({ textAlign: 'center' })}
-              >
-                <AlignCenter className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                variant={selectedField.style.textAlign === 'right' ? "default" : "ghost"}
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={() => onUpdateFieldStyle({ textAlign: 'right' })}
-              >
-                <AlignRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          )}
-          
-          {/* Bold toggle - only for text-based fields */}
-          {isTextBasedFieldType(selectedField.fieldType) && (
-            <Button
-              variant={selectedField.style.fontWeight === 'bold' ? "default" : "ghost"}
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={() => onUpdateFieldStyle({ 
-                fontWeight: selectedField.style.fontWeight === 'bold' ? 'normal' : 'bold' 
-              })}
-            >
-              <Bold className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </>
-      )}
+      <Separator orientation="vertical" className="h-5" />
+      
+      {/* Font family - always visible */}
+      <Select
+        value={selectedField?.style.fontFamily || 'Arial, sans-serif'}
+        onValueChange={(value) => onUpdateFieldStyle({ fontFamily: value })}
+        disabled={!selectedField || selectedCount !== 1 || !isTextBasedFieldType(selectedField?.fieldType)}
+      >
+        <SelectTrigger className="h-7 w-[140px] text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="max-h-[300px]">
+          {POPULAR_GOOGLE_FONTS.map(font => (
+            <SelectItem key={font.family} value={font.family}>
+              <span style={{ fontFamily: font.family }}>{font.name}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Font size - always visible */}
+      <div className="flex items-center gap-1">
+        <Type className="h-3.5 w-3.5 text-muted-foreground" />
+        <Select
+          value={selectedField ? Math.round(selectedField.style.fontSize).toString() : '12'}
+          onValueChange={(value) => onUpdateFieldStyle({ fontSize: parseInt(value) })}
+          disabled={!selectedField || selectedCount !== 1 || !isTextBasedFieldType(selectedField?.fieldType)}
+        >
+          <SelectTrigger className="w-16 h-7 text-xs">
+            <SelectValue placeholder="12pt" />
+          </SelectTrigger>
+          <SelectContent>
+            {[6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36].map(size => (
+              <SelectItem key={size} value={size.toString()}>{size}pt</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      
+      {/* Text align - always visible */}
+      <div className="flex items-center gap-0.5">
+        <Button
+          variant={selectedField?.style.textAlign === 'left' ? "default" : "ghost"}
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={() => onUpdateFieldStyle({ textAlign: 'left' })}
+          disabled={!selectedField || selectedCount !== 1 || !isTextBasedFieldType(selectedField?.fieldType)}
+        >
+          <AlignLeft className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant={selectedField?.style.textAlign === 'center' ? "default" : "ghost"}
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={() => onUpdateFieldStyle({ textAlign: 'center' })}
+          disabled={!selectedField || selectedCount !== 1 || !isTextBasedFieldType(selectedField?.fieldType)}
+        >
+          <AlignCenter className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant={selectedField?.style.textAlign === 'right' ? "default" : "ghost"}
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={() => onUpdateFieldStyle({ textAlign: 'right' })}
+          disabled={!selectedField || selectedCount !== 1 || !isTextBasedFieldType(selectedField?.fieldType)}
+        >
+          <AlignRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      
+      {/* Bold toggle - always visible */}
+      <Button
+        variant={selectedField?.style.fontWeight === 'bold' ? "default" : "ghost"}
+        size="sm"
+        className="h-7 w-7 p-0"
+        onClick={() => onUpdateFieldStyle({ 
+          fontWeight: selectedField?.style.fontWeight === 'bold' ? 'normal' : 'bold' 
+        })}
+        disabled={!selectedField || selectedCount !== 1 || !isTextBasedFieldType(selectedField?.fieldType)}
+      >
+        <Bold className="h-3.5 w-3.5" />
+      </Button>
     </div>
   );
 }

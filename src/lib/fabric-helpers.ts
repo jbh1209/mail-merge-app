@@ -512,3 +512,105 @@ export function updateFieldData(
   });
   canvas.renderAll();
 }
+
+/**
+ * Create an image field on the canvas
+ */
+export async function createImageField(
+  fieldConfig: FieldConfig,
+  scale: number = 1
+): Promise<FabricObject> {
+  const pxCoords = Coordinates.fieldConfigToPx(fieldConfig, scale);
+  const imageSrc = fieldConfig.typeConfig?.imageSrc;
+  
+  if (imageSrc) {
+    try {
+      // Load the image
+      const img = await FabricImage.fromURL(imageSrc, { crossOrigin: 'anonymous' });
+      
+      // Scale to fit the field dimensions
+      const scaleX = pxCoords.size.width / (img.width || 1);
+      const scaleY = pxCoords.size.height / (img.height || 1);
+      
+      img.set({
+        left: pxCoords.position.x,
+        top: pxCoords.position.y,
+        scaleX,
+        scaleY,
+        originX: 'left',
+        originY: 'top',
+        selectable: true,
+        hasControls: true,
+        lockRotation: true,
+      });
+      
+      (img as any).fieldType = 'image';
+      (img as any).templateField = fieldConfig.templateField;
+      (img as any).typeConfig = fieldConfig.typeConfig;
+      
+      return img;
+    } catch (error) {
+      console.error('Error loading image:', error);
+    }
+  }
+  
+  // Fallback: create a placeholder rectangle with image icon
+  const rect = new Rect({
+    left: pxCoords.position.x,
+    top: pxCoords.position.y,
+    width: pxCoords.size.width,
+    height: pxCoords.size.height,
+    fill: '#f0f0f0',
+    stroke: '#ccc',
+    strokeWidth: 1,
+    originX: 'left',
+    originY: 'top',
+    selectable: true,
+    hasControls: true,
+    lockRotation: true,
+  });
+  
+  (rect as any).fieldType = 'image';
+  (rect as any).templateField = fieldConfig.templateField;
+  (rect as any).typeConfig = fieldConfig.typeConfig;
+  
+  return rect;
+}
+
+/**
+ * Create a shape field on the canvas
+ */
+export function createShapeField(
+  fieldConfig: FieldConfig,
+  scale: number = 1
+): FabricObject {
+  const pxCoords = Coordinates.fieldConfigToPx(fieldConfig, scale);
+  const shapeType = fieldConfig.typeConfig?.shapeType || 'rectangle';
+  const fill = fieldConfig.typeConfig?.fill || '#e5e5e5';
+  const stroke = fieldConfig.typeConfig?.stroke || '#000000';
+  const strokeWidth = fieldConfig.typeConfig?.strokeWidth || 1;
+  
+  let shape: FabricObject;
+  
+  // Currently only rectangle is supported, can extend for circle/line
+  shape = new Rect({
+    left: pxCoords.position.x,
+    top: pxCoords.position.y,
+    width: pxCoords.size.width,
+    height: pxCoords.size.height,
+    fill,
+    stroke,
+    strokeWidth,
+    originX: 'left',
+    originY: 'top',
+    selectable: true,
+    hasControls: true,
+    lockRotation: true,
+  });
+  
+  (shape as any).fieldType = 'shape';
+  (shape as any).templateField = fieldConfig.templateField;
+  (shape as any).typeConfig = fieldConfig.typeConfig;
+  
+  return shape;
+}

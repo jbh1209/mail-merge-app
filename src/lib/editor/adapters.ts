@@ -40,6 +40,10 @@ export function fieldTypeToElementKind(fieldType: FieldType): ElementKind {
       return 'sequence';
     case 'address_block':
       return 'address_block';
+    case 'image':
+      return 'image';
+    case 'shape':
+      return 'shape';
     default:
       return 'text';
   }
@@ -60,11 +64,12 @@ export function elementKindToFieldType(kind: ElementKind): FieldType {
       return 'sequence';
     case 'address_block':
       return 'address_block';
-    // These don't exist in legacy, default to text
     case 'image':
+      return 'image';
     case 'shape':
+      return 'shape';
     case 'group':
-      return 'text';
+      return 'text'; // Groups still default to text for compatibility
     default:
       return 'text';
   }
@@ -259,6 +264,25 @@ export function designElementToFieldConfig(element: DesignElement): FieldConfig 
     case 'address_block': {
       const config = element.config as AddressBlockConfig | undefined;
       field.combinedFields = config?.combinedFields || [];
+      break;
+    }
+    
+    case 'image': {
+      const config = element.config as { src?: string } | undefined;
+      field.typeConfig = {
+        imageSrc: config?.src || ''
+      };
+      break;
+    }
+    
+    case 'shape': {
+      const config = element.config as { shapeType?: string; fill?: string; stroke?: string; strokeWidth?: number } | undefined;
+      field.typeConfig = {
+        shapeType: (config?.shapeType as 'rectangle' | 'circle' | 'line') || 'rectangle',
+        fill: element.style.fill || config?.fill || '#e5e5e5',
+        stroke: element.style.stroke || config?.stroke || '#000000',
+        strokeWidth: element.style.strokeWidth || config?.strokeWidth || 1
+      };
       break;
     }
   }

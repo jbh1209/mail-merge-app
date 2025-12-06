@@ -6,7 +6,9 @@ import {
   createAddressBlock, 
   createBarcodeField,
   createQRCodeField,
-  createSequenceField
+  createSequenceField,
+  createImageField,
+  createShapeField
 } from '@/lib/fabric-helpers';
 import { validateFieldSize, getValidationBorderColor } from '@/lib/element-size-validation';
 import { toast } from '@/hooks/use-toast';
@@ -457,6 +459,10 @@ export function FabricLabelCanvas({
           return await createQRCodeField(fieldConfig, sampleData, 1);
         case 'sequence':
           return createSequenceField(fieldConfig, recordIndex, 1);
+        case 'image':
+          return await createImageField(fieldConfig, 1);
+        case 'shape':
+          return createShapeField(fieldConfig, 1);
         case 'text':
         default:
           return createLabelTextField(fieldConfig, sampleData, 1);

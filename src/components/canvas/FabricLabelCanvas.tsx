@@ -84,12 +84,14 @@ export function FabricLabelCanvas({
     const baseHeight = mmToPx(templateSize.height);
 
     // Create canvas with scaled dimensions immediately
+    // Performance optimizations: renderOnAddRemove=false for batch operations
     const canvas = new FabricCanvas(canvasRef.current, {
       width: baseWidth * scale,
       height: baseHeight * scale,
       backgroundColor: '#ffffff',
       selection: true,
-      preserveObjectStacking: true
+      preserveObjectStacking: true,
+      renderOnAddRemove: false, // Batch renders - call requestRenderAll() explicitly
     });
 
     // Apply zoom immediately so objects render at correct size

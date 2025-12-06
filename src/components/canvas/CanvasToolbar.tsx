@@ -70,7 +70,7 @@ export function CanvasToolbar({
   onDistribute
 }: CanvasToolbarProps) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 overflow-x-auto">
+    <div className="flex items-center gap-1.5 px-2 py-1.5 overflow-x-auto flex-wrap">
       {/* Zoom Controls */}
       <div className="flex items-center gap-1">
         <Button
@@ -220,7 +220,7 @@ export function CanvasToolbar({
         onValueChange={(value) => onUpdateFieldStyle({ fontFamily: value })}
         disabled={!selectedField || selectedCount !== 1 || !isTextBasedFieldType(selectedField?.fieldType)}
       >
-        <SelectTrigger className="h-7 w-[140px] text-xs">
+        <SelectTrigger className="h-7 w-[100px] text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="max-h-[300px]">

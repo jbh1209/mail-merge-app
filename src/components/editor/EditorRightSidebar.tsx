@@ -101,10 +101,10 @@ export function EditorRightSidebar({
           <div className="space-y-2">
             <Label className="text-xs font-medium">Data Field</Label>
             <Select
-              value={element!.dataField || ''}
+              value={element!.dataField || '__none__'}
               onValueChange={(value) => onElementUpdate(element!.id, { 
-                dataField: value || undefined,
-                name: value || element!.name
+                dataField: value === '__none__' ? undefined : value,
+                name: value === '__none__' ? element!.name : value
               })}
               disabled={readOnly}
             >
@@ -112,7 +112,7 @@ export function EditorRightSidebar({
                 <SelectValue placeholder="Select field..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None (static)</SelectItem>
+                <SelectItem value="__none__">None (static)</SelectItem>
                 {availableFields.map(field => (
                   <SelectItem key={field} value={field}>{field}</SelectItem>
                 ))}

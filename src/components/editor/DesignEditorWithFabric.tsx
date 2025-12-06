@@ -64,6 +64,26 @@ export function DesignEditorWithFabric({
     selectedElementIds.includes(el.id)
   ) || [];
   
+  // Handle document update (for page management)
+  const handleDocumentUpdate = useCallback((updates: Partial<DesignDocument>) => {
+    setDocument(prev => ({
+      ...prev,
+      ...updates
+    }));
+  }, []);
+  
+  // Handle page update
+  const handlePageUpdate = useCallback((pageIndex: number, updates: Partial<DesignPage>) => {
+    setDocument(prev => ({
+      ...prev,
+      pages: prev.pages.map((page, i) => 
+        i === pageIndex 
+          ? { ...page, ...updates }
+          : page
+      )
+    }));
+  }, []);
+  
   // Handle element changes from canvas
   const handleElementsChange = useCallback((elements: DesignElement[]) => {
     setDocument(prev => ({
@@ -237,11 +257,14 @@ export function DesignEditorWithFabric({
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar */}
         <EditorLeftSidebar
+          document={document}
           pages={document.pages}
           activePageIndex={activePageIndex}
           onPageSelect={setActivePageIndex}
           availableFields={availableFields}
           onAddElement={handleAddElement}
+          onDocumentUpdate={handleDocumentUpdate}
+          onPageUpdate={handlePageUpdate}
           activeTab={leftSidebarTab}
           onTabChange={setLeftSidebarTab}
           pageSize={pageSize}

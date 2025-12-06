@@ -33,7 +33,9 @@
 - `src/components/TemplateDesignEditor.tsx` - Updated to use new editor by default
 - Legacy editor available via `useLegacyEditor` prop
 
-### Phase 5: Advanced VDP Features 🔄 NEXT
-- Image support with DPI warnings
-- Backgrounds and layers
-- Multi-page documents
+### Phase 5: Advanced VDP Features ✅ COMPLETE
+- `src/components/editor/ImageUploadDialog.tsx` - Image upload with DPI calculation and warnings
+- `src/components/editor/BackgroundSettingsPanel.tsx` - Page background color and image settings
+- `src/components/editor/PageManagerPanel.tsx` - Add, remove, reorder, duplicate pages
+- Updated `EditorLeftSidebar.tsx` with PageManagerPanel integration
+- Updated `EditorTopBar.tsx` with BackgroundSettingsPanel integration

@@ -39,7 +39,8 @@ import {
   Trash2,
   Maximize
 } from 'lucide-react';
-import type { DesignElement, ElementKind } from '@/lib/editor/types';
+import type { DesignElement, ElementKind, DesignPage } from '@/lib/editor/types';
+import { BackgroundSettingsPanel } from './BackgroundSettingsPanel';
 
 interface EditorTopBarProps {
   documentName: string;
@@ -59,6 +60,9 @@ interface EditorTopBarProps {
   onRedo: () => void;
   pageSize: { width: number; height: number };
   readOnly?: boolean;
+  // New props for background settings
+  activePage?: DesignPage;
+  onPageUpdate?: (updates: Partial<DesignPage>) => void;
 }
 
 const ZOOM_PRESETS = [
@@ -87,7 +91,9 @@ export function EditorTopBar({
   onUndo,
   onRedo,
   pageSize,
-  readOnly = false
+  readOnly = false,
+  activePage,
+  onPageUpdate
 }: EditorTopBarProps) {
   
   // Create a new element of the specified type
@@ -269,6 +275,15 @@ export function EditorTopBar({
         )}
         
         <Separator orientation="vertical" className="h-6" />
+        
+        {/* Background Settings */}
+        {activePage && onPageUpdate && !readOnly && (
+          <BackgroundSettingsPanel
+            page={activePage}
+            onPageUpdate={onPageUpdate}
+            readOnly={readOnly}
+          />
+        )}
         
         {/* Grid toggle */}
         <Button

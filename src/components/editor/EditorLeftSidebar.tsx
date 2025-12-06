@@ -2,7 +2,7 @@
 // EDITOR LEFT SIDEBAR - Pages, Assets, and Data Fields
 // ============================================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -19,10 +19,13 @@ import {
   Image,
   Square
 } from 'lucide-react';
-import type { DesignPage, DesignElement, ElementKind } from '@/lib/editor/types';
+import type { DesignPage, DesignElement, ElementKind, DesignDocument } from '@/lib/editor/types';
+import { PageManagerPanel } from './PageManagerPanel';
+import { ImageUploadDialog } from './ImageUploadDialog';
 import { cn } from '@/lib/utils';
 
 interface EditorLeftSidebarProps {
+  document: DesignDocument;
   pages: DesignPage[];
   activePageIndex: number;
   onPageSelect: (index: number) => void;
@@ -30,7 +33,10 @@ interface EditorLeftSidebarProps {
   onTabChange: (tab: 'pages' | 'assets' | 'data') => void;
   availableFields: string[];
   onAddElement: (element: DesignElement) => void;
+  onDocumentUpdate: (updates: Partial<DesignDocument>) => void;
+  onPageUpdate: (pageIndex: number, updates: Partial<DesignPage>) => void;
   pageSize: { width: number; height: number };
+  readOnly?: boolean;
 }
 
 // Asset templates for quick insertion
@@ -39,6 +45,7 @@ const ASSET_TEMPLATES: Array<{
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   description: string;
+  requiresDialog?: boolean;
 }> = [
   { kind: 'text', label: 'Text', icon: Type, description: 'Single text field' },
   { kind: 'address_block', label: 'Address', icon: MapPin, description: 'Multi-line address' },
@@ -46,10 +53,11 @@ const ASSET_TEMPLATES: Array<{
   { kind: 'qr', label: 'QR Code', icon: QrCode, description: 'QR code from data' },
   { kind: 'sequence', label: 'Sequence', icon: Hash, description: 'Auto-incrementing number' },
   { kind: 'shape', label: 'Shape', icon: Square, description: 'Rectangle, circle, line' },
-  { kind: 'image', label: 'Image', icon: Image, description: 'Static or data-bound' },
+  { kind: 'image', label: 'Image', icon: Image, description: 'Upload with DPI check', requiresDialog: true },
 ];
 
 export function EditorLeftSidebar({
+  document,
   pages,
   activePageIndex,
   onPageSelect,
@@ -57,8 +65,12 @@ export function EditorLeftSidebar({
   onTabChange,
   availableFields,
   onAddElement,
-  pageSize
+  onDocumentUpdate,
+  onPageUpdate,
+  pageSize,
+  readOnly = false
 }: EditorLeftSidebarProps) {
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
   
   // Create element from template
   const createElementFromKind = (kind: ElementKind): DesignElement => {
@@ -152,6 +164,15 @@ export function EditorLeftSidebar({
     };
   };
   
+  // Handle asset click - either open dialog or add directly
+  const handleAssetClick = (template: typeof ASSET_TEMPLATES[0]) => {
+    if (template.requiresDialog && template.kind === 'image') {
+      setImageDialogOpen(true);
+    } else {
+      onAddElement(createElementFromKind(template.kind));
+    }
+  };
+  
   return (
     <div className="w-60 border-r bg-card flex flex-col">
       <Tabs 
@@ -174,36 +195,16 @@ export function EditorLeftSidebar({
           </TabsTrigger>
         </TabsList>
         
-        {/* Pages Tab */}
-        <TabsContent value="pages" className="flex-1 m-0">
-          <ScrollArea className="h-full">
-            <div className="p-3 space-y-2">
-              {pages.map((page, index) => (
-                <button
-                  key={page.id}
-                  onClick={() => onPageSelect(index)}
-                  className={cn(
-                    "w-full p-2 rounded-lg border text-left transition-colors",
-                    index === activePageIndex
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/50"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">
-                      {page.name || `Page ${index + 1}`}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] px-1.5">
-                      {page.widthMm}×{page.heightMm}mm
-                    </Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {page.elements.length} element{page.elements.length !== 1 ? 's' : ''}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </ScrollArea>
+        {/* Pages Tab - Now using PageManagerPanel */}
+        <TabsContent value="pages" className="flex-1 m-0 p-3">
+          <PageManagerPanel
+            document={document}
+            activePageIndex={activePageIndex}
+            onPageSelect={onPageSelect}
+            onDocumentUpdate={onDocumentUpdate}
+            onPageUpdate={onPageUpdate}
+            readOnly={readOnly}
+          />
         </TabsContent>
         
         {/* Assets Tab */}
@@ -221,7 +222,8 @@ export function EditorLeftSidebar({
                       key={template.kind}
                       variant="ghost"
                       className="w-full justify-start h-auto py-2 px-3"
-                      onClick={() => onAddElement(createElementFromKind(template.kind))}
+                      onClick={() => handleAssetClick(template)}
+                      disabled={readOnly}
                     >
                       <Icon className="h-4 w-4 mr-3 shrink-0" />
                       <div className="text-left">
@@ -265,6 +267,7 @@ export function EditorLeftSidebar({
                         size="sm"
                         className="w-full justify-start font-mono text-xs"
                         onClick={() => onAddElement(createElementFromField(field))}
+                        disabled={readOnly}
                       >
                         <Type className="h-3.5 w-3.5 mr-2 shrink-0 text-muted-foreground" />
                         {field}
@@ -277,6 +280,14 @@ export function EditorLeftSidebar({
           </ScrollArea>
         </TabsContent>
       </Tabs>
+      
+      {/* Image Upload Dialog */}
+      <ImageUploadDialog
+        open={imageDialogOpen}
+        onOpenChange={setImageDialogOpen}
+        onImageAdd={onAddElement}
+        pageSize={pageSize}
+      />
     </div>
   );
 }

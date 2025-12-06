@@ -12,7 +12,7 @@ export interface Size {
   height: number;
 }
 
-export type FieldType = 'text' | 'barcode' | 'qrcode' | 'sequence' | 'address_block';
+export type FieldType = 'text' | 'barcode' | 'qrcode' | 'sequence' | 'address_block' | 'image' | 'shape';
 
 export interface FieldConfig {
   id: string;
@@ -51,6 +51,13 @@ export interface FieldConfig {
     sequencePrefix?: string;
     sequenceSuffix?: string;
     sequencePadding?: number;
+    // For image
+    imageSrc?: string;
+    // For shape
+    shapeType?: 'rectangle' | 'circle' | 'line';
+    fill?: string;
+    stroke?: string;
+    strokeWidth?: number;
   };
   combinedFields?: string[]; // For address_block type - contains all field names to render
   zIndex?: number;       // Layer order (higher = on top)

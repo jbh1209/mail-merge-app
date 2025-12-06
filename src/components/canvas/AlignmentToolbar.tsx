@@ -10,7 +10,8 @@ interface AlignmentToolbarProps {
 }
 
 export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: AlignmentToolbarProps) {
-  if (selectedCount === 0) return null;
+  const isDisabled = selectedCount === 0;
+  const canDistribute = selectedCount >= 3;
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -26,6 +27,7 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 size="sm"
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('left')}
+                disabled={isDisabled}
               >
                 <AlignStartHorizontal className="h-3.5 w-3.5" />
               </Button>
@@ -40,6 +42,7 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 size="sm"
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('center')}
+                disabled={isDisabled}
               >
                 <AlignCenterHorizontal className="h-3.5 w-3.5" />
               </Button>
@@ -54,6 +57,7 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 size="sm"
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('right')}
+                disabled={isDisabled}
               >
                 <AlignEndHorizontal className="h-3.5 w-3.5" />
               </Button>
@@ -73,6 +77,7 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 size="sm"
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('top')}
+                disabled={isDisabled}
               >
                 <AlignStartVertical className="h-3.5 w-3.5" />
               </Button>
@@ -87,6 +92,7 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 size="sm"
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('middle')}
+                disabled={isDisabled}
               >
                 <AlignCenterVertical className="h-3.5 w-3.5" />
               </Button>
@@ -101,6 +107,7 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
                 size="sm"
                 className="h-7 w-7 p-0"
                 onClick={() => onAlign('bottom')}
+                disabled={isDisabled}
               >
                 <AlignEndVertical className="h-3.5 w-3.5" />
               </Button>
@@ -109,42 +116,40 @@ export function AlignmentToolbar({ selectedCount, onAlign, onDistribute }: Align
           </Tooltip>
         </div>
         
-        {/* Distribution - only show for 3+ items */}
-        {selectedCount >= 3 && (
-          <>
-            <Separator orientation="vertical" className="h-5" />
-            
-            <div className="flex items-center gap-0.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => onDistribute('horizontal')}
-                  >
-                    <AlignHorizontalDistributeCenter className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Distribute Horizontally</TooltipContent>
-              </Tooltip>
-              
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => onDistribute('vertical')}
-                  >
-                    <AlignVerticalDistributeCenter className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Distribute Vertically</TooltipContent>
-              </Tooltip>
-            </div>
-          </>
-        )}
+        {/* Distribution - always show buttons but disable when < 3 items */}
+        <Separator orientation="vertical" className="h-5" />
+        
+        <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => onDistribute('horizontal')}
+                disabled={!canDistribute}
+              >
+                <AlignHorizontalDistributeCenter className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Distribute Horizontally (3+ items)</TooltipContent>
+          </Tooltip>
+          
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => onDistribute('vertical')}
+                disabled={!canDistribute}
+              >
+                <AlignVerticalDistributeCenter className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Distribute Vertically (3+ items)</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
     </TooltipProvider>
   );

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ChevronLeft, ChevronRight, Grid3X3 } from 'lucide-react';
+import { DesignElement } from '@/lib/editor/types';
 
 interface EditorStatusBarProps {
   zoom: number;
@@ -19,6 +20,7 @@ interface EditorStatusBarProps {
   onNextRecord: () => void;
   gridEnabled: boolean;
   pageSize: { width: number; height: number };
+  selectedElement?: DesignElement;
 }
 
 export function EditorStatusBar({
@@ -31,7 +33,8 @@ export function EditorStatusBar({
   onPreviousRecord,
   onNextRecord,
   gridEnabled,
-  pageSize
+  pageSize,
+  selectedElement
 }: EditorStatusBarProps) {
   return (
     <div className="flex items-center justify-between h-8 px-3 border-t bg-card text-xs">
@@ -53,6 +56,19 @@ export function EditorStatusBar({
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               {selectedCount} selected
             </Badge>
+          </>
+        )}
+        
+        {/* Show selected element dimensions */}
+        {selectedElement && (
+          <>
+            <Separator orientation="vertical" className="h-4" />
+            <span className="text-muted-foreground font-mono">
+              {selectedElement.width.toFixed(1)} × {selectedElement.height.toFixed(1)} mm
+            </span>
+            <span className="text-muted-foreground/70">
+              @ {selectedElement.x.toFixed(1)}, {selectedElement.y.toFixed(1)}
+            </span>
           </>
         )}
       </div>
@@ -92,6 +108,13 @@ export function EditorStatusBar({
             <span>Grid</span>
           </div>
         )}
+        
+        <Separator orientation="vertical" className="h-4" />
+        
+        {/* Keyboard shortcuts hint */}
+        <span className="text-muted-foreground/70 hidden sm:inline">
+          ⌘C Copy · ⌘V Paste · ⌘D Duplicate · ⌫ Delete
+        </span>
         
         <Separator orientation="vertical" className="h-4" />
         

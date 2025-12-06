@@ -12,6 +12,7 @@ import { EditorStatusBar } from './EditorStatusBar';
 import { EditorCanvasWithFabric } from './EditorCanvasWithFabric';
 import { fabricToFieldConfigs } from '@/lib/fabric-helpers';
 import { useToast } from '@/hooks/use-toast';
+import { useCanvasKeyboard } from '@/hooks/useCanvasKeyboard';
 
 interface DesignEditorWithFabricProps {
   template: {
@@ -42,6 +43,9 @@ export function DesignEditorWithFabric({
 }: DesignEditorWithFabricProps) {
   const { toast } = useToast();
   const fabricCanvasRef = useRef<any>(null);
+  
+  // Clipboard for copy/paste
+  const clipboardRef = useRef<DesignElement[]>([]);
   
   // Convert template to DesignDocument format
   const [document, setDocument] = useState<DesignDocument>(() => 
@@ -96,7 +100,7 @@ export function DesignEditorWithFabric({
     }));
   }, [activePageIndex]);
   
-  // Handle element update from inspector
+  // Handle element update from inspector or floating toolbar
   const handleElementUpdate = useCallback((elementId: string, updates: Partial<DesignElement>) => {
     setDocument(prev => ({
       ...prev,
@@ -129,9 +133,10 @@ export function DesignEditorWithFabric({
     setSelectedElementIds(prev => prev.filter(id => id !== elementId));
   }, [activePageIndex]);
   
-  // Handle delete selected (from TopBar)
-  const handleDeleteSelected = useCallback(() => {
-    if (selectedElementIds.length === 0) return;
+  // Handle delete selected (from TopBar or keyboard)
+  const handleDeleteSelected = useCallback((ids?: string[]) => {
+    const idsToDelete = ids || selectedElementIds;
+    if (idsToDelete.length === 0) return;
     
     setDocument(prev => ({
       ...prev,
@@ -139,13 +144,191 @@ export function DesignEditorWithFabric({
         i === activePageIndex 
           ? {
               ...page,
-              elements: page.elements.filter(el => !selectedElementIds.includes(el.id))
+              elements: page.elements.filter(el => !idsToDelete.includes(el.id))
             }
           : page
       )
     }));
     setSelectedElementIds([]);
   }, [activePageIndex, selectedElementIds]);
+  
+  // Handle duplicate element
+  const handleDuplicateElement = useCallback((elementId: string) => {
+    const element = activePage?.elements.find(el => el.id === elementId);
+    if (!element) return;
+    
+    const newElement: DesignElement = {
+      ...element,
+      id: `element-${crypto.randomUUID().slice(0, 8)}`,
+      x: element.x + 5, // Offset by 5mm
+      y: element.y + 5,
+      zIndex: Math.max(0, ...(activePage?.elements || []).map(el => el.zIndex)) + 1
+    };
+    
+    setDocument(prev => ({
+      ...prev,
+      pages: prev.pages.map((page, i) => 
+        i === activePageIndex 
+          ? { ...page, elements: [...page.elements, newElement] }
+          : page
+      )
+    }));
+    
+    setSelectedElementIds([newElement.id]);
+  }, [activePageIndex, activePage?.elements]);
+  
+  // Handle duplicate selected (keyboard shortcut)
+  const handleDuplicateSelected = useCallback((ids: string[]) => {
+    const elementsToDuplicate = activePage?.elements.filter(el => ids.includes(el.id)) || [];
+    if (elementsToDuplicate.length === 0) return;
+    
+    const maxZIndex = Math.max(0, ...(activePage?.elements || []).map(el => el.zIndex));
+    const newElements: DesignElement[] = elementsToDuplicate.map((element, i) => ({
+      ...element,
+      id: `element-${crypto.randomUUID().slice(0, 8)}`,
+      x: element.x + 5,
+      y: element.y + 5,
+      zIndex: maxZIndex + i + 1
+    }));
+    
+    setDocument(prev => ({
+      ...prev,
+      pages: prev.pages.map((page, i) => 
+        i === activePageIndex 
+          ? { ...page, elements: [...page.elements, ...newElements] }
+          : page
+      )
+    }));
+    
+    setSelectedElementIds(newElements.map(el => el.id));
+  }, [activePageIndex, activePage?.elements]);
+  
+  // Handle nudge elements (keyboard shortcuts)
+  const handleNudgeElements = useCallback((ids: string[], dx: number, dy: number) => {
+    setDocument(prev => ({
+      ...prev,
+      pages: prev.pages.map((page, i) => 
+        i === activePageIndex 
+          ? {
+              ...page,
+              elements: page.elements.map(el => 
+                ids.includes(el.id) 
+                  ? { ...el, x: el.x + dx, y: el.y + dy }
+                  : el
+              )
+            }
+          : page
+      )
+    }));
+  }, [activePageIndex]);
+  
+  // Handle bring forward
+  const handleBringForward = useCallback((elementId: string) => {
+    const element = activePage?.elements.find(el => el.id === elementId);
+    if (!element) return;
+    
+    const currentZ = element.zIndex;
+    const elementsAbove = activePage?.elements.filter(el => el.zIndex > currentZ) || [];
+    
+    if (elementsAbove.length === 0) return; // Already on top
+    
+    const nextZ = Math.min(...elementsAbove.map(el => el.zIndex));
+    
+    setDocument(prev => ({
+      ...prev,
+      pages: prev.pages.map((page, i) => 
+        i === activePageIndex 
+          ? {
+              ...page,
+              elements: page.elements.map(el => {
+                if (el.id === elementId) return { ...el, zIndex: nextZ };
+                if (el.zIndex === nextZ) return { ...el, zIndex: currentZ };
+                return el;
+              })
+            }
+          : page
+      )
+    }));
+  }, [activePageIndex, activePage?.elements]);
+  
+  // Handle send backward
+  const handleSendBackward = useCallback((elementId: string) => {
+    const element = activePage?.elements.find(el => el.id === elementId);
+    if (!element) return;
+    
+    const currentZ = element.zIndex;
+    const elementsBelow = activePage?.elements.filter(el => el.zIndex < currentZ) || [];
+    
+    if (elementsBelow.length === 0) return; // Already on bottom
+    
+    const prevZ = Math.max(...elementsBelow.map(el => el.zIndex));
+    
+    setDocument(prev => ({
+      ...prev,
+      pages: prev.pages.map((page, i) => 
+        i === activePageIndex 
+          ? {
+              ...page,
+              elements: page.elements.map(el => {
+                if (el.id === elementId) return { ...el, zIndex: prevZ };
+                if (el.zIndex === prevZ) return { ...el, zIndex: currentZ };
+                return el;
+              })
+            }
+          : page
+      )
+    }));
+  }, [activePageIndex, activePage?.elements]);
+  
+  // Handle select all
+  const handleSelectAll = useCallback(() => {
+    if (activePage) {
+      setSelectedElementIds(activePage.elements.map(el => el.id));
+    }
+  }, [activePage]);
+  
+  // Handle copy
+  const handleCopy = useCallback(() => {
+    const elementsToCopy = activePage?.elements.filter(el => 
+      selectedElementIds.includes(el.id)
+    ) || [];
+    clipboardRef.current = elementsToCopy;
+    
+    toast({
+      title: "Copied",
+      description: `${elementsToCopy.length} element(s) copied`,
+    });
+  }, [activePage?.elements, selectedElementIds, toast]);
+  
+  // Handle paste
+  const handlePaste = useCallback(() => {
+    if (clipboardRef.current.length === 0) return;
+    
+    const maxZIndex = Math.max(0, ...(activePage?.elements || []).map(el => el.zIndex));
+    const newElements: DesignElement[] = clipboardRef.current.map((element, i) => ({
+      ...element,
+      id: `element-${crypto.randomUUID().slice(0, 8)}`,
+      x: element.x + 10,
+      y: element.y + 10,
+      zIndex: maxZIndex + i + 1
+    }));
+    
+    setDocument(prev => ({
+      ...prev,
+      pages: prev.pages.map((page, i) => 
+        i === activePageIndex 
+          ? { ...page, elements: [...page.elements, ...newElements] }
+          : page
+      )
+    }));
+    
+    setSelectedElementIds(newElements.map(el => el.id));
+    
+    toast({
+      title: "Pasted",
+      description: `${newElements.length} element(s) pasted`,
+    });
+  }, [activePageIndex, activePage?.elements, toast]);
   
   // Handle adding new element
   const handleAddElement = useCallback((element: DesignElement) => {
@@ -176,6 +359,20 @@ export function DesignEditorWithFabric({
   const handleNextRecord = useCallback(() => {
     setSampleDataIndex(prev => Math.min(sampleData.length - 1, prev + 1));
   }, [sampleData.length]);
+  
+  // Setup keyboard shortcuts
+  useCanvasKeyboard({
+    selectedElementIds,
+    elements: activePage?.elements || [],
+    onDeleteElements: handleDeleteSelected,
+    onDuplicateElements: handleDuplicateSelected,
+    onNudgeElements: handleNudgeElements,
+    onSelectAll: handleSelectAll,
+    onClearSelection: () => setSelectedElementIds([]),
+    onCopy: handleCopy,
+    onPaste: handlePaste,
+    enabled: true
+  });
   
   // Save handler - captures from Fabric.js canvas
   const handleSave = useCallback(() => {
@@ -249,7 +446,7 @@ export function DesignEditorWithFabric({
         onClose={onClose}
         onAddElement={handleAddElement}
         selectedElements={selectedElements}
-        onDeleteSelected={handleDeleteSelected}
+        onDeleteSelected={() => handleDeleteSelected()}
         pageSize={pageSize}
         activePage={activePage}
         onPageUpdate={(updates) => handlePageUpdate(activePageIndex, updates)}
@@ -284,6 +481,11 @@ export function DesignEditorWithFabric({
             onElementsChange={handleElementsChange}
             onSelectionChange={setSelectedElementIds}
             onCanvasReady={handleCanvasReady}
+            onElementUpdate={handleElementUpdate}
+            onDuplicateElement={handleDuplicateElement}
+            onDeleteElement={handleElementDelete}
+            onBringForward={handleBringForward}
+            onSendBackward={handleSendBackward}
           />
         </div>
         
@@ -307,6 +509,7 @@ export function DesignEditorWithFabric({
         onNextRecord={handleNextRecord}
         gridEnabled={showGrid}
         pageSize={pageSize}
+        selectedElement={selectedElements[0]}
       />
     </div>
   );

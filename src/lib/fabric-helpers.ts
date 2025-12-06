@@ -424,7 +424,17 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
   const pxToMm = (px: number) => Coordinates.pxToMm(px, scale);
   
   return canvas.getObjects()
-    .filter((obj: any) => obj.type === 'textbox' || obj.type === 'Group' || obj.type === 'group')
+    .filter((obj: any) => {
+      // Include all field types: text, groups (barcode/qr), rect/image (shapes/images)
+      const type = obj.type?.toLowerCase();
+      const hasFieldId = !!(obj as any).fieldId;
+      return hasFieldId && (
+        type === 'textbox' ||
+        type === 'group' ||
+        type === 'rect' ||
+        type === 'image'
+      );
+    })
     .map((obj: any, index: number) => {
       const labelObj = obj as LabelFieldObject;
       const isGroup = obj.type === 'Group' || obj.type === 'group';
@@ -449,11 +459,14 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
         visible: (obj as any).visible !== false
       };
       
+      const objType = obj.type?.toLowerCase();
+      const fieldType = (obj as any).fieldType;
+      
       // For Groups (QR/barcode), preserve their typeConfig and fieldType
       if (isGroup) {
         return {
           ...baseConfig,
-          fieldType: (obj as any).fieldType || 'qrcode',
+          fieldType: fieldType || 'qrcode',
           typeConfig: (obj as any).typeConfig || {},
           style: {
             fontSize: 12,
@@ -465,6 +478,54 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
             verticalAlign: 'middle'
           },
           overflow: 'shrink',
+          autoFit: false,
+          showLabel: false
+        };
+      }
+      
+      // For images
+      if (objType === 'image' || fieldType === 'image') {
+        return {
+          ...baseConfig,
+          fieldType: 'image',
+          typeConfig: (obj as any).typeConfig || { imageSrc: (obj as any).getSrc?.() || '' },
+          style: {
+            fontSize: 12,
+            fontFamily: 'Arial',
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            textAlign: 'center',
+            color: '#000000',
+            verticalAlign: 'middle'
+          },
+          overflow: 'visible',
+          autoFit: false,
+          showLabel: false
+        };
+      }
+      
+      // For shapes (rect without textbox properties)
+      if ((objType === 'rect' && fieldType === 'shape') || fieldType === 'shape') {
+        return {
+          ...baseConfig,
+          fieldType: 'shape',
+          typeConfig: {
+            shapeType: 'rectangle',
+            fill: obj.fill || '#e5e5e5',
+            stroke: obj.stroke || '#000000',
+            strokeWidth: obj.strokeWidth || 1,
+            ...(obj as any).typeConfig
+          },
+          style: {
+            fontSize: 12,
+            fontFamily: 'Arial',
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            textAlign: 'center',
+            color: '#000000',
+            verticalAlign: 'middle'
+          },
+          overflow: 'visible',
           autoFit: false,
           showLabel: false
         };

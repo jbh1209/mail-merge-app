@@ -251,6 +251,8 @@ export function DesignEditorWithFabric({
         selectedElements={selectedElements}
         onDeleteSelected={handleDeleteSelected}
         pageSize={pageSize}
+        activePage={activePage}
+        onPageUpdate={(updates) => handlePageUpdate(activePageIndex, updates)}
       />
       
       {/* Main Content Area */}

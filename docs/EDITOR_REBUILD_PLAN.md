@@ -21,19 +21,19 @@
 - `src/components/editor/EditorStatusBar.tsx` - Status info
 - `src/components/editor/index.ts` - Public exports
 
-### Phase 3: Print-Grade PDF Export Pipeline 🔄 NEXT
-- Refactor `supabase/functions/generate-pdf/index.ts`
-- Implement SVG → PDF conversion pipeline
-- Add bleed support and crop marks
-- Implement Google Fonts server-side embedding
-- Set proper TrimBox/BleedBox for print
+### Phase 3: Print-Grade PDF Export Pipeline ✅ COMPLETE
+- `supabase/functions/generate-pdf/index.ts` - Main handler (refactored)
+- `supabase/functions/generate-pdf/element-renderer.ts` - Element → PDF logic
+- `supabase/functions/generate-pdf/print-features.ts` - Bleed, crop marks, TrimBox/BleedBox
+- `supabase/functions/generate-pdf/font-utils.ts` - Google Fonts server-side TTF embedding
 
-### Phase 4: Migration
-- Connect new editor shell to existing routes
-- Create adapter layer for existing template data
-- Replace TemplateDesignCanvas with DesignEditorShell
+### Phase 4: Migration ✅ COMPLETE
+- `src/components/editor/EditorCanvasWithFabric.tsx` - Bridge FabricLabelCanvas to DesignElement types
+- `src/components/editor/DesignEditorWithFabric.tsx` - Full editor with Fabric.js integration
+- `src/components/TemplateDesignEditor.tsx` - Updated to use new editor by default
+- Legacy editor available via `useLegacyEditor` prop
 
-### Phase 5: Advanced VDP Features
+### Phase 5: Advanced VDP Features 🔄 NEXT
 - Image support with DPI warnings
 - Backgrounds and layers
 - Multi-page documents

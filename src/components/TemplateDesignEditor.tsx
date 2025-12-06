@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { TemplateDesignCanvas } from './TemplateDesignCanvas';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { DesignEditorWithFabric } from './editor/DesignEditorWithFabric';
 
 interface TemplateDesignEditorProps {
   open: boolean;
@@ -10,6 +10,7 @@ interface TemplateDesignEditorProps {
   template: any;
   projectId: string;
   onSave: (designConfig: any) => void;
+  useLegacyEditor?: boolean;
 }
 
 export function TemplateDesignEditor({
@@ -18,6 +19,7 @@ export function TemplateDesignEditor({
   template,
   projectId,
   onSave,
+  useLegacyEditor = false,
 }: TemplateDesignEditorProps) {
   // Fetch the latest data source for preview samples
   const { data: dataSource } = useQuery({
@@ -62,14 +64,42 @@ export function TemplateDesignEditor({
 
   const handleSave = (updatedConfig: any) => {
     onSave(updatedConfig);
+    onOpenChange(false);
   };
 
   if (!open) return null;
 
+  // Use the new Polotno-style editor by default
+  if (!useLegacyEditor) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="w-[1400px] max-w-[98vw] h-[95vh] max-h-[95vh] p-0 overflow-hidden">
+          <DesignEditorWithFabric
+            template={{
+              id: template.id,
+              name: template.name,
+              width_mm: template.width_mm,
+              height_mm: template.height_mm,
+              design_config: template.design_config
+            }}
+            projectId={projectId}
+            sampleData={sampleData}
+            availableFields={fieldNames}
+            onSave={handleSave}
+            onClose={() => onOpenChange(false)}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Legacy editor - import dynamically to avoid bundle bloat
+  const LegacyEditor = require('./TemplateDesignCanvas').TemplateDesignCanvas;
+  
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[1400px] max-w-[98vw] max-h-[95vh] p-0">
-        <TemplateDesignCanvas
+        <LegacyEditor
           templateSize={{
             width: template.width_mm,
             height: template.height_mm

@@ -255,7 +255,7 @@ export function FabricLabelCanvas({
       canvas.dispose();
       fabricCanvasRef.current = null;
     };
-  }, [templateSize.width, templateSize.height, scale]); // Include scale for proper initial sizing
+  }, [templateSize.width, templateSize.height]); // Only recreate canvas when SIZE changes, NOT zoom
 
   // =============================================================================
   // EFFECT 2: Field Synchronization (runs when fields/data change)

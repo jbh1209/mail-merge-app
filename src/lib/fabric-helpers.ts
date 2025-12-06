@@ -471,10 +471,14 @@ export function fabricToFieldConfigs(canvas: any, scale: number = 1): FieldConfi
       }
       
       // For textboxes, preserve all existing properties
+      // CRITICAL: Capture fontSize directly from Fabric.js object
+      const fabricFontSize = (obj as Textbox).fontSize || 12;
+      console.log(`📐 fabricToFieldConfigs: Field "${labelObj.templateField}" Fabric fontSize=${fabricFontSize}pt`);
+      
       return {
         ...baseConfig,
         style: {
-          fontSize: (obj as Textbox).fontSize || 12,
+          fontSize: fabricFontSize,
           fontFamily: (obj as Textbox).fontFamily || 'Arial',
           fontWeight: ((obj as Textbox).fontWeight as any) || 'normal',
           fontStyle: 'normal',

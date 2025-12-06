@@ -68,7 +68,7 @@ export function TemplateDesignEditor({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] p-0">
+      <DialogContent className="w-[1400px] max-w-[98vw] max-h-[95vh] p-0">
         <TemplateDesignCanvas
           templateSize={{
             width: template.width_mm,

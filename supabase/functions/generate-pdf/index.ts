@@ -554,12 +554,12 @@ function renderLabelWithDesign(
     // Render based on field type
     switch (field.fieldType) {
       case 'text':
-        console.log(`   ✏️ Rendering text field with fontSize=${field.style?.fontSize}pt`);
+        console.log(`   ✏️ Rendering text field: fontSize=${field.style?.fontSize}pt, fontWeight=${field.style?.fontWeight}, textAlign=${field.style?.textAlign}`);
         renderTextField(page, field, dataRow, dataColumn, fonts, fieldX, fieldY, fieldWidth, fieldHeight);
         break;
         
       case 'address_block':
-        console.log(`   ✏️ Rendering address block with ${field.combinedFields?.length || 1} fields`);
+        console.log(`   ✏️ Rendering address block: fontSize=${field.style?.fontSize}pt, fields=${field.combinedFields?.length || 1}`);
         renderAddressBlock(page, field, dataRow, mappings, fonts, fieldX, fieldY, fieldWidth, fieldHeight);
         break;
         
@@ -574,7 +574,7 @@ function renderLabelWithDesign(
         break;
         
       case 'sequence':
-        console.log(`   ✏️ Rendering sequence #${recordIndex}`);
+        console.log(`   ✏️ Rendering sequence #${recordIndex}: fontSize=${field.style?.fontSize}pt`);
         renderSequenceField(page, field, recordIndex, fonts, fieldX, fieldY, fieldWidth, fieldHeight);
         break;
         

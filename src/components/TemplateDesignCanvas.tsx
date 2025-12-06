@@ -342,6 +342,11 @@ export function TemplateDesignCanvas({
     console.log('💾 HARD CAPTURE from Fabric.js canvas...');
     const capturedFields = fabricToFieldConfigs(fabricCanvasRef.current, 1);
     
+    // Debug: Log each field's font size for PDF mismatch debugging
+    capturedFields.forEach(field => {
+      console.log(`💾 SAVE: Field "${field.templateField}" type=${field.fieldType} fontSize=${field.style?.fontSize}pt position=(${field.position.x.toFixed(2)},${field.position.y.toFixed(2)})mm size=(${field.size.width.toFixed(2)}x${field.size.height.toFixed(2)})mm`);
+    });
+    
     console.log('✅ Captured fields:', capturedFields);
     
     const designConfig = {

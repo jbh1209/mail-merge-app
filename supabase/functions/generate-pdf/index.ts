@@ -405,7 +405,7 @@ function renderQRCodeField(
   }
 }
 
-// Render sequence number
+// Render sequence number - uses TOP-LEFT origin to match Fabric.js canvas rendering
 function renderSequenceField(
   page: PDFPage,
   field: any,
@@ -428,9 +428,26 @@ function renderSequenceField(
   const font = field.style?.fontWeight === 'bold' ? fonts.bold : fonts.regular;
   const fontSize = field.style?.fontSize || 12;
   
+  console.log(`   📊 Sequence field: fontSize=${fontSize}pt, value="${value}", box=${width.toFixed(1)}x${height.toFixed(1)}pt`);
+  
+  // Calculate text position based on textAlign - render from TOP of box (matching Fabric.js)
+  const textAlign = field.style?.textAlign || 'left';
+  let xPos = x + 6;
+  
+  if (textAlign === 'center') {
+    const textWidth = font.widthOfTextAtSize(value, fontSize);
+    xPos = x + (width - textWidth) / 2;
+  } else if (textAlign === 'right') {
+    const textWidth = font.widthOfTextAtSize(value, fontSize);
+    xPos = x + width - textWidth - 6;
+  }
+  
+  // Render from top of box (y + height - fontSize - padding) to match text fields
+  const yPos = y + height - fontSize - 4;
+  
   page.drawText(value, {
-    x: x + 6,
-    y: y + (height / 2) - (fontSize / 2),
+    x: xPos,
+    y: yPos,
     size: fontSize,
     font: font,
     color: rgb(0, 0, 0)

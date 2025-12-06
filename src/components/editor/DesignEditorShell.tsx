@@ -64,6 +64,29 @@ export function DesignEditorShell({
   // Current sample data record
   const currentSampleData = sampleData[sampleDataIndex] || {};
   
+  // Handle document update (for page management)
+  const handleDocumentUpdate = useCallback((updates: Partial<DesignDocument>) => {
+    if (!onDocumentChange) return;
+    onDocumentChange({
+      ...document,
+      ...updates
+    });
+  }, [document, onDocumentChange]);
+  
+  // Handle page update
+  const handlePageUpdate = useCallback((pageIndex: number, updates: Partial<DesignPage>) => {
+    if (!onDocumentChange) return;
+    const updatedPages = [...document.pages];
+    updatedPages[pageIndex] = {
+      ...updatedPages[pageIndex],
+      ...updates
+    };
+    onDocumentChange({
+      ...document,
+      pages: updatedPages
+    });
+  }, [document, onDocumentChange]);
+  
   // Handle element updates
   const handleElementsChange = useCallback((elements: DesignElement[]) => {
     if (!activePage || !onDocumentChange) return;
@@ -160,6 +183,7 @@ export function DesignEditorShell({
       <div className="flex flex-1 min-h-0">
         {/* Left Sidebar */}
         <EditorLeftSidebar
+          document={document}
           pages={document.pages}
           activePageIndex={activePageIndex}
           onPageSelect={setActivePageIndex}
@@ -167,7 +191,10 @@ export function DesignEditorShell({
           onTabChange={setLeftSidebarTab}
           availableFields={availableFields}
           onAddElement={handleAddElement}
+          onDocumentUpdate={handleDocumentUpdate}
+          onPageUpdate={handlePageUpdate}
           pageSize={{ width: activePage.widthMm, height: activePage.heightMm }}
+          readOnly={readOnly}
         />
         
         {/* Canvas Viewport */}

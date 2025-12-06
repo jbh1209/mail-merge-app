@@ -14,3 +14,8 @@ export { EditorStatusBar } from './EditorStatusBar';
 // Phase 4: Migration - Fabric.js Integration
 export { EditorCanvasWithFabric } from './EditorCanvasWithFabric';
 export { DesignEditorWithFabric } from './DesignEditorWithFabric';
+
+// Phase 5: Advanced VDP Features
+export { ImageUploadDialog } from './ImageUploadDialog';
+export { BackgroundSettingsPanel } from './BackgroundSettingsPanel';
+export { PageManagerPanel } from './PageManagerPanel';

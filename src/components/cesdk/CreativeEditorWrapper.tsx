@@ -3,7 +3,6 @@ import CreativeEditorSDK, { Configuration, AssetSource, AssetResult, AssetsQuery
 import { Loader2 } from 'lucide-react';
 
 // Get the correct assets URL - must match the installed package version
-// The latest stable version as of Dec 2024 is 1.65.0
 const CESDK_VERSION = '1.65.0';
 const CESDK_ASSETS_URL = `https://cdn.img.ly/packages/imgly/cesdk-js/${CESDK_VERSION}/assets`;
 
@@ -134,6 +133,15 @@ export function CreativeEditorWrapper({
         const cesdk = await CreativeEditorSDK.create(container, config);
         editorRef.current = cesdk;
 
+        // Add default asset sources (shapes, stickers, images, etc.)
+        await cesdk.addDefaultAssetSources();
+        
+        // Add demo assets with upload support
+        await cesdk.addDemoAssetSources({ 
+          sceneMode: 'Design', 
+          withUploadAssetSources: true 
+        });
+
         // Register custom asset source for data fields
         if (availableFields.length > 0) {
           cesdk.engine.asset.addSource(createDataFieldsAssetSource(availableFields, sampleData));
@@ -245,9 +253,6 @@ function createDataFieldsAssetSource(fields: string[], sampleData: Record<string
           blockType: '//ly.img.ubq/text',
           fillType: '//ly.img.ubq/fill/solid',
           value: sampleData[field] || `{{${field}}}`,
-        },
-        context: {
-          sourceId: 'data-fields',
         },
       }));
       

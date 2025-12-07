@@ -16,6 +16,57 @@ export interface QRCodeOptions {
   ecLevel?: 'L' | 'M' | 'Q' | 'H';
 }
 
+export interface BarcodeValidationResult {
+  valid: boolean;
+  message?: string;
+}
+
+/**
+ * Validate barcode input for a specific format
+ */
+export function validateBarcodeInput(value: string, format: string): BarcodeValidationResult {
+  const upperFormat = format.toUpperCase();
+  
+  switch (upperFormat) {
+    case 'EAN13':
+      if (!/^\d{13}$/.test(value)) {
+        return { valid: false, message: 'EAN-13 requires exactly 13 numeric digits' };
+      }
+      break;
+    case 'UPCA':
+      if (!/^\d{12}$/.test(value)) {
+        return { valid: false, message: 'UPC-A requires exactly 12 numeric digits' };
+      }
+      break;
+    case 'CODE128':
+    case 'CODE39':
+      if (!value || value.length === 0) {
+        return { valid: false, message: 'Barcode value cannot be empty' };
+      }
+      break;
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * Get a valid sample value for a barcode format
+ */
+export function getValidSampleValue(format: string): string {
+  const upperFormat = format.toUpperCase();
+  
+  switch (upperFormat) {
+    case 'EAN13':
+      return '5901234123457'; // Valid EAN-13 with check digit
+    case 'UPCA':
+      return '012345678905'; // Valid UPC-A with check digit
+    case 'CODE128':
+    case 'CODE39':
+    default:
+      return '123456789';
+  }
+}
+
 /**
  * Generate SVG string for a barcode using bwip-js
  */

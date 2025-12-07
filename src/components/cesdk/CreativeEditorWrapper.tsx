@@ -262,10 +262,17 @@ export function CreativeEditorWrapper({
         const cesdk = await CreativeEditorSDK.create(container, config);
         editorRef.current = cesdk;
 
+        // Performance optimization: limit max image size
+        try {
+          cesdk.engine.editor.setSettingFloat('maxImageSize', 4096);
+        } catch (e) {
+          console.warn('Could not set maxImageSize:', e);
+        }
+
         // Add default asset sources (shapes, stickers, images, etc.)
         await cesdk.addDefaultAssetSources();
         
-        // Add demo assets with upload support
+        // Add demo assets with upload support (limited for performance)
         await cesdk.addDemoAssetSources({ 
           sceneMode: 'Design', 
           withUploadAssetSources: true 

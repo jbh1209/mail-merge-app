@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import CreativeEditorSDK, { Configuration, AssetSource, AssetResult, AssetsQueryResult } from '@cesdk/cesdk-js';
 import { Loader2 } from 'lucide-react';
+import { createBarcodeAssetSource } from './barcodeAssetSource';
+import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
+import { generateBarcodeSVG, generateQRCodeSVG } from '@/lib/barcode-svg-utils';
 
 // Get the correct assets URL - must match the installed package version
 const CESDK_VERSION = '1.65.0';
@@ -22,6 +25,10 @@ interface CreativeEditorWrapperProps {
   // Label dimensions in mm
   labelWidth?: number;
   labelHeight?: number;
+  // Bleed margin in mm (for print-ready output)
+  bleedMm?: number;
+  // Enable white underlayer for clear substrates
+  whiteUnderlayer?: boolean;
 }
 
 export function CreativeEditorWrapper({
@@ -33,11 +40,111 @@ export function CreativeEditorWrapper({
   licenseKey,
   labelWidth = 100,
   labelHeight = 50,
+  bleedMm = 0,
+  whiteUnderlayer = false,
 }: CreativeEditorWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<CreativeEditorSDK | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Export function exposed to parent components
+  const handleExport = useCallback(async (options?: Partial<ExportOptions>) => {
+    if (!editorRef.current) return null;
+    
+    const exportOptions: ExportOptions = {
+      ...getPrintReadyExportOptions({ whiteUnderlayer, bleedMm }),
+      ...options,
+    };
+    
+    return exportDesign(editorRef.current, exportOptions);
+  }, [whiteUnderlayer, bleedMm]);
+
+  // Add barcode to canvas
+  const addBarcodeToCanvas = useCallback(async (
+    value: string,
+    format: string,
+    variableField?: string
+  ) => {
+    if (!editorRef.current) return;
+    
+    const engine = editorRef.current.engine;
+    const pages = engine.scene.getPages();
+    if (pages.length === 0) return;
+    
+    const page = pages[0];
+    
+    // Generate barcode SVG
+    const svg = generateBarcodeSVG(value, format.toUpperCase(), { 
+      height: 75, 
+      includetext: true 
+    });
+    const dataUrl = `data:image/svg+xml;base64,${btoa(svg)}`;
+    
+    // Create graphic block
+    const block = engine.block.create('//ly.img.ubq/graphic');
+    const shape = engine.block.createShape('//ly.img.ubq/shape/rect');
+    engine.block.setShape(block, shape);
+    
+    // Create image fill with barcode
+    const fill = engine.block.createFill('//ly.img.ubq/fill/image');
+    engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
+    engine.block.setFill(block, fill);
+    
+    // Set size and position
+    engine.block.setWidth(block, 150);
+    engine.block.setHeight(block, 75);
+    engine.block.setPositionX(block, 50);
+    engine.block.setPositionY(block, 50);
+    
+    // Store metadata in block name for VDP resolution
+    if (variableField) {
+      engine.block.setName(block, `barcode:${format}:${variableField}`);
+    }
+    
+    engine.block.appendChild(page, block);
+  }, []);
+
+  // Add QR code to canvas
+  const addQRCodeToCanvas = useCallback(async (
+    value: string,
+    variableField?: string
+  ) => {
+    if (!editorRef.current) return;
+    
+    const engine = editorRef.current.engine;
+    const pages = engine.scene.getPages();
+    if (pages.length === 0) return;
+    
+    const page = pages[0];
+    
+    // Generate QR code SVG
+    const svg = generateQRCodeSVG(value, { width: 100, height: 100 });
+    const dataUrl = `data:image/svg+xml;base64,${btoa(svg)}`;
+    
+    // Create graphic block
+    const block = engine.block.create('//ly.img.ubq/graphic');
+    const shape = engine.block.createShape('//ly.img.ubq/shape/rect');
+    engine.block.setShape(block, shape);
+    
+    // Create image fill with QR code
+    const fill = engine.block.createFill('//ly.img.ubq/fill/image');
+    engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
+    engine.block.setFill(block, fill);
+    
+    // Set size and position (square)
+    engine.block.setWidth(block, 100);
+    engine.block.setHeight(block, 100);
+    engine.block.setPositionX(block, 50);
+    engine.block.setPositionY(block, 50);
+    
+    // Store metadata in block name for VDP resolution
+    if (variableField) {
+      engine.block.setName(block, `qrcode::${variableField}`);
+    }
+    
+    engine.block.appendChild(page, block);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -96,7 +203,29 @@ export function CreativeEditorWrapper({
                       icon: () => 'https://img.icons8.com/ios/50/merge-files.png',
                       title: () => 'Data Fields',
                     };
-                    return [dataFieldsEntry, ...defaultEntries];
+                    
+                    // Add a custom "Barcodes & QR" section
+                    const barcodesEntry = {
+                      id: 'barcodes-qrcodes',
+                      sourceIds: ['barcodes-qrcodes'],
+                      previewLength: 4,
+                      gridColumns: 2,
+                      gridItemHeight: 'auto' as const,
+                      cardLabel: (asset: AssetResult) => asset.label || asset.id,
+                      cardLabelStyle: () => ({
+                        height: '24px',
+                        width: '100%',
+                        fontSize: '11px',
+                        textAlign: 'center' as const,
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap' as const,
+                        textOverflow: 'ellipsis',
+                      }),
+                      icon: () => 'https://img.icons8.com/ios/50/barcode.png',
+                      title: () => 'Barcodes & QR',
+                    };
+                    
+                    return [dataFieldsEntry, barcodesEntry, ...defaultEntries];
                   },
                 },
               },
@@ -142,10 +271,16 @@ export function CreativeEditorWrapper({
           withUploadAssetSources: true 
         });
 
-        // Register custom asset source for data fields
+        // Register custom asset source for data fields (text variables)
         if (availableFields.length > 0) {
           cesdk.engine.asset.addSource(createDataFieldsAssetSource(availableFields, sampleData));
         }
+        
+        // Register barcode/QR code asset source
+        cesdk.engine.asset.addSource(createBarcodeAssetSource({
+          availableFields,
+          sampleData,
+        }));
 
         // Create a new design or load existing scene
         if (initialScene) {

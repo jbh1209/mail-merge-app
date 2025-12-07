@@ -58,17 +58,32 @@ export function DesignEditorV2Shell({ document, engine, onDocumentChange }: Desi
 
   // Mount the canvas engine once
   useEffect(() => {
-    if (!canvasContainerRef.current) return;
-    engine.mount(canvasContainerRef.current, { enableGrid: showGrid }, {
-      onSelectionChange: ids => setSelection(ids),
-      onElementsChange: elements => {
-        const page = activePageRef.current;
-        if (!page) return;
-        updatePage(page.id, { elements });
-      }
-    });
+    const container = canvasContainerRef.current;
+    if (!container) {
+      console.log('[V2Shell] Container ref not ready');
+      return;
+    }
+    
+    console.log('[V2Shell] Mounting engine...');
+    
+    try {
+      engine.mount(container, { enableGrid: showGrid }, {
+        onSelectionChange: ids => setSelection(ids),
+        onElementsChange: elements => {
+          const page = activePageRef.current;
+          if (!page) return;
+          updatePage(page.id, { elements });
+        }
+      });
+      console.log('[V2Shell] Engine mounted successfully');
+    } catch (err) {
+      console.error('[V2Shell] Engine mount failed:', err);
+    }
 
-    return () => engine.unmount();
+    return () => {
+      console.log('[V2Shell] Unmounting engine...');
+      engine.unmount();
+    };
   }, [engine, setSelection, updatePage, showGrid]);
 
   useEffect(() => {

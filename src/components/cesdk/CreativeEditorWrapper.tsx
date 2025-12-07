@@ -3,7 +3,7 @@ import CreativeEditorSDK, { Configuration, AssetSource, AssetResult, AssetsQuery
 import { Loader2 } from 'lucide-react';
 import { createBarcodeAssetSource } from './barcodeAssetSource';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
-import { generateBarcodeSVG, generateQRCodeSVG } from '@/lib/barcode-svg-utils';
+import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 
 // Get the correct assets URL - must match the installed package version
 const CESDK_VERSION = '1.65.0';
@@ -74,12 +74,11 @@ export function CreativeEditorWrapper({
     
     const page = pages[0];
     
-    // Generate barcode SVG
-    const svg = generateBarcodeSVG(value, format.toUpperCase(), { 
+    // Generate barcode using fast data URL generation
+    const dataUrl = generateBarcodeDataUrl(value, format.toUpperCase(), { 
       height: 75, 
       includetext: true 
     });
-    const dataUrl = `data:image/svg+xml;base64,${btoa(svg)}`;
     
     // Create graphic block
     const block = engine.block.create('//ly.img.ubq/graphic');
@@ -118,9 +117,8 @@ export function CreativeEditorWrapper({
     
     const page = pages[0];
     
-    // Generate QR code SVG
-    const svg = generateQRCodeSVG(value, { width: 100, height: 100 });
-    const dataUrl = `data:image/svg+xml;base64,${btoa(svg)}`;
+    // Generate QR code using fast data URL generation
+    const dataUrl = generateQRCodeDataUrl(value, { width: 100, height: 100 });
     
     // Create graphic block
     const block = engine.block.create('//ly.img.ubq/graphic');

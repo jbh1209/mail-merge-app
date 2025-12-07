@@ -1,11 +1,12 @@
 // =============================================================================
-// DESIGN EDITOR V2 - STATE STORE (ZUSTAND)
+// DESIGN EDITOR V2 - STATE STORE (LOCAL HOOK)
 // =============================================================================
-// Centralized state for the experimental V2 editor. This store purposely keeps
-// the surface area small so the UI and canvas engine can iterate quickly.
+// Centralized state for the experimental V2 editor. This implementation avoids
+// external dependencies while mirroring the small API surface we previously had
+// with Zustand.
 // =============================================================================
 
-import { create } from 'zustand';
+import { useCallback, useMemo, useState } from 'react';
 import type { DesignDocument, DesignElement, DesignPage } from '@/lib/editor-v2/types';
 
 export interface EditorV2State {
@@ -28,71 +29,125 @@ export interface EditorV2State {
   removeElement: (pageId: string, elementId: string) => void;
 }
 
-export const useEditorV2Store = create<EditorV2State>((set) => ({
-  document: null,
-  activePageId: null,
-  selectedElementIds: [],
-  zoom: 1,
-  showGrid: true,
+export function useEditorV2Store(): EditorV2State {
+  const [document, setDocumentState] = useState<DesignDocument | null>(null);
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+  const [zoom, setZoomState] = useState(1);
+  const [showGrid, setShowGrid] = useState(true);
 
-  setDocument: doc =>
-    set({
-      document: doc,
-      activePageId: doc.pages[0]?.id ?? null,
-      selectedElementIds: []
-    }),
+  const setDocument = useCallback((doc: DesignDocument) => {
+    setDocumentState(doc);
+    setActivePageId(doc.pages[0]?.id ?? null);
+    setSelectedElementIds([]);
+  }, []);
 
-  setActivePage: pageId => set({ activePageId: pageId, selectedElementIds: [] }),
-  setSelection: ids => set({ selectedElementIds: ids }),
-  setZoom: zoom => set({ zoom }),
-  toggleGrid: () => set(state => ({ showGrid: !state.showGrid })),
+  const setActivePage = useCallback((pageId: string) => {
+    setActivePageId(pageId);
+    setSelectedElementIds([]);
+  }, []);
 
-  addPage: page =>
-    set(state => {
-      if (!state.document) return state;
-      const pages = [...state.document.pages, page];
-      return {
-        document: { ...state.document, pages },
-        activePageId: page.id
-      };
-    }),
+  const setSelection = useCallback((ids: string[]) => {
+    setSelectedElementIds(ids);
+  }, []);
 
-  updatePage: (pageId, updates) =>
-    set(state => {
-      if (!state.document) return state;
-      const pages = state.document.pages.map(page => (page.id === pageId ? { ...page, ...updates } : page));
-      return { document: { ...state.document, pages } };
-    }),
+  const setZoom = useCallback((nextZoom: number) => {
+    setZoomState(nextZoom);
+  }, []);
 
-  addElement: (pageId, element) =>
-    set(state => {
-      if (!state.document) return state;
-      const pages = state.document.pages.map(page =>
-        page.id === pageId ? { ...page, elements: [...page.elements, element] as DesignElement[] } : page
+  const toggleGrid = useCallback(() => {
+    setShowGrid(current => !current);
+  }, []);
+
+  const addPage = useCallback((page: DesignPage) => {
+    setDocumentState(current => {
+      if (!current) return current;
+      const pages = [...current.pages, page];
+      setActivePageId(page.id);
+      return { ...current, pages };
+    });
+  }, []);
+
+  const updatePage = useCallback((pageId: string, updates: Partial<DesignPage>) => {
+    setDocumentState(current => {
+      if (!current) return current;
+      const pages = current.pages.map(page => (page.id === pageId ? { ...page, ...updates } : page));
+      return { ...current, pages };
+    });
+  }, []);
+
+  const addElement = useCallback((pageId: string, element: DesignElement) => {
+    setDocumentState(current => {
+      if (!current) return current;
+      const pages = current.pages.map(page =>
+        page.id === pageId ? { ...page, elements: [...page.elements, element] } : page
       );
-      return { document: { ...state.document, pages }, selectedElementIds: [element.id] };
-    }),
+      setSelectedElementIds([element.id]);
+      return { ...current, pages };
+    });
+  }, []);
 
-  updateElement: (pageId, elementId, updates) =>
-    set(state => {
-      if (!state.document) return state;
-      const pages = state.document.pages.map(page => {
-        if (page.id !== pageId) return page;
-        const elements = page.elements.map(element => 
-          (element.id === elementId ? { ...element, ...updates } : element)
-        ) as DesignElement[];
-        return { ...page, elements };
+  const updateElement = useCallback(
+    (pageId: string, elementId: string, updates: Partial<DesignElement>) => {
+      setDocumentState(current => {
+        if (!current) return current;
+        const pages = current.pages.map(page => {
+          if (page.id !== pageId) return page;
+          const elements = page.elements.map(element => (element.id === elementId ? { ...element, ...updates } : element));
+          return { ...page, elements };
+        });
+        return { ...current, pages };
       });
-      return { document: { ...state.document, pages } };
-    }),
+    },
+    []
+  );
 
-  removeElement: (pageId, elementId) =>
-    set(state => {
-      if (!state.document) return state;
-      const pages = state.document.pages.map(page => {
+  const removeElement = useCallback((pageId: string, elementId: string) => {
+    setDocumentState(current => {
+      if (!current) return current;
+      const pages = current.pages.map(page => {
         if (page.id !== pageId) return page;
         return { ...page, elements: page.elements.filter(el => el.id !== elementId) };
       });
-      return { document: { ...state.document, pages }, selectedElementIds: [] };
-    })
-}));
+      setSelectedElementIds([]);
+      return { ...current, pages };
+    });
+  }, []);
+
+  return useMemo(
+    () => ({
+      document,
+      activePageId,
+      selectedElementIds,
+      zoom,
+      showGrid,
+      setDocument,
+      setActivePage,
+      setSelection,
+      setZoom,
+      toggleGrid,
+      addPage,
+      updatePage,
+      addElement,
+      updateElement,
+      removeElement
+    }),
+    [
+      document,
+      activePageId,
+      selectedElementIds,
+      zoom,
+      showGrid,
+      setDocument,
+      setActivePage,
+      setSelection,
+      setZoom,
+      toggleGrid,
+      addPage,
+      updatePage,
+      addElement,
+      updateElement,
+      removeElement
+    ]
+  );
+}

@@ -1,5 +1,5 @@
 import { AssetSource, AssetResult, AssetsQueryResult, CreativeEngine } from '@cesdk/cesdk-js';
-import { generateBarcodeSVG, generateQRCodeSVG, getValidSampleValue } from '@/lib/barcode-svg-utils';
+import { generateBarcodeDataUrl, generateQRCodeDataUrl, getValidSampleValue } from '@/lib/barcode-svg-utils';
 
 export interface BarcodeAssetConfig {
   availableFields?: string[];
@@ -13,6 +13,32 @@ const BARCODE_FORMATS = [
   { id: 'ean13', label: 'EAN-13', description: '13-digit numeric (retail)' },
   { id: 'upca', label: 'UPC-A', description: '12-digit numeric (US retail)' },
 ];
+
+// Thumbnail cache to avoid regenerating the same barcodes
+const thumbnailCache = new Map<string, string>();
+
+/**
+ * Get a cached thumbnail or generate and cache a new one
+ */
+function getCachedBarcodeThumbnail(format: string, value: string): string {
+  const cacheKey = `barcode:${format}:${value}`;
+  if (thumbnailCache.has(cacheKey)) {
+    return thumbnailCache.get(cacheKey)!;
+  }
+  const dataUrl = generateBarcodeDataUrl(value, format, { height: 75, includetext: true });
+  thumbnailCache.set(cacheKey, dataUrl);
+  return dataUrl;
+}
+
+function getCachedQRCodeThumbnail(value: string): string {
+  const cacheKey = `qrcode:${value}`;
+  if (thumbnailCache.has(cacheKey)) {
+    return thumbnailCache.get(cacheKey)!;
+  }
+  const dataUrl = generateQRCodeDataUrl(value, { width: 100, height: 100 });
+  thumbnailCache.set(cacheKey, dataUrl);
+  return dataUrl;
+}
 
 /**
  * Create an asset source for barcodes and QR codes in CE.SDK
@@ -36,14 +62,13 @@ export function createBarcodeAssetSource(
       BARCODE_FORMATS.forEach((format) => {
         if (!query || format.label.toLowerCase().includes(query) || 'barcode'.includes(query)) {
           const sampleValue = getValidSampleValue(format.id);
-          const dataUrl = generateBarcodeSVGDataUrl(sampleValue, format.id);
+          const dataUrl = getCachedBarcodeThumbnail(format.id, sampleValue);
           
           assets.push({
             id: `barcode-static-${format.id}`,
             label: format.label,
             tags: ['barcode', 'static', format.id],
             meta: {
-              // Required fields for CE.SDK to apply the asset
               uri: dataUrl,
               thumbUri: dataUrl,
               blockType: '//ly.img.ubq/graphic',
@@ -52,7 +77,7 @@ export function createBarcodeAssetSource(
               kind: 'image',
               width: 200,
               height: 100,
-              // Custom metadata for VDP
+              mimeType: 'image/png',
               barcodeType: 'barcode',
               barcodeFormat: format.id,
               isVariable: false,
@@ -63,7 +88,7 @@ export function createBarcodeAssetSource(
       
       // Add static QR code option
       if (!query || 'qr'.includes(query) || 'qrcode'.includes(query)) {
-        const qrDataUrl = generateQRCodeSVGDataUrl('https://example.com');
+        const qrDataUrl = getCachedQRCodeThumbnail('https://example.com');
         assets.push({
           id: 'qrcode-static',
           label: 'QR Code',
@@ -77,6 +102,7 @@ export function createBarcodeAssetSource(
             kind: 'image',
             width: 100,
             height: 100,
+            mimeType: 'image/svg+xml',
             barcodeType: 'qrcode',
             isVariable: false,
           },
@@ -100,7 +126,7 @@ export function createBarcodeAssetSource(
             const sampleValue = fieldValue && isValidForFormat(fieldValue, format.id) 
               ? fieldValue 
               : getValidSampleValue(format.id);
-            const dataUrl = generateBarcodeSVGDataUrl(sampleValue, format.id);
+            const dataUrl = getCachedBarcodeThumbnail(format.id, sampleValue);
             
             assets.push({
               id: `barcode-var-${format.id}-${field}`,
@@ -115,6 +141,7 @@ export function createBarcodeAssetSource(
                 kind: 'image',
                 width: 200,
                 height: 100,
+                mimeType: 'image/png',
                 barcodeType: 'barcode',
                 barcodeFormat: format.id,
                 isVariable: true,
@@ -128,7 +155,7 @@ export function createBarcodeAssetSource(
         // Variable QR code
         if (!query || 'qr'.includes(query) || field.toLowerCase().includes(query)) {
           const qrValue = sampleData[field] || 'https://example.com';
-          const qrDataUrl = generateQRCodeSVGDataUrl(qrValue);
+          const qrDataUrl = getCachedQRCodeThumbnail(qrValue);
           
           assets.push({
             id: `qrcode-var-${field}`,
@@ -143,6 +170,7 @@ export function createBarcodeAssetSource(
               kind: 'image',
               width: 100,
               height: 100,
+              mimeType: 'image/svg+xml',
               barcodeType: 'qrcode',
               isVariable: true,
               variableField: field,
@@ -166,7 +194,6 @@ export function createBarcodeAssetSource(
     },
     
     applyAssetToBlock: async (assetResult: AssetResult, block: number): Promise<void> => {
-      // Apply to existing block - update the fill
       const meta = assetResult.meta;
       if (meta?.uri) {
         const fill = engine.block.getFill(block);
@@ -193,25 +220,6 @@ function isValidForFormat(value: string, formatId: string): boolean {
     default:
       return true;
   }
-}
-
-/**
- * Generate a data URL for a barcode SVG
- */
-function generateBarcodeSVGDataUrl(value: string, format: string): string {
-  const svg = generateBarcodeSVG(value, format.toUpperCase(), { 
-    height: 75, 
-    includetext: true 
-  });
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
-}
-
-/**
- * Generate a data URL for a QR code SVG
- */
-function generateQRCodeSVGDataUrl(value: string): string {
-  const svg = generateQRCodeSVG(value, { width: 100, height: 100 });
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
 export default createBarcodeAssetSource;

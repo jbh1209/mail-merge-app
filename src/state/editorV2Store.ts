@@ -1,12 +1,11 @@
 // =============================================================================
-// DESIGN EDITOR V2 - STATE STORE (LOCAL HOOK)
+// DESIGN EDITOR V2 - STATE STORE
 // =============================================================================
-// Centralized state for the experimental V2 editor. This implementation avoids
-// external dependencies while mirroring the small API surface we previously had
-// with Zustand.
+// Centralized state management for the V2 editor using Zustand for proper
+// singleton behavior across components.
 // =============================================================================
 
-import { useCallback, useMemo, useState } from 'react';
+import { create } from 'zustand';
 import type { DesignDocument, DesignElement, DesignPage } from '@/lib/editor-v2/types';
 
 export interface EditorV2State {
@@ -15,139 +14,254 @@ export interface EditorV2State {
   selectedElementIds: string[];
   zoom: number;
   showGrid: boolean;
+  clipboardElements: DesignElement[];
 
+  // Actions
   setDocument: (doc: DesignDocument) => void;
   setActivePage: (pageId: string) => void;
   setSelection: (ids: string[]) => void;
   setZoom: (zoom: number) => void;
   toggleGrid: () => void;
 
+  // Page operations
   addPage: (page: DesignPage) => void;
   updatePage: (pageId: string, updates: Partial<DesignPage>) => void;
+  deletePage: (pageId: string) => void;
+  duplicatePage: (pageId: string) => void;
+
+  // Element operations
   addElement: (pageId: string, element: DesignElement) => void;
   updateElement: (pageId: string, elementId: string, updates: Partial<DesignElement>) => void;
   removeElement: (pageId: string, elementId: string) => void;
+
+  // Clipboard operations
+  copySelectedElements: () => void;
+  pasteElements: () => void;
+  deleteSelectedElements: () => void;
 }
 
-export function useEditorV2Store(): EditorV2State {
-  const [document, setDocumentState] = useState<DesignDocument | null>(null);
-  const [activePageId, setActivePageId] = useState<string | null>(null);
-  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
-  const [zoom, setZoomState] = useState(1);
-  const [showGrid, setShowGrid] = useState(true);
+export const useEditorV2Store = create<EditorV2State>((set, get) => ({
+  document: null,
+  activePageId: null,
+  selectedElementIds: [],
+  zoom: 1,
+  showGrid: true,
+  clipboardElements: [],
 
-  const setDocument = useCallback((doc: DesignDocument) => {
-    setDocumentState(doc);
-    setActivePageId(doc.pages[0]?.id ?? null);
-    setSelectedElementIds([]);
-  }, []);
-
-  const setActivePage = useCallback((pageId: string) => {
-    setActivePageId(pageId);
-    setSelectedElementIds([]);
-  }, []);
-
-  const setSelection = useCallback((ids: string[]) => {
-    setSelectedElementIds(ids);
-  }, []);
-
-  const setZoom = useCallback((nextZoom: number) => {
-    setZoomState(nextZoom);
-  }, []);
-
-  const toggleGrid = useCallback(() => {
-    setShowGrid(current => !current);
-  }, []);
-
-  const addPage = useCallback((page: DesignPage) => {
-    setDocumentState(current => {
-      if (!current) return current;
-      const pages = [...current.pages, page];
-      setActivePageId(page.id);
-      return { ...current, pages };
+  setDocument: (doc) => {
+    set({
+      document: doc,
+      activePageId: doc.pages[0]?.id ?? null,
+      selectedElementIds: []
     });
-  }, []);
+  },
 
-  const updatePage = useCallback((pageId: string, updates: Partial<DesignPage>) => {
-    setDocumentState(current => {
-      if (!current) return current;
-      const pages = current.pages.map(page => (page.id === pageId ? { ...page, ...updates } : page));
-      return { ...current, pages };
+  setActivePage: (pageId) => {
+    set({
+      activePageId: pageId,
+      selectedElementIds: []
     });
-  }, []);
+  },
 
-  const addElement = useCallback((pageId: string, element: DesignElement) => {
-    setDocumentState(current => {
-      if (!current) return current;
-      const pages = current.pages.map(page =>
-        page.id === pageId ? { ...page, elements: [...page.elements, element] } : page
-      );
-      setSelectedElementIds([element.id]);
-      return { ...current, pages };
+  setSelection: (ids) => {
+    set({ selectedElementIds: ids });
+  },
+
+  setZoom: (zoom) => {
+    set({ zoom: Math.max(0.25, Math.min(4, zoom)) });
+  },
+
+  toggleGrid: () => {
+    set((state) => ({ showGrid: !state.showGrid }));
+  },
+
+  addPage: (page) => {
+    set((state) => {
+      if (!state.document) return state;
+      return {
+        document: {
+          ...state.document,
+          pages: [...state.document.pages, page]
+        },
+        activePageId: page.id
+      };
     });
-  }, []);
+  },
 
-  const updateElement = useCallback(
-    (pageId: string, elementId: string, updates: Partial<DesignElement>) => {
-      setDocumentState(current => {
-        if (!current) return current;
-        const pages = current.pages.map(page => {
-          if (page.id !== pageId) return page;
-          const elements = page.elements.map(element => (element.id === elementId ? { ...element, ...updates } : element));
-          return { ...page, elements };
-        });
-        return { ...current, pages };
-      });
-    },
-    []
-  );
-
-  const removeElement = useCallback((pageId: string, elementId: string) => {
-    setDocumentState(current => {
-      if (!current) return current;
-      const pages = current.pages.map(page => {
-        if (page.id !== pageId) return page;
-        return { ...page, elements: page.elements.filter(el => el.id !== elementId) };
-      });
-      setSelectedElementIds([]);
-      return { ...current, pages };
+  updatePage: (pageId, updates) => {
+    set((state) => {
+      if (!state.document) return state;
+      return {
+        document: {
+          ...state.document,
+          pages: state.document.pages.map(page =>
+            page.id === pageId ? { ...page, ...updates } : page
+          )
+        }
+      };
     });
-  }, []);
+  },
 
-  return useMemo(
-    () => ({
-      document,
-      activePageId,
-      selectedElementIds,
-      zoom,
-      showGrid,
-      setDocument,
-      setActivePage,
-      setSelection,
-      setZoom,
-      toggleGrid,
-      addPage,
-      updatePage,
-      addElement,
-      updateElement,
-      removeElement
-    }),
-    [
-      document,
-      activePageId,
-      selectedElementIds,
-      zoom,
-      showGrid,
-      setDocument,
-      setActivePage,
-      setSelection,
-      setZoom,
-      toggleGrid,
-      addPage,
-      updatePage,
-      addElement,
-      updateElement,
-      removeElement
-    ]
-  );
-}
+  deletePage: (pageId) => {
+    set((state) => {
+      if (!state.document || state.document.pages.length <= 1) return state;
+      const newPages = state.document.pages.filter(p => p.id !== pageId);
+      const newActiveId = state.activePageId === pageId
+        ? newPages[0]?.id ?? null
+        : state.activePageId;
+      return {
+        document: { ...state.document, pages: newPages },
+        activePageId: newActiveId,
+        selectedElementIds: []
+      };
+    });
+  },
+
+  duplicatePage: (pageId) => {
+    set((state) => {
+      if (!state.document) return state;
+      const page = state.document.pages.find(p => p.id === pageId);
+      if (!page) return state;
+
+      const newPage: DesignPage = {
+        ...structuredClone(page),
+        id: crypto.randomUUID(),
+        name: `${page.name} (Copy)`,
+        elements: page.elements.map(el => ({
+          ...structuredClone(el),
+          id: crypto.randomUUID()
+        })) as DesignElement[]
+      };
+
+      const pageIndex = state.document.pages.findIndex(p => p.id === pageId);
+      const newPages = [...state.document.pages];
+      newPages.splice(pageIndex + 1, 0, newPage);
+
+      return {
+        document: { ...state.document, pages: newPages },
+        activePageId: newPage.id
+      };
+    });
+  },
+
+  addElement: (pageId, element) => {
+    set((state) => {
+      if (!state.document) return state;
+      return {
+        document: {
+          ...state.document,
+          pages: state.document.pages.map(page =>
+            page.id === pageId
+              ? { ...page, elements: [...page.elements, element] }
+              : page
+          )
+        },
+        selectedElementIds: [element.id]
+      };
+    });
+  },
+
+  updateElement: (pageId, elementId, updates) => {
+    set((state) => {
+      if (!state.document) return state;
+      return {
+        document: {
+          ...state.document,
+          pages: state.document.pages.map(page => {
+            if (page.id !== pageId) return page;
+            return {
+              ...page,
+              elements: page.elements.map(el =>
+                el.id === elementId ? { ...el, ...updates } as DesignElement : el
+              )
+            };
+          })
+        }
+      };
+    });
+  },
+
+  removeElement: (pageId, elementId) => {
+    set((state) => {
+      if (!state.document) return state;
+      return {
+        document: {
+          ...state.document,
+          pages: state.document.pages.map(page => {
+            if (page.id !== pageId) return page;
+            return {
+              ...page,
+              elements: page.elements.filter(el => el.id !== elementId)
+            };
+          })
+        },
+        selectedElementIds: state.selectedElementIds.filter(id => id !== elementId)
+      };
+    });
+  },
+
+  copySelectedElements: () => {
+    const state = get();
+    if (!state.document || !state.activePageId) return;
+
+    const page = state.document.pages.find(p => p.id === state.activePageId);
+    if (!page) return;
+
+    const elements = page.elements.filter(el =>
+      state.selectedElementIds.includes(el.id)
+    );
+
+    set({ clipboardElements: structuredClone(elements) as DesignElement[] });
+  },
+
+  pasteElements: () => {
+    const state = get();
+    if (!state.document || !state.activePageId || state.clipboardElements.length === 0) return;
+
+    const newElements = state.clipboardElements.map(el => ({
+      ...structuredClone(el),
+      id: crypto.randomUUID(),
+      x: el.x + 5,
+      y: el.y + 5
+    })) as DesignElement[];
+
+    set((state) => {
+      if (!state.document || !state.activePageId) return state;
+      return {
+        document: {
+          ...state.document,
+          pages: state.document.pages.map(page =>
+            page.id === state.activePageId
+              ? { ...page, elements: [...page.elements, ...newElements] }
+              : page
+          )
+        },
+        selectedElementIds: newElements.map(el => el.id)
+      };
+    });
+  },
+
+  deleteSelectedElements: () => {
+    const state = get();
+    if (!state.document || !state.activePageId) return;
+
+    set((state) => {
+      if (!state.document || !state.activePageId) return state;
+      return {
+        document: {
+          ...state.document,
+          pages: state.document.pages.map(page => {
+            if (page.id !== state.activePageId) return page;
+            return {
+              ...page,
+              elements: page.elements.filter(
+                el => !state.selectedElementIds.includes(el.id)
+              )
+            };
+          })
+        },
+        selectedElementIds: []
+      };
+    });
+  }
+}));

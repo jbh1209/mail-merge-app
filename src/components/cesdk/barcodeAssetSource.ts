@@ -1,5 +1,5 @@
 import { AssetSource, AssetResult, AssetsQueryResult } from '@cesdk/cesdk-js';
-import { generateBarcodeSVG, generateQRCodeSVG } from '@/lib/barcode-svg-utils';
+import { generateBarcodeSVG, generateQRCodeSVG, getValidSampleValue } from '@/lib/barcode-svg-utils';
 
 export interface BarcodeAssetConfig {
   availableFields?: string[];
@@ -36,6 +36,8 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
       // Add static barcode options
       BARCODE_FORMATS.forEach((format) => {
         if (!query || format.label.toLowerCase().includes(query) || 'barcode'.includes(query)) {
+          // Use format-specific valid sample data
+          const sampleValue = getValidSampleValue(format.id);
           assets.push({
             id: `barcode-static-${format.id}`,
             label: format.label,
@@ -46,7 +48,7 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
               barcodeType: 'barcode',
               barcodeFormat: format.id,
               isVariable: false,
-              thumbUri: generateBarcodeSVGDataUrl('123456789', format.id),
+              thumbUri: generateBarcodeSVGDataUrl(sampleValue, format.id),
             },
           });
         }
@@ -79,10 +81,14 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
       );
       
       barcodeFields.forEach((field) => {
-        const sampleValue = sampleData[field] || '123456789012';
-        
         BARCODE_FORMATS.forEach((format) => {
           if (!query || format.label.toLowerCase().includes(query) || field.toLowerCase().includes(query)) {
+            // Use format-specific valid sample if field data isn't suitable
+            const fieldValue = sampleData[field];
+            const sampleValue = fieldValue && isValidForFormat(fieldValue, format.id) 
+              ? fieldValue 
+              : getValidSampleValue(format.id);
+            
             assets.push({
               id: `barcode-var-${format.id}-${field}`,
               label: `${format.label} ({{${field}}})`,
@@ -134,6 +140,23 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
       return undefined;
     },
   };
+}
+
+/**
+ * Check if a value is valid for a specific barcode format
+ */
+function isValidForFormat(value: string, formatId: string): boolean {
+  switch (formatId) {
+    case 'ean13':
+      return /^\d{13}$/.test(value);
+    case 'upca':
+      return /^\d{12}$/.test(value);
+    case 'code128':
+    case 'code39':
+      return value.length > 0;
+    default:
+      return true;
+  }
 }
 
 /**

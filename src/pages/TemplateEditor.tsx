@@ -45,7 +45,7 @@ export default function TemplateEditor() {
   });
 
   // Fetch data source for VDP fields and sample data
-  const { data: dataSource } = useQuery({
+  const { data: dataSource, isLoading: dataSourceLoading } = useQuery({
     queryKey: ['data-source-for-editor', projectId],
     queryFn: async () => {
       const { data } = await supabase
@@ -54,7 +54,7 @@ export default function TemplateEditor() {
         .eq('project_id', projectId!)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       return data;
     },
     enabled: !!projectId,
@@ -137,10 +137,16 @@ export default function TemplateEditor() {
   // Get initial scene from design_config if it exists
   const initialScene = (template?.design_config as { cesdkScene?: string } | null)?.cesdkScene;
 
-  if (templateLoading) {
+  // Wait for both template and data source to load before rendering editor
+  const isLoading = templateLoading || dataSourceLoading;
+  
+  if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-screen items-center justify-center flex-col gap-3">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">
+          {templateLoading ? 'Loading template...' : 'Loading data fields...'}
+        </p>
       </div>
     );
   }
@@ -216,6 +222,7 @@ export default function TemplateEditor() {
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
         <CreativeEditorWrapper
+          key={`${templateId}-${availableFields.length}`}
           availableFields={availableFields}
           sampleData={sampleData}
           initialScene={initialScene}

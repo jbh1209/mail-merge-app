@@ -5,9 +5,9 @@
 // Manages rendering, selection, and element synchronization.
 // =============================================================================
 
-import { Canvas, Rect, Ellipse, Textbox, Line, Group, ActiveSelection, FabricObject } from 'fabric';
+import { Canvas, Rect, Ellipse, Textbox, Line, Group, ActiveSelection, FabricObject, FabricImage, Shadow } from 'fabric';
 import type { CanvasEngine, CanvasEngineEvents, CanvasEngineOptions } from './engine';
-import type { DesignElement, DesignPage } from './types';
+import type { DesignElement, DesignPage, ImageElement } from './types';
 
 const MM_TO_PX = 3.78; // Approximate conversion for screen preview
 
@@ -22,6 +22,7 @@ export class FabricCanvasEngine implements CanvasEngine {
   private zoom = 1;
   private showGrid = false;
   private gridObjects: FabricObject[] = [];
+  private pageBackground: FabricObject | null = null;
 
   mount(container: HTMLDivElement, options?: CanvasEngineOptions, events?: CanvasEngineEvents) {
     this.container = container;
@@ -32,20 +33,17 @@ export class FabricCanvasEngine implements CanvasEngine {
     container.innerHTML = '';
     container.appendChild(canvasEl);
 
-    // Set initial size based on container
-    const rect = container.getBoundingClientRect();
-    
+    // Default size - will be updated when page loads
     this.canvas = new Canvas(canvasEl, {
-      width: rect.width || 800,
-      height: rect.height || 600,
+      width: 800,
+      height: 600,
       preserveObjectStacking: true,
       selection: true,
-      backgroundColor: '#f8fafc'
+      backgroundColor: '#e5e7eb' // Workspace background (grey)
     });
 
     this.bindSelectionEvents();
     this.bindModificationEvents();
-    this.setZoom(options?.devicePixelRatio ?? 1);
 
     if (this.currentPage) {
       this.renderPage();
@@ -57,6 +55,7 @@ export class FabricCanvasEngine implements CanvasEngine {
     this.canvas = null;
     this.container = null;
     this.gridObjects = [];
+    this.pageBackground = null;
   }
 
   isMounted(): boolean {
@@ -74,13 +73,13 @@ export class FabricCanvasEngine implements CanvasEngine {
 
   setGrid(enabled: boolean) {
     this.showGrid = enabled;
-    this.renderElements();
+    this.renderPage();
   }
 
   addElement(element: DesignElement) {
     if (!this.currentPage) return;
     this.currentPage.elements = [...this.currentPage.elements, element];
-    this.renderElements();
+    this.renderPage();
     this.events?.onElementsChange?.(this.currentPage.elements);
   }
 
@@ -91,7 +90,7 @@ export class FabricCanvasEngine implements CanvasEngine {
       element.id === elementId ? { ...element, ...updates } as DesignElement : element
     );
 
-    this.renderElements();
+    this.renderPage();
     this.events?.onElementsChange?.(this.currentPage.elements);
   }
 
@@ -99,7 +98,7 @@ export class FabricCanvasEngine implements CanvasEngine {
     if (!this.currentPage) return;
 
     this.currentPage.elements = this.currentPage.elements.filter(el => el.id !== elementId);
-    this.renderElements();
+    this.renderPage();
     this.events?.onElementsChange?.(this.currentPage.elements);
   }
 
@@ -136,12 +135,23 @@ export class FabricCanvasEngine implements CanvasEngine {
   }
 
   setZoom(zoom: number) {
-    this.zoom = zoom;
+    this.zoom = Math.max(0.25, Math.min(4, zoom));
     if (!this.canvas) return;
-    this.canvas.setZoom(zoom);
+    
+    // Set zoom on canvas (Fabric handles the transform)
+    this.canvas.setZoom(this.zoom);
+    
+    // Update canvas dimensions to fit zoomed content
     if (this.currentPage) {
-      this.renderPage();
+      const widthPx = this.mmToPx(this.currentPage.widthMm);
+      const heightPx = this.mmToPx(this.currentPage.heightMm);
+      this.canvas.setDimensions({
+        width: widthPx * this.zoom,
+        height: heightPx * this.zoom
+      });
     }
+    
+    this.canvas.requestRenderAll();
   }
 
   // ---------------------------------------------------------------------------
@@ -193,7 +203,13 @@ export class FabricCanvasEngine implements CanvasEngine {
     const widthPx = this.mmToPx(this.currentPage.widthMm);
     const heightPx = this.mmToPx(this.currentPage.heightMm);
 
-    this.canvas.setDimensions({ width: widthPx, height: heightPx });
+    // Set canvas size (accounting for zoom)
+    this.canvas.setDimensions({
+      width: widthPx * this.zoom,
+      height: heightPx * this.zoom
+    });
+    this.canvas.setZoom(this.zoom);
+
     this.renderElements();
   }
 
@@ -205,27 +221,38 @@ export class FabricCanvasEngine implements CanvasEngine {
     
     this.canvas.clear();
     this.gridObjects = [];
+    this.pageBackground = null;
 
-    // Draw page background
+    const widthPx = this.mmToPx(this.currentPage.widthMm);
+    const heightPx = this.mmToPx(this.currentPage.heightMm);
+
+    // Draw page background (white page on grey workspace)
     const { background } = this.currentPage;
-    const bgRect = new Rect({
+    const pageShadow = new Shadow({
+      color: 'rgba(0,0,0,0.15)',
+      blur: 20,
+      offsetX: 0,
+      offsetY: 4
+    });
+    
+    this.pageBackground = new Rect({
       left: 0,
       top: 0,
-      width: this.mmToPx(this.currentPage.widthMm),
-      height: this.mmToPx(this.currentPage.heightMm),
+      width: widthPx,
+      height: heightPx,
       fill: background?.color ?? '#ffffff',
       selectable: false,
-      evented: false
+      evented: false,
+      shadow: pageShadow
     });
-    this.canvas.add(bgRect);
-    this.canvas.sendObjectToBack(bgRect);
+    this.canvas.add(this.pageBackground);
 
-    // Draw grid
+    // Draw grid on top of background, but before elements
     if (this.showGrid) {
       this.drawGrid();
     }
 
-    // Render elements
+    // Render elements on top
     this.currentPage.elements.forEach(element => {
       const fabricObject = this.createFabricObject(element);
       if (fabricObject) {
@@ -250,9 +277,9 @@ export class FabricCanvasEngine implements CanvasEngine {
     const heightPx = this.mmToPx(this.currentPage.heightMm);
 
     // Vertical lines
-    for (let x = 0; x <= widthPx; x += spacingPx) {
+    for (let x = spacingPx; x < widthPx; x += spacingPx) {
       const line = new Line([x, 0, x, heightPx], {
-        stroke: '#e5e7eb',
+        stroke: 'rgba(0, 0, 0, 0.08)',
         strokeWidth: 1,
         selectable: false,
         evented: false,
@@ -263,9 +290,9 @@ export class FabricCanvasEngine implements CanvasEngine {
     }
 
     // Horizontal lines
-    for (let y = 0; y <= heightPx; y += spacingPx) {
+    for (let y = spacingPx; y < heightPx; y += spacingPx) {
       const line = new Line([0, y, widthPx, y], {
-        stroke: '#e5e7eb',
+        stroke: 'rgba(0, 0, 0, 0.08)',
         strokeWidth: 1,
         selectable: false,
         evented: false,
@@ -274,11 +301,6 @@ export class FabricCanvasEngine implements CanvasEngine {
       this.canvas.add(line);
       this.gridObjects.push(line);
     }
-
-    // Send grid to back
-    this.gridObjects.forEach(line => {
-      this.canvas?.sendObjectToBack(line);
-    });
   }
 
   private createFabricObject(element: DesignElement): FabricObject | null {
@@ -308,7 +330,27 @@ export class FabricCanvasEngine implements CanvasEngine {
     }
 
     if (element.kind === 'image') {
-      // Placeholder for images
+      // Create placeholder rect for images (actual image loading handled separately)
+      const imageElement = element as ImageElement;
+      if (imageElement.src) {
+        // For now, create a placeholder - async image loading would need different handling
+        const placeholder = new Rect({
+          left,
+          top,
+          width,
+          height,
+          angle,
+          selectable,
+          opacity,
+          fill: '#f0f0f0',
+          stroke: '#cccccc',
+          strokeWidth: 1
+        });
+        // Load actual image asynchronously
+        this.loadImageAsync(imageElement, placeholder);
+        return placeholder;
+      }
+      // No src - show placeholder
       const placeholder = new Rect({
         left,
         top,
@@ -318,8 +360,9 @@ export class FabricCanvasEngine implements CanvasEngine {
         selectable,
         opacity,
         fill: '#dbeafe',
-        stroke: '#1d4ed8',
-        strokeWidth: 1
+        stroke: '#3b82f6',
+        strokeWidth: 2,
+        strokeDashArray: [5, 5]
       });
       return placeholder;
     }
@@ -341,6 +384,15 @@ export class FabricCanvasEngine implements CanvasEngine {
           fill,
           stroke,
           strokeWidth
+        });
+      }
+
+      if (element.shape === 'line') {
+        return new Line([left, top, left + width, top + height], {
+          stroke,
+          strokeWidth: strokeWidth || 2,
+          selectable,
+          opacity
         });
       }
 
@@ -390,14 +442,45 @@ export class FabricCanvasEngine implements CanvasEngine {
     return group;
   }
 
+  private async loadImageAsync(element: ImageElement, placeholder: FabricObject) {
+    if (!this.canvas || !element.src) return;
+    
+    try {
+      const img = await FabricImage.fromURL(element.src, {
+        crossOrigin: 'anonymous'
+      });
+      
+      const width = this.mmToPx(element.width);
+      const height = this.mmToPx(element.height);
+      
+      img.set({
+        left: placeholder.left,
+        top: placeholder.top,
+        angle: placeholder.angle,
+        scaleX: width / (img.width || 1),
+        scaleY: height / (img.height || 1),
+        selectable: !element.locked,
+        opacity: element.hidden ? 0.4 : 1
+      });
+      
+      // Replace placeholder with actual image
+      this.canvas.remove(placeholder);
+      objectIdMap.set(img, element.id);
+      this.canvas.add(img);
+      this.canvas.requestRenderAll();
+    } catch (error) {
+      console.warn('Failed to load image:', element.src, error);
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // Unit Conversion
+  // Unit Conversion (no zoom applied - zoom is handled by canvas.setZoom)
   // ---------------------------------------------------------------------------
   private mmToPx(value: number): number {
-    return value * MM_TO_PX * this.zoom;
+    return value * MM_TO_PX;
   }
 
   private pxToMm(value: number): number {
-    return value / (MM_TO_PX * this.zoom);
+    return value / MM_TO_PX;
   }
 }

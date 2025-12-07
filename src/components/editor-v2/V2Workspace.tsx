@@ -20,14 +20,20 @@ interface V2WorkspaceProps {
 export const V2Workspace = forwardRef<HTMLDivElement, V2WorkspaceProps>(
   ({ zoom, onZoomChange, selectedCount }, ref) => {
     return (
-      <div className="relative flex-1 overflow-hidden bg-muted/30">
-        {/* Canvas Container */}
-        <div className="absolute inset-0 flex items-center justify-center overflow-auto p-8">
-          <div
-            ref={ref}
-            className="shadow-2xl ring-1 ring-border/50"
-            style={{ minWidth: 400, minHeight: 300 }}
-          />
+      <div className="relative flex-1 overflow-hidden bg-muted/50">
+        {/* Scrollable Canvas Container */}
+        <div className="absolute inset-0 overflow-auto">
+          <div className="flex min-h-full min-w-full items-center justify-center p-8">
+            <div
+              ref={ref}
+              className="relative flex-shrink-0"
+              style={{ 
+                // Container just holds the canvas - Fabric sets actual dimensions
+                minWidth: 100,
+                minHeight: 100 
+              }}
+            />
+          </div>
         </div>
 
         {/* Floating Zoom Controls */}
@@ -46,7 +52,7 @@ export const V2Workspace = forwardRef<HTMLDivElement, V2WorkspaceProps>(
             <TooltipContent>Zoom Out</TooltipContent>
           </Tooltip>
 
-          <span className="w-12 text-center text-xs font-medium">
+          <span className="w-14 text-center text-xs font-medium tabular-nums">
             {Math.round(zoom * 100)}%
           </span>
 
@@ -75,7 +81,7 @@ export const V2Workspace = forwardRef<HTMLDivElement, V2WorkspaceProps>(
                 <Maximize2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Fit to Screen</TooltipContent>
+            <TooltipContent>Reset to 100%</TooltipContent>
           </Tooltip>
         </div>
 

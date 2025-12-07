@@ -2,12 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import CreativeEditorSDK, { Configuration, AssetSource, AssetResult, AssetsQueryResult } from '@cesdk/cesdk-js';
 import { Loader2 } from 'lucide-react';
 
-// Get the correct assets URL based on installed package version
-function getCESDKAssetsURL(): string {
-  // CE.SDK assets are served from the CDN - we need to match the installed version
-  // The package automatically exposes this, but for Vite we use a dynamic import approach
-  return 'https://cdn.img.ly/packages/imgly/cesdk-js/1.50.1/assets';
-}
+// Get the correct assets URL - must match the installed package version
+// The latest stable version as of Dec 2024 is 1.65.0
+const CESDK_VERSION = '1.65.0';
+const CESDK_ASSETS_URL = `https://cdn.img.ly/packages/imgly/cesdk-js/${CESDK_VERSION}/assets`;
 
 interface CreativeEditorWrapperProps {
   // Available merge fields from data source
@@ -60,7 +58,7 @@ export function CreativeEditorWrapper({
         const config: Configuration = {
           license: licenseKey || '',
           userId: 'lovable-user',
-          baseURL: getCESDKAssetsURL(),
+          baseURL: CESDK_ASSETS_URL,
           ui: {
             elements: {
               view: 'default',

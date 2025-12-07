@@ -54,6 +54,123 @@ interface CreativeEditorWrapperProps {
   labelHeight?: number;
   bleedMm?: number;
   whiteUnderlayer?: boolean;
+  templateType?: string;
+}
+
+// Helper: Convert mm to points (72 DPI)
+const mmToPoints = (mm: number) => (mm / 25.4) * 72;
+
+// Generate initial layout using AI and create text blocks on the canvas
+async function generateInitialLayout(
+  engine: any,
+  fields: string[],
+  sampleData: Record<string, string>,
+  widthMm: number,
+  heightMm: number,
+  templateType: string,
+  setLayoutStatus: (status: string | null) => void
+): Promise<void> {
+  if (fields.length === 0 || Object.keys(sampleData).length === 0) {
+    console.log('⏭️ Skipping auto-layout: no fields or sample data');
+    return;
+  }
+
+  setLayoutStatus('Generating smart layout...');
+  console.log('🎨 AUTO-TRIGGERING AI LAYOUT FOR NEW DESIGN');
+
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+
+    // Call AI layout generator
+    const { data, error } = await supabase.functions.invoke('suggest-layout', {
+      body: {
+        templateSize: { width: widthMm, height: heightMm },
+        fieldNames: fields,
+        sampleData: [sampleData],
+        templateType: templateType || 'address_label',
+      },
+    });
+
+    if (error) {
+      console.warn('⚠️ Auto-layout API error:', error);
+      setLayoutStatus(null);
+      return;
+    }
+
+    if (!data?.fields || data.fields.length === 0) {
+      console.warn('⚠️ Auto-layout returned no fields');
+      setLayoutStatus(null);
+      return;
+    }
+
+    console.log('📐 AI layout received:', data.fields.length, 'fields');
+
+    // Get the current page
+    const pages = engine.scene.getPages();
+    if (pages.length === 0) {
+      console.warn('⚠️ No pages available for layout');
+      setLayoutStatus(null);
+      return;
+    }
+    const page = pages[0];
+
+    // Create text blocks for each field from the AI layout
+    for (const field of data.fields) {
+      try {
+        const textBlock = engine.block.create('//ly.img.ubq/text');
+
+        // Determine text content: use sample data value or placeholder
+        const displayValue = sampleData[field.templateField] || `{{${field.templateField}}}`;
+        
+        // For address fields with transformCommas, replace commas with newlines
+        let textContent = displayValue;
+        if (field.style?.transformCommas && textContent.includes(',')) {
+          textContent = textContent.split(',').map((s: string) => s.trim()).join('\n');
+        }
+
+        engine.block.setString(textBlock, 'text/text', textContent);
+
+        // Set position (convert mm to points)
+        engine.block.setPositionX(textBlock, mmToPoints(field.position.x));
+        engine.block.setPositionY(textBlock, mmToPoints(field.position.y));
+
+        // Set size
+        engine.block.setWidth(textBlock, mmToPoints(field.size.width));
+        engine.block.setHeight(textBlock, mmToPoints(field.size.height));
+
+        // Set font size
+        if (field.style?.fontSize) {
+          engine.block.setFloat(textBlock, 'text/fontSize', field.style.fontSize);
+        }
+
+        // Set font weight if bold
+        if (field.style?.fontWeight === 'bold') {
+          // CE.SDK uses typeface for bold - we'll set a common bold variant
+          try {
+            engine.block.setBool(textBlock, 'text/fontWeight', true);
+          } catch {
+            // Font weight setting may not be available on all text blocks
+          }
+        }
+
+        // Store field name in block name for VDP resolution later
+        engine.block.setName(textBlock, `vdp:text:${field.templateField}`);
+
+        // Add to page
+        engine.block.appendChild(page, textBlock);
+
+        console.log(`✅ Created text block: ${field.templateField} at (${field.position.x}mm, ${field.position.y}mm)`);
+      } catch (blockError) {
+        console.error(`❌ Failed to create block for ${field.templateField}:`, blockError);
+      }
+    }
+
+    console.log('✅ Auto-layout complete:', data.fields.length, 'text blocks created');
+    setLayoutStatus(null);
+  } catch (err) {
+    console.error('❌ Auto-layout generation failed:', err);
+    setLayoutStatus(null);
+  }
 }
 
 export function CreativeEditorWrapper({
@@ -67,11 +184,13 @@ export function CreativeEditorWrapper({
   labelHeight = 50,
   bleedMm = 0,
   whiteUnderlayer = false,
+  templateType = 'address_label',
 }: CreativeEditorWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<CreativeEditorSDK | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [layoutStatus, setLayoutStatus] = useState<string | null>(null);
   
   // State for barcode/QR config panel
   const [configPanelOpen, setConfigPanelOpen] = useState(false);
@@ -350,6 +469,17 @@ export function CreativeEditorWrapper({
             cesdk.engine.block.setWidth(page, widthPoints);
             cesdk.engine.block.setHeight(page, heightPoints);
           }
+
+          // AUTO-LAYOUT: Generate initial layout using AI for new designs
+          await generateInitialLayout(
+            cesdk.engine,
+            availableFields,
+            sampleData,
+            labelWidth,
+            labelHeight,
+            templateType,
+            setLayoutStatus
+          );
         }
 
         // Add selection listener to detect barcode/QR blocks
@@ -468,11 +598,13 @@ export function CreativeEditorWrapper({
 
   return (
     <div className="relative h-full w-full">
-      {isLoading && (
+      {(isLoading || layoutStatus) && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-center gap-2">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <span className="text-muted-foreground">Loading editor...</span>
+            <span className="text-muted-foreground">
+              {layoutStatus || 'Loading editor...'}
+            </span>
           </div>
         </div>
       )}

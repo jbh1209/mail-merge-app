@@ -22,6 +22,7 @@ import AdminWorkspaces from "./pages/admin/Workspaces";
 import AdminProjects from "./pages/admin/Projects";
 import AdminJobs from "./pages/admin/Jobs";
 import AdminAnalytics from "./pages/admin/Analytics";
+import EditorV2Demo from "./pages/EditorV2Demo";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/editor-playground" element={<EditorPlayground />} />
+          <Route path="/editor-v2" element={<EditorV2Demo />} />
           <Route path="/auth" element={<Auth />} />
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<Dashboard />} />

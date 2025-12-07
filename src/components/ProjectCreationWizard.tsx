@@ -16,7 +16,7 @@ import { DataReviewStep } from "./wizard/DataReviewStep";
 import { TemplateLibrary } from "./TemplateLibrary";
 import { TemplateUpload } from "./TemplateUpload";
 import { FieldMappingWizard } from "./FieldMappingWizard";
-import { TemplateDesignCanvas } from "./TemplateDesignCanvas";
+// TemplateDesignCanvas removed - now using CE.SDK editor page
 import { LabelSize } from "@/lib/avery-labels";
 import { useSubscription } from "@/hooks/useSubscription";
 
@@ -569,77 +569,33 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
           </div>
         )}
 
-        {/* Step 6.5: Canvas Design - Maximized View */}
-        {wizardState.step === 6.5 && 
-         wizardState.templateSize && 
-         wizardState.templateFields.length > 0 && 
-         wizardState.templateId ? (
-          <div className="flex flex-col h-full">
-            <TemplateDesignCanvas
-              templateSize={wizardState.templateSize}
-              templateName={wizardState.templateName}
-              fieldNames={wizardState.dataColumns}
-              sampleData={wizardState.parsedData?.rows || wizardState.parsedData?.preview || []}
-              fieldSuggestions={wizardState.fieldSuggestions || []}
-              stepInfo={{ current: 9, total: 9 }}
-              templateId={wizardState.templateId}
-              dataSourceId={wizardState.dataSourceId}
-              projectId={wizardState.projectId}
-              onSave={async (designConfig) => {
-              try {
-                // Get current template to preserve base config
-                const { data: currentTemplate } = await supabase
-                  .from('templates')
-                  .select('design_config')
-                  .eq('id', wizardState.templateId)
-                  .single();
-
-                const baseConfig = (currentTemplate?.design_config as Record<string, any>) || {};
-
-                // Update template with design config, preserving base template info
-                const { error } = await supabase
-                  .from('templates')
-                  .update({ 
-                    design_config: {
-                      ...baseConfig,
-                      fields: designConfig.fields,
-                      canvasSettings: designConfig.canvasSettings
-                    } as any
-                  })
-                  .eq('id', wizardState.templateId);
-
-                if (error) throw error;
-
-                setWizardState(prev => ({ 
-                  ...prev, 
-                  designConfig,
-                  step: 7 
-                }));
-                
-                toast({ title: "Design saved successfully!" });
-              } catch (error) {
-                console.error("Error saving design:", error);
-                toast({ title: "Failed to save design", variant: "destructive" });
-              }
-            }}
-            onCancel={() => setWizardState(prev => ({ ...prev, step: 6 }))}
-          />
-          </div>
-        ) : wizardState.step === 6.5 ? (
-          <div className="text-center py-8">
-            <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">
-              Missing template data. Please go back and select a template.
-            </p>
-            <Button 
-              variant="outline" 
-              onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))}
-              className="mt-4"
-            >
-              Go Back
-            </Button>
-          </div>
-        ) : null}
+        {/* Step 6.5: Navigate to CE.SDK Editor */}
+        {wizardState.step === 6.5 && (() => {
+          // Navigate to the full-page CE.SDK editor
+          if (wizardState.templateId && wizardState.projectId) {
+            // Close wizard and navigate to editor
+            handleClose();
+            navigate(`/projects/${wizardState.projectId}/edit/${wizardState.templateId}`);
+            return null;
+          }
+          
+          // Fallback if missing data
+          return (
+            <div className="text-center py-8">
+              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">
+                Missing template data. Please go back and select a template.
+              </p>
+              <Button 
+                variant="outline" 
+                onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))}
+                className="mt-4"
+              >
+                Go Back
+              </Button>
+            </div>
+          );
+        })()}
 
         {wizardState.step === 7 && (
           <div className="space-y-6 py-6 sm:py-8 px-4">

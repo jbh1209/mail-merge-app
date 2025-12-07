@@ -190,7 +190,36 @@ export function createBarcodeAssetSource(
     
     applyAsset: async (assetResult: AssetResult): Promise<number | undefined> => {
       // Use CE.SDK's default apply which handles block creation from metadata
-      return engine.asset.defaultApplyAsset(assetResult);
+      const blockId = await engine.asset.defaultApplyAsset(assetResult);
+      
+      // Set block name with metadata for config panel detection
+      if (blockId !== undefined) {
+        const meta = assetResult.meta;
+        const barcodeType = meta?.barcodeType as string || 'barcode';
+        const format = meta?.barcodeFormat as string || 'code128';
+        const isVariable = meta?.isVariable as boolean || false;
+        const variableField = meta?.variableField as string || '';
+        
+        // Format: "barcode:format:dataSource:value" or "qrcode:dataSource:value"
+        let blockName: string;
+        if (barcodeType === 'qrcode') {
+          if (isVariable && variableField) {
+            blockName = `qrcode:field:${variableField}`;
+          } else {
+            blockName = `qrcode:static:https://example.com`;
+          }
+        } else {
+          if (isVariable && variableField) {
+            blockName = `barcode:${format}:field:${variableField}`;
+          } else {
+            blockName = `barcode:${format}:static:${getValidSampleValue(format)}`;
+          }
+        }
+        
+        engine.block.setName(blockId, blockName);
+      }
+      
+      return blockId;
     },
     
     applyAssetToBlock: async (assetResult: AssetResult, block: number): Promise<void> => {

@@ -231,6 +231,7 @@ export default function TemplateEditor() {
           labelHeight={template.height_mm || 50}
           bleedMm={template.bleed_mm || 0}
           whiteUnderlayer={(template.design_config as { whiteUnderlayer?: boolean } | null)?.whiteUnderlayer ?? false}
+          templateType={template.template_type || 'address_label'}
         />
       </main>
     </div>

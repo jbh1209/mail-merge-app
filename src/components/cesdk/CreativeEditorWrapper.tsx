@@ -60,7 +60,8 @@ interface CreativeEditorWrapperProps {
 // Helper: Convert mm to points (72 DPI)
 const mmToPoints = (mm: number) => (mm / 25.4) * 72;
 
-// Generate initial layout using AI and create text blocks on the canvas
+// Generate initial layout using hybrid AI system (generate-layout → layout-engine)
+// This properly handles combined address blocks as a single text element
 async function generateInitialLayout(
   engine: any,
   fields: string[],
@@ -76,34 +77,44 @@ async function generateInitialLayout(
   }
 
   setLayoutStatus('Generating smart layout...');
-  console.log('🎨 AUTO-TRIGGERING AI LAYOUT FOR NEW DESIGN');
+  console.log('🎨 AUTO-TRIGGERING HYBRID AI LAYOUT FOR NEW DESIGN');
 
   try {
     const { supabase } = await import('@/integrations/supabase/client');
+    const { executeLayout, DEFAULT_LAYOUT_CONFIG } = await import('@/lib/layout-engine');
 
-    // Call AI layout generator
-    const { data, error } = await supabase.functions.invoke('suggest-layout', {
+    // Step 1: Call hybrid layout generator (analyze-label-complexity → design-with-ai)
+    const { data: hybridData, error: hybridError } = await supabase.functions.invoke('generate-layout', {
       body: {
-        templateSize: { width: widthMm, height: heightMm },
         fieldNames: fields,
         sampleData: [sampleData],
+        templateSize: { width: widthMm, height: heightMm },
         templateType: templateType || 'address_label',
       },
     });
 
-    if (error) {
-      console.warn('⚠️ Auto-layout API error:', error);
+    if (hybridError) {
+      console.warn('⚠️ Hybrid layout API error:', hybridError);
       setLayoutStatus(null);
       return;
     }
 
-    if (!data?.fields || data.fields.length === 0) {
-      console.warn('⚠️ Auto-layout returned no fields');
+    if (!hybridData?.designStrategy) {
+      console.warn('⚠️ No design strategy returned from hybrid layout');
       setLayoutStatus(null);
       return;
     }
 
-    console.log('📐 AI layout received:', data.fields.length, 'fields');
+    console.log('📐 Hybrid design strategy received:', hybridData.designStrategy.strategy);
+
+    // Step 2: Execute layout using the deterministic layout engine
+    const layoutConfig = {
+      ...DEFAULT_LAYOUT_CONFIG,
+      templateSize: { width: widthMm, height: heightMm },
+    };
+
+    const layoutResult = executeLayout(hybridData.designStrategy, layoutConfig, sampleData);
+    console.log('📏 Layout engine result:', layoutResult.fields.length, 'fields');
 
     // Get the current page
     const pages = engine.scene.getPages();
@@ -114,61 +125,60 @@ async function generateInitialLayout(
     }
     const page = pages[0];
 
-    // Create text blocks for each field from the AI layout
-    for (const field of data.fields) {
+    // Step 3: Create text blocks from layout result
+    for (const field of layoutResult.fields) {
       try {
         const textBlock = engine.block.create('//ly.img.ubq/text');
 
-        // Determine text content: use sample data value or placeholder
-        const displayValue = sampleData[field.templateField] || `{{${field.templateField}}}`;
-        
-        // For address fields with transformCommas, replace commas with newlines
-        let textContent = displayValue;
-        if (field.style?.transformCommas && textContent.includes(',')) {
-          textContent = textContent.split(',').map((s: string) => s.trim()).join('\n');
+        // Handle combined address blocks (fieldType: 'address_block')
+        let textContent: string;
+        let blockName: string;
+
+        if (field.fieldType === 'address_block' && field.combinedFields && field.combinedFields.length > 0) {
+          // Combined address block: join all field values with newlines
+          textContent = field.combinedFields
+            .map(fieldName => sampleData[fieldName] || `{{${fieldName}}}`)
+            .join('\n');
+          // Store combined field names for VDP resolution
+          blockName = `vdp:address_block:${field.combinedFields.join(',')}`;
+          console.log('📦 Creating combined address block with fields:', field.combinedFields);
+        } else {
+          // Individual field
+          textContent = sampleData[field.templateField] || `{{${field.templateField}}}`;
+          blockName = `vdp:text:${field.templateField}`;
         }
 
         engine.block.setString(textBlock, 'text/text', textContent);
 
         // Set position (convert mm to points)
-        engine.block.setPositionX(textBlock, mmToPoints(field.position.x));
-        engine.block.setPositionY(textBlock, mmToPoints(field.position.y));
+        engine.block.setPositionX(textBlock, mmToPoints(field.x));
+        engine.block.setPositionY(textBlock, mmToPoints(field.y));
 
         // Set size
-        engine.block.setWidth(textBlock, mmToPoints(field.size.width));
-        engine.block.setHeight(textBlock, mmToPoints(field.size.height));
+        engine.block.setWidth(textBlock, mmToPoints(field.width));
+        engine.block.setHeight(textBlock, mmToPoints(field.height));
 
         // Set font size
-        if (field.style?.fontSize) {
-          engine.block.setFloat(textBlock, 'text/fontSize', field.style.fontSize);
+        if (field.fontSize) {
+          engine.block.setFloat(textBlock, 'text/fontSize', field.fontSize);
         }
 
-        // Set font weight if bold
-        if (field.style?.fontWeight === 'bold') {
-          // CE.SDK uses typeface for bold - we'll set a common bold variant
-          try {
-            engine.block.setBool(textBlock, 'text/fontWeight', true);
-          } catch {
-            // Font weight setting may not be available on all text blocks
-          }
-        }
-
-        // Store field name in block name for VDP resolution later
-        engine.block.setName(textBlock, `vdp:text:${field.templateField}`);
+        // Store field name(s) in block name for VDP resolution
+        engine.block.setName(textBlock, blockName);
 
         // Add to page
         engine.block.appendChild(page, textBlock);
 
-        console.log(`✅ Created text block: ${field.templateField} at (${field.position.x}mm, ${field.position.y}mm)`);
+        console.log(`✅ Created text block: ${blockName} at (${field.x}mm, ${field.y}mm)`);
       } catch (blockError) {
         console.error(`❌ Failed to create block for ${field.templateField}:`, blockError);
       }
     }
 
-    console.log('✅ Auto-layout complete:', data.fields.length, 'text blocks created');
+    console.log('✅ Hybrid auto-layout complete:', layoutResult.fields.length, 'text blocks created');
     setLayoutStatus(null);
   } catch (err) {
-    console.error('❌ Auto-layout generation failed:', err);
+    console.error('❌ Hybrid auto-layout generation failed:', err);
     setLayoutStatus(null);
   }
 }

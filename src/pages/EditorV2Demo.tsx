@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, Suspense } from 'react';
 import { FabricCanvasEngine } from '@/lib/editor-v2/fabricEngine';
 import type { DesignDocument } from '@/lib/editor-v2/types';
 import { DesignEditorV2Shell } from '@/components/editor-v2/DesignEditorV2Shell';
 
-export function EditorV2Demo() {
+function EditorV2DemoContent() {
   const [document, setDocument] = useState<DesignDocument>({
     id: 'v2-demo',
     name: 'Mail Merge Designer v2',
@@ -50,8 +50,16 @@ export function EditorV2Demo() {
   const engine = useMemo(() => new FabricCanvasEngine(), []);
 
   return (
-    <div className="h-screen w-full p-4">
-      <DesignEditorV2Shell document={document} engine={engine} onDocumentChange={setDocument} />
+    <DesignEditorV2Shell document={document} engine={engine} onDocumentChange={setDocument} />
+  );
+}
+
+export function EditorV2Demo() {
+  return (
+    <div className="h-screen w-full p-4 bg-background">
+      <Suspense fallback={<div className="flex h-full items-center justify-center">Loading editor...</div>}>
+        <EditorV2DemoContent />
+      </Suspense>
     </div>
   );
 }

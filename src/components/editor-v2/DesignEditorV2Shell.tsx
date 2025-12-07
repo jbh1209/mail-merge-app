@@ -1,19 +1,19 @@
 // =============================================================================
 // DESIGN EDITOR V2 - UI SHELL
 // =============================================================================
-// Lightweight Polotno-style shell that wires the Fabric engine to a simple
-// layout. This is intentionally minimal while we experiment with the new data
-// model and canvas engine abstraction.
+// Polotno-style editor shell with tabbed side panel, workspace, and pages
+// timeline. This is the main container for the V2 editor experience.
 // =============================================================================
 
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Card } from '@/components/ui/card';
 import { useEditorV2Store } from '@/state/editorV2Store';
-import type { DesignDocument, DesignElement, DesignPage } from '@/lib/editor-v2/types';
+import type { DesignDocument, DesignPage } from '@/lib/editor-v2/types';
 import type { CanvasEngine } from '@/lib/editor-v2/engine';
+import { V2TopBar } from './V2TopBar';
+import { V2SidePanel } from './V2SidePanel';
+import { V2Workspace } from './V2Workspace';
+import { V2PagesTimeline } from './V2PagesTimeline';
+import { V2StatusBar } from './V2StatusBar';
 
 export interface DesignEditorV2ShellProps {
   document: DesignDocument;
@@ -40,6 +40,12 @@ export function DesignEditorV2Shell({ document, engine, onDocumentChange }: Desi
     updatePage
   } = useEditorV2Store();
 
+  // Calculate activePage BEFORE using it in effects
+  const activePage: DesignPage | undefined = useMemo(() => {
+    if (!storeDocument) return undefined;
+    return storeDocument.pages.find(page => page.id === activePageId) ?? storeDocument.pages[0];
+  }, [storeDocument, activePageId]);
+
   const activePageRef = useRef<DesignPage | null>(null);
 
   // Keep store in sync with prop document
@@ -47,14 +53,10 @@ export function DesignEditorV2Shell({ document, engine, onDocumentChange }: Desi
     setDocument(document);
   }, [document, setDocument]);
 
+  // Keep ref updated
   useEffect(() => {
     activePageRef.current = activePage ?? null;
   }, [activePage]);
-
-  const activePage: DesignPage | undefined = useMemo(() => {
-    if (!storeDocument) return undefined;
-    return storeDocument.pages.find(page => page.id === activePageId) ?? storeDocument.pages[0];
-  }, [storeDocument, activePageId]);
 
   // Mount the canvas engine once
   useEffect(() => {
@@ -69,8 +71,9 @@ export function DesignEditorV2Shell({ document, engine, onDocumentChange }: Desi
     });
 
     return () => engine.unmount();
-  }, [engine, setSelection, updatePage]);
+  }, [engine, setSelection, updatePage, showGrid]);
 
+  // Sync grid state
   useEffect(() => {
     engine.setGrid(showGrid);
   }, [engine, showGrid]);
@@ -93,113 +96,75 @@ export function DesignEditorV2Shell({ document, engine, onDocumentChange }: Desi
     }
   }, [storeDocument, onDocumentChange]);
 
-  const handleAddText = () => {
-    if (!activePage) return;
-    const element: DesignElement = {
-      id: crypto.randomUUID(),
-      kind: 'text',
-      x: 10,
-      y: 10,
-      width: 50,
-      height: 12,
-      content: 'New text',
-      fontFamily: 'Inter',
-      fontSize: 14
-    };
-    addElement(activePage.id, element);
-    engine.addElement(element);
-  };
-
-  const handleAddPage = () => {
-    const newPage: DesignPage = {
-      id: crypto.randomUUID(),
-      name: `Page ${storeDocument ? storeDocument.pages.length + 1 : 1}`,
-      widthMm: 210,
-      heightMm: 297,
-      elements: []
-    };
-    addPage(newPage);
-  };
-
   if (!storeDocument || !activePage) {
     return (
-      <div className="flex h-full items-center justify-center rounded-lg border bg-muted/50">
-        <p className="text-sm text-muted-foreground">Loading V2 document...</p>
+      <div className="flex h-full items-center justify-center bg-muted/30">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading editor...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col gap-2">
-      <Card className="flex items-center justify-between px-4 py-2">
-        <div className="flex items-center gap-3">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">Design Editor V2</p>
-            <p className="text-lg font-semibold leading-none">{storeDocument.name}</p>
-          </div>
-          <Separator orientation="vertical" className="h-10" />
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Zoom</span>
-            <Button size="sm" variant="outline" onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}>-</Button>
-            <span className="w-12 text-center">{Math.round(zoom * 100)}%</span>
-            <Button size="sm" variant="outline" onClick={() => setZoom(zoom + 0.25)}>+</Button>
-            <Separator orientation="vertical" className="h-8" />
-            <Button size="sm" variant={showGrid ? 'default' : 'outline'} onClick={toggleGrid}>
-              {showGrid ? 'Grid On' : 'Grid Off'}
-            </Button>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleAddPage}>Add Page</Button>
-          <Button variant="outline" size="sm" onClick={handleAddText}>Add Text</Button>
-          <Button size="sm">Save</Button>
-        </div>
-      </Card>
+    <div className="flex h-full flex-col bg-background">
+      {/* Top Bar */}
+      <V2TopBar
+        documentName={storeDocument.name}
+        zoom={zoom}
+        onZoomChange={setZoom}
+        showGrid={showGrid}
+        onToggleGrid={toggleGrid}
+      />
 
-      <div className="flex min-h-0 flex-1 gap-3">
-        <Card className="flex w-64 flex-col">
-          <div className="px-3 py-2 text-sm font-semibold">Pages</div>
-          <Separator />
-          <ScrollArea className="flex-1">
-            <div className="space-y-1 p-2">
-              {storeDocument.pages.map(page => (
-                <button
-                  key={page.id}
-                  type="button"
-                  onClick={() => setActivePage(page.id)}
-                  className={`w-full rounded border px-3 py-2 text-left text-sm transition ${
-                    activePage.id === page.id ? 'border-primary bg-primary/10' : 'border-transparent hover:border-muted'
-                  }`}
-                >
-                  <div className="font-medium">{page.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {page.widthMm}mm × {page.heightMm}mm
-                  </div>
-                </button>
-              ))}
-            </div>
-          </ScrollArea>
-        </Card>
+      {/* Main Content Area */}
+      <div className="flex min-h-0 flex-1">
+        {/* Left Side Panel */}
+        <V2SidePanel
+          activePage={activePage}
+          onAddElement={(element) => {
+            addElement(activePage.id, element);
+            engine.addElement(element);
+          }}
+        />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <Card className="flex flex-1 items-center justify-center bg-muted/30">
-            <div ref={canvasContainerRef} className="h-full w-full" />
-          </Card>
-          <Card className="flex items-center justify-between px-4 py-2 text-sm text-muted-foreground">
-            <div>Selected elements: {selectedElementIds.length}</div>
-            <div>Active page: {activePage.name}</div>
-          </Card>
+        {/* Center: Workspace + Timeline */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Canvas Workspace */}
+          <V2Workspace
+            ref={canvasContainerRef}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            selectedCount={selectedElementIds.length}
+          />
+
+          {/* Pages Timeline */}
+          <V2PagesTimeline
+            pages={storeDocument.pages}
+            activePageId={activePage.id}
+            onPageSelect={setActivePage}
+            onAddPage={() => {
+              const newPage: DesignPage = {
+                id: crypto.randomUUID(),
+                name: `Page ${storeDocument.pages.length + 1}`,
+                widthMm: activePage.widthMm,
+                heightMm: activePage.heightMm,
+                background: { color: '#ffffff' },
+                elements: []
+              };
+              addPage(newPage);
+            }}
+          />
         </div>
-
-        <Card className="w-80">
-          <div className="px-3 py-2 text-sm font-semibold">Inspector</div>
-          <Separator />
-          <div className="space-y-4 p-4 text-sm text-muted-foreground">
-            <p>Selection will show editable properties here.</p>
-            <p>Current selection: {selectedElementIds.join(', ') || 'none'}</p>
-          </div>
-        </Card>
       </div>
+
+      {/* Status Bar */}
+      <V2StatusBar
+        activePage={activePage}
+        selectedCount={selectedElementIds.length}
+        zoom={zoom}
+      />
     </div>
   );
 }

@@ -1,25 +1,27 @@
 // =============================================================================
-// DESIGN EDITOR V2 - Fabric.js Engine Implementation
+// DESIGN EDITOR V2 - Fabric.js v6 Engine Implementation
 // =============================================================================
-// Minimal Fabric-based rendering for the V2 editor. This focuses on keeping
-// state in sync with the document model rather than providing a full-featured
-// editing surface. It can be expanded incrementally as the V2 experience grows.
+// Fabric-based canvas rendering engine compatible with Fabric.js v6 API.
+// Manages rendering, selection, and element synchronization.
 // =============================================================================
 
-import * as fabric from 'fabric';
+import { Canvas, Rect, Ellipse, Textbox, Line, Group, ActiveSelection, FabricObject } from 'fabric';
 import type { CanvasEngine, CanvasEngineEvents, CanvasEngineOptions } from './engine';
 import type { DesignElement, DesignPage } from './types';
 
 const MM_TO_PX = 3.78; // Approximate conversion for screen preview
 
+// WeakMap to track element IDs since Fabric v6 doesn't support arbitrary data properties
+const objectIdMap = new WeakMap<FabricObject, string>();
+
 export class FabricCanvasEngine implements CanvasEngine {
-  private canvas: fabric.Canvas | null = null;
+  private canvas: Canvas | null = null;
   private container: HTMLDivElement | null = null;
   private currentPage: DesignPage | null = null;
   private events?: CanvasEngineEvents;
   private zoom = 1;
   private showGrid = false;
-  private gridGroup: fabric.Group | null = null;
+  private gridObjects: FabricObject[] = [];
 
   mount(container: HTMLDivElement, options?: CanvasEngineOptions, events?: CanvasEngineEvents) {
     this.container = container;
@@ -27,16 +29,22 @@ export class FabricCanvasEngine implements CanvasEngine {
     this.showGrid = Boolean(options?.enableGrid);
 
     const canvasEl = document.createElement('canvas');
-    canvasEl.className = 'h-full w-full';
     container.innerHTML = '';
     container.appendChild(canvasEl);
 
-    this.canvas = new fabric.Canvas(canvasEl, {
+    // Set initial size based on container
+    const rect = container.getBoundingClientRect();
+    
+    this.canvas = new Canvas(canvasEl, {
+      width: rect.width || 800,
+      height: rect.height || 600,
       preserveObjectStacking: true,
-      selection: true
+      selection: true,
+      backgroundColor: '#f8fafc'
     });
 
     this.bindSelectionEvents();
+    this.bindModificationEvents();
     this.setZoom(options?.devicePixelRatio ?? 1);
 
     if (this.currentPage) {
@@ -48,7 +56,7 @@ export class FabricCanvasEngine implements CanvasEngine {
     this.canvas?.dispose();
     this.canvas = null;
     this.container = null;
-    this.gridGroup = null;
+    this.gridObjects = [];
   }
 
   isMounted(): boolean {
@@ -80,7 +88,7 @@ export class FabricCanvasEngine implements CanvasEngine {
     if (!this.currentPage) return;
 
     this.currentPage.elements = this.currentPage.elements.map(element =>
-      element.id === elementId ? { ...element, ...updates } : element
+      element.id === elementId ? { ...element, ...updates } as DesignElement : element
     );
 
     this.renderElements();
@@ -97,15 +105,17 @@ export class FabricCanvasEngine implements CanvasEngine {
 
   getSelection(): string[] {
     if (!this.canvas) return [];
-    return this.canvas.getActiveObjects().map(obj => (obj as fabric.Object & { data?: Record<string, unknown> }).data?.id as string).filter(Boolean);
+    return this.canvas.getActiveObjects()
+      .map(obj => objectIdMap.get(obj))
+      .filter((id): id is string => Boolean(id));
   }
 
   setSelection(elementIds: string[]) {
     if (!this.canvas) return;
 
     const targets = this.canvas.getObjects().filter(obj => {
-      const id = (obj as fabric.Object & { data?: Record<string, unknown> }).data?.id;
-      return Boolean(id && elementIds.includes(String(id)));
+      const id = objectIdMap.get(obj);
+      return Boolean(id && elementIds.includes(id));
     });
 
     this.canvas.discardActiveObject();
@@ -113,7 +123,7 @@ export class FabricCanvasEngine implements CanvasEngine {
     if (targets.length === 1) {
       this.canvas.setActiveObject(targets[0]);
     } else if (targets.length > 1) {
-      const selection = new fabric.ActiveSelection(targets, { canvas: this.canvas });
+      const selection = new ActiveSelection(targets, { canvas: this.canvas });
       this.canvas.setActiveObject(selection);
     }
 
@@ -129,10 +139,13 @@ export class FabricCanvasEngine implements CanvasEngine {
     this.zoom = zoom;
     if (!this.canvas) return;
     this.canvas.setZoom(zoom);
+    if (this.currentPage) {
+      this.renderPage();
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // Helpers
+  // Event Bindings
   // ---------------------------------------------------------------------------
   private bindSelectionEvents() {
     if (!this.canvas) return;
@@ -147,11 +160,38 @@ export class FabricCanvasEngine implements CanvasEngine {
     this.canvas.on('selection:cleared', () => this.events?.onSelectionChange?.([]));
   }
 
+  private bindModificationEvents() {
+    if (!this.canvas) return;
+
+    this.canvas.on('object:modified', () => {
+      if (!this.canvas || !this.currentPage) return;
+
+      this.canvas.getObjects().forEach(obj => {
+        const id = objectIdMap.get(obj);
+        if (!id) return;
+
+        const matching = this.currentPage?.elements.find(el => el.id === id);
+        if (!matching) return;
+
+        matching.x = this.pxToMm(obj.left ?? 0);
+        matching.y = this.pxToMm(obj.top ?? 0);
+        matching.width = this.pxToMm((obj.width ?? 0) * (obj.scaleX ?? 1));
+        matching.height = this.pxToMm((obj.height ?? 0) * (obj.scaleY ?? 1));
+        matching.rotation = obj.angle;
+      });
+
+      this.events?.onElementsChange?.(this.currentPage?.elements ?? []);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------
   private renderPage() {
     if (!this.canvas || !this.currentPage) return;
 
-    const widthPx = this.currentPage.widthMm * MM_TO_PX * this.zoom;
-    const heightPx = this.currentPage.heightMm * MM_TO_PX * this.zoom;
+    const widthPx = this.mmToPx(this.currentPage.widthMm);
+    const heightPx = this.mmToPx(this.currentPage.heightMm);
 
     this.canvas.setDimensions({ width: widthPx, height: heightPx });
     this.renderElements();
@@ -160,129 +200,126 @@ export class FabricCanvasEngine implements CanvasEngine {
   private renderElements() {
     if (!this.canvas || !this.currentPage) return;
 
-    this.canvas.off('object:modified');
+    // Store current selection
+    const selectedIds = this.getSelection();
+    
     this.canvas.clear();
-    this.gridGroup = null;
+    this.gridObjects = [];
 
+    // Draw page background
     const { background } = this.currentPage;
-    if (background?.color) {
-      const bg = new fabric.Rect({
-        left: 0,
-        top: 0,
-        width: this.currentPage.widthMm * MM_TO_PX,
-        height: this.currentPage.heightMm * MM_TO_PX,
-        fill: background.color,
-        selectable: false,
-        evented: false
-      });
-      this.canvas.add(bg);
-      bg.moveTo(0);
+    const bgRect = new Rect({
+      left: 0,
+      top: 0,
+      width: this.mmToPx(this.currentPage.widthMm),
+      height: this.mmToPx(this.currentPage.heightMm),
+      fill: background?.color ?? '#ffffff',
+      selectable: false,
+      evented: false
+    });
+    this.canvas.add(bgRect);
+    this.canvas.sendObjectToBack(bgRect);
+
+    // Draw grid
+    if (this.showGrid) {
+      this.drawGrid();
     }
 
-    this.drawGrid();
-
+    // Render elements
     this.currentPage.elements.forEach(element => {
       const fabricObject = this.createFabricObject(element);
       if (fabricObject) {
+        objectIdMap.set(fabricObject, element.id);
         this.canvas?.add(fabricObject);
       }
     });
 
-    this.canvas.on('object:modified', () => {
-      if (!this.canvas || !this.currentPage) return;
-
-      this.canvas.getObjects().forEach(obj => {
-        const id = (obj as fabric.Object & { data?: Record<string, unknown> }).data?.id;
-        if (!id) return;
-
-        const matching = this.currentPage?.elements.find(el => el.id === id);
-        if (!matching) return;
-
-        matching.x = this.pxToMm(obj.left ?? 0);
-        matching.y = this.pxToMm(obj.top ?? 0);
-        matching.width = this.pxToMm(obj.width ?? 0) * (obj.scaleX ?? 1);
-        matching.height = this.pxToMm(obj.height ?? 0) * (obj.scaleY ?? 1);
-        matching.rotation = obj.angle;
-      });
-
-      this.events?.onElementsChange?.(this.currentPage?.elements ?? []);
-    });
+    // Restore selection
+    if (selectedIds.length > 0) {
+      this.setSelection(selectedIds);
+    }
 
     this.canvas.requestRenderAll();
   }
 
   private drawGrid() {
-    if (!this.canvas || !this.currentPage || !this.showGrid) return;
+    if (!this.canvas || !this.currentPage) return;
 
     const spacingPx = this.mmToPx(10);
-    const widthPx = this.currentPage.widthMm * MM_TO_PX * this.zoom;
-    const heightPx = this.currentPage.heightMm * MM_TO_PX * this.zoom;
+    const widthPx = this.mmToPx(this.currentPage.widthMm);
+    const heightPx = this.mmToPx(this.currentPage.heightMm);
 
-    const lines: fabric.Line[] = [];
-
+    // Vertical lines
     for (let x = 0; x <= widthPx; x += spacingPx) {
-      lines.push(
-        new fabric.Line([x, 0, x, heightPx], {
-          stroke: '#e5e7eb',
-          strokeWidth: 1,
-          selectable: false,
-          evented: false,
-          excludeFromExport: true
-        })
-      );
+      const line = new Line([x, 0, x, heightPx], {
+        stroke: '#e5e7eb',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        excludeFromExport: true
+      });
+      this.canvas.add(line);
+      this.gridObjects.push(line);
     }
 
+    // Horizontal lines
     for (let y = 0; y <= heightPx; y += spacingPx) {
-      lines.push(
-        new fabric.Line([0, y, widthPx, y], {
-          stroke: '#e5e7eb',
-          strokeWidth: 1,
-          selectable: false,
-          evented: false,
-          excludeFromExport: true
-        })
-      );
+      const line = new Line([0, y, widthPx, y], {
+        stroke: '#e5e7eb',
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        excludeFromExport: true
+      });
+      this.canvas.add(line);
+      this.gridObjects.push(line);
     }
 
-    this.gridGroup = new fabric.Group(lines, {
-      selectable: false,
-      evented: false,
-      excludeFromExport: true,
-      data: { id: 'grid' }
+    // Send grid to back
+    this.gridObjects.forEach(line => {
+      this.canvas?.sendObjectToBack(line);
     });
-
-    this.canvas.add(this.gridGroup);
-    this.gridGroup.moveTo(0);
   }
 
-  private createFabricObject(element: DesignElement): fabric.Object | null {
-    const baseConfig: fabric.IObjectOptions & { data?: Record<string, unknown> } = {
-      left: this.mmToPx(element.x),
-      top: this.mmToPx(element.y),
-      width: this.mmToPx(element.width),
-      height: this.mmToPx(element.height),
-      angle: element.rotation,
-      data: { id: element.id },
-      selectable: !element.locked,
-      opacity: element.hidden ? 0.4 : 1
-    };
+  private createFabricObject(element: DesignElement): FabricObject | null {
+    const left = this.mmToPx(element.x);
+    const top = this.mmToPx(element.y);
+    const width = this.mmToPx(element.width);
+    const height = this.mmToPx(element.height);
+    const angle = element.rotation ?? 0;
+    const selectable = !element.locked;
+    const opacity = element.hidden ? 0.4 : 1;
 
     if (element.kind === 'text') {
-      return new fabric.Textbox(element.content || 'Text', {
-        ...baseConfig,
+      const textbox = new Textbox(element.content || 'Text', {
+        left,
+        top,
+        width,
+        angle,
+        selectable,
+        opacity,
         fontFamily: element.fontFamily,
         fontSize: element.fontSize,
-        fontWeight: element.fontWeight,
+        fontWeight: element.fontWeight as string,
         fill: element.color ?? '#111827',
         textAlign: element.align ?? 'left'
       });
+      return textbox;
     }
 
     if (element.kind === 'image') {
-      const placeholder = new fabric.Rect({
-        ...baseConfig,
+      // Placeholder for images
+      const placeholder = new Rect({
+        left,
+        top,
+        width,
+        height,
+        angle,
+        selectable,
+        opacity,
         fill: '#dbeafe',
-        stroke: '#1d4ed8'
+        stroke: '#1d4ed8',
+        strokeWidth: 1
       });
       return placeholder;
     }
@@ -290,51 +327,72 @@ export class FabricCanvasEngine implements CanvasEngine {
     if (element.kind === 'shape') {
       const fill = element.fill ?? '#e5e7eb';
       const stroke = element.stroke ?? '#9ca3af';
+      const strokeWidth = element.strokeWidth ?? 1;
 
       if (element.shape === 'ellipse') {
-        return new fabric.Ellipse({
-          ...baseConfig,
-          rx: this.mmToPx(element.width) / 2,
-          ry: this.mmToPx(element.height) / 2,
+        return new Ellipse({
+          left,
+          top,
+          rx: width / 2,
+          ry: height / 2,
+          angle,
+          selectable,
+          opacity,
           fill,
           stroke,
-          strokeWidth: element.strokeWidth ?? 1
+          strokeWidth
         });
       }
 
-      return new fabric.Rect({
-        ...baseConfig,
+      return new Rect({
+        left,
+        top,
+        width,
+        height,
+        angle,
+        selectable,
+        opacity,
         fill,
         stroke,
-        strokeWidth: element.strokeWidth ?? 1
+        strokeWidth
       });
     }
 
-    // Groups and frames render as outlined placeholders for now
-    const outline = new fabric.Rect({
-      ...baseConfig,
+    // Groups and frames render as outlined placeholders
+    const outline = new Rect({
+      left: 0,
+      top: 0,
+      width,
+      height,
       fill: 'transparent',
       stroke: '#22c55e',
       strokeDashArray: [6, 4]
     });
 
-    const label = new fabric.Text(element.kind.toUpperCase(), {
-      left: baseConfig.left && baseConfig.left + 8,
-      top: baseConfig.top && baseConfig.top + 8,
+    const label = new Textbox(element.kind.toUpperCase(), {
+      left: 8,
+      top: 8,
       fontSize: 12,
       fill: '#22c55e',
       selectable: false,
       evented: false
     });
 
-    const group = new fabric.Group([outline, label], {
-      ...baseConfig,
+    const group = new Group([outline, label], {
+      left,
+      top,
+      angle,
+      selectable,
+      opacity,
       subTargetCheck: false
     });
 
     return group;
   }
 
+  // ---------------------------------------------------------------------------
+  // Unit Conversion
+  // ---------------------------------------------------------------------------
   private mmToPx(value: number): number {
     return value * MM_TO_PX * this.zoom;
   }

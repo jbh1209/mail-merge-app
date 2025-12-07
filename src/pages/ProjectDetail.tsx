@@ -16,7 +16,7 @@ import { TemplateWizard } from "@/components/TemplateWizard";
 import { FieldMappingWizard } from "@/components/FieldMappingWizard";
 import { MergeJobRunner } from "@/components/MergeJobRunner";
 import { MergeJobsList } from "@/components/MergeJobsList";
-import { TemplateDesignEditor } from "@/components/TemplateDesignEditor";
+
 import { useSubscription } from "@/hooks/useSubscription";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -35,8 +35,6 @@ export default function ProjectDetail() {
   const [selectedDataSource, setSelectedDataSource] = useState<any>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("data-sources");
-  const [editingTemplate, setEditingTemplate] = useState<any>(null);
-  const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
 
   // Handle URL params for auto-navigation to merge jobs tab
   useEffect(() => {
@@ -183,33 +181,7 @@ export default function ProjectDetail() {
   };
 
   const handleEditTemplate = (template: any) => {
-    setEditingTemplate(template);
-    setTemplateEditorOpen(true);
-  };
-
-  const handleSaveDesign = async (updatedConfig: any) => {
-    if (!editingTemplate) return;
-    
-    // Merge with existing design_config to preserve metadata (averyCode, baseTemplate, etc.)
-    const mergedConfig = {
-      ...editingTemplate.design_config,
-      ...updatedConfig,
-    };
-    
-    const { error } = await supabase
-      .from('templates')
-      .update({ design_config: mergedConfig })
-      .eq('id', editingTemplate.id);
-    
-    if (error) {
-      toast.error("Failed to update template design");
-      return;
-    }
-
-    queryClient.invalidateQueries({ queryKey: ["templates", id] });
-    toast.success("Template design updated");
-    setTemplateEditorOpen(false);
-    setEditingTemplate(null);
+    navigate(`/projects/${id}/edit/${template.id}`);
   };
 
   if (isLoading) {
@@ -568,15 +540,6 @@ export default function ProjectDetail() {
         </DialogContent>
       </Dialog>
 
-      {editingTemplate && (
-        <TemplateDesignEditor
-          open={templateEditorOpen}
-          onOpenChange={setTemplateEditorOpen}
-          template={editingTemplate}
-          projectId={id!}
-          onSave={handleSaveDesign}
-        />
-      )}
     </div>
   );
 }

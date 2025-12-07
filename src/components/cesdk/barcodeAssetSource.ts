@@ -1,4 +1,4 @@
-import { AssetSource, AssetResult, AssetsQueryResult } from '@cesdk/cesdk-js';
+import { AssetSource, AssetResult, AssetsQueryResult, CreativeEngine } from '@cesdk/cesdk-js';
 import { generateBarcodeSVG, generateQRCodeSVG, getValidSampleValue } from '@/lib/barcode-svg-utils';
 
 export interface BarcodeAssetConfig {
@@ -14,15 +14,14 @@ const BARCODE_FORMATS = [
   { id: 'upca', label: 'UPC-A', description: '12-digit numeric (US retail)' },
 ];
 
-const QR_FORMATS = [
-  { id: 'qrcode', label: 'QR Code', description: 'Universal 2D code' },
-];
-
 /**
  * Create an asset source for barcodes and QR codes in CE.SDK
  * Supports both static values and variable data (VDP)
  */
-export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): AssetSource {
+export function createBarcodeAssetSource(
+  config: BarcodeAssetConfig = {},
+  engine: CreativeEngine
+): AssetSource {
   const { availableFields = [], sampleData = {} } = config;
 
   return {
@@ -36,19 +35,27 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
       // Add static barcode options
       BARCODE_FORMATS.forEach((format) => {
         if (!query || format.label.toLowerCase().includes(query) || 'barcode'.includes(query)) {
-          // Use format-specific valid sample data
           const sampleValue = getValidSampleValue(format.id);
+          const dataUrl = generateBarcodeSVGDataUrl(sampleValue, format.id);
+          
           assets.push({
             id: `barcode-static-${format.id}`,
             label: format.label,
             tags: ['barcode', 'static', format.id],
             meta: {
+              // Required fields for CE.SDK to apply the asset
+              uri: dataUrl,
+              thumbUri: dataUrl,
               blockType: '//ly.img.ubq/graphic',
               fillType: '//ly.img.ubq/fill/image',
+              shapeType: '//ly.img.ubq/shape/rect',
+              kind: 'image',
+              width: 200,
+              height: 100,
+              // Custom metadata for VDP
               barcodeType: 'barcode',
               barcodeFormat: format.id,
               isVariable: false,
-              thumbUri: generateBarcodeSVGDataUrl(sampleValue, format.id),
             },
           });
         }
@@ -56,16 +63,22 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
       
       // Add static QR code option
       if (!query || 'qr'.includes(query) || 'qrcode'.includes(query)) {
+        const qrDataUrl = generateQRCodeSVGDataUrl('https://example.com');
         assets.push({
           id: 'qrcode-static',
           label: 'QR Code',
           tags: ['qrcode', 'static'],
           meta: {
+            uri: qrDataUrl,
+            thumbUri: qrDataUrl,
             blockType: '//ly.img.ubq/graphic',
             fillType: '//ly.img.ubq/fill/image',
+            shapeType: '//ly.img.ubq/shape/rect',
+            kind: 'image',
+            width: 100,
+            height: 100,
             barcodeType: 'qrcode',
             isVariable: false,
-            thumbUri: generateQRCodeSVGDataUrl('https://example.com'),
           },
         });
       }
@@ -83,25 +96,30 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
       barcodeFields.forEach((field) => {
         BARCODE_FORMATS.forEach((format) => {
           if (!query || format.label.toLowerCase().includes(query) || field.toLowerCase().includes(query)) {
-            // Use format-specific valid sample if field data isn't suitable
             const fieldValue = sampleData[field];
             const sampleValue = fieldValue && isValidForFormat(fieldValue, format.id) 
               ? fieldValue 
               : getValidSampleValue(format.id);
+            const dataUrl = generateBarcodeSVGDataUrl(sampleValue, format.id);
             
             assets.push({
               id: `barcode-var-${format.id}-${field}`,
               label: `${format.label} ({{${field}}})`,
               tags: ['barcode', 'variable', format.id, field],
               meta: {
+                uri: dataUrl,
+                thumbUri: dataUrl,
                 blockType: '//ly.img.ubq/graphic',
                 fillType: '//ly.img.ubq/fill/image',
+                shapeType: '//ly.img.ubq/shape/rect',
+                kind: 'image',
+                width: 200,
+                height: 100,
                 barcodeType: 'barcode',
                 barcodeFormat: format.id,
                 isVariable: true,
                 variableField: field,
                 sampleValue,
-                thumbUri: generateBarcodeSVGDataUrl(sampleValue, format.id),
               },
             });
           }
@@ -109,18 +127,26 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
         
         // Variable QR code
         if (!query || 'qr'.includes(query) || field.toLowerCase().includes(query)) {
+          const qrValue = sampleData[field] || 'https://example.com';
+          const qrDataUrl = generateQRCodeSVGDataUrl(qrValue);
+          
           assets.push({
             id: `qrcode-var-${field}`,
             label: `QR Code ({{${field}}})`,
             tags: ['qrcode', 'variable', field],
             meta: {
+              uri: qrDataUrl,
+              thumbUri: qrDataUrl,
               blockType: '//ly.img.ubq/graphic',
               fillType: '//ly.img.ubq/fill/image',
+              shapeType: '//ly.img.ubq/shape/rect',
+              kind: 'image',
+              width: 100,
+              height: 100,
               barcodeType: 'qrcode',
               isVariable: true,
               variableField: field,
-              sampleValue: sampleData[field] || 'https://example.com',
-              thumbUri: generateQRCodeSVGDataUrl(sampleData[field] || 'https://example.com'),
+              sampleValue: qrValue,
             },
           });
         }
@@ -134,10 +160,20 @@ export function createBarcodeAssetSource(config: BarcodeAssetConfig = {}): Asset
       };
     },
     
-    applyAsset: async (assetResult): Promise<number | undefined> => {
-      // The asset will be applied by the engine
-      // We return undefined to let the default handler work
-      return undefined;
+    applyAsset: async (assetResult: AssetResult): Promise<number | undefined> => {
+      // Use CE.SDK's default apply which handles block creation from metadata
+      return engine.asset.defaultApplyAsset(assetResult);
+    },
+    
+    applyAssetToBlock: async (assetResult: AssetResult, block: number): Promise<void> => {
+      // Apply to existing block - update the fill
+      const meta = assetResult.meta;
+      if (meta?.uri) {
+        const fill = engine.block.getFill(block);
+        if (fill && engine.block.isValid(fill)) {
+          engine.block.setString(fill, 'fill/image/imageFileURI', meta.uri as string);
+        }
+      }
     },
   };
 }

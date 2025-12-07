@@ -283,11 +283,11 @@ export function CreativeEditorWrapper({
           cesdk.engine.asset.addSource(createDataFieldsAssetSource(availableFields, sampleData));
         }
         
-        // Register barcode/QR code asset source
+        // Register barcode/QR code asset source with engine reference
         cesdk.engine.asset.addSource(createBarcodeAssetSource({
           availableFields,
           sampleData,
-        }));
+        }, cesdk.engine));
 
         // Create a new design or load existing scene
         if (initialScene) {

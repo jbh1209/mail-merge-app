@@ -42,11 +42,6 @@ export function DesignEditorV2Shell({ document, engine, onDocumentChange }: Desi
 
   const activePageRef = useRef<DesignPage | null>(null);
 
-  const activePage: DesignPage | undefined = useMemo(() => {
-    if (!storeDocument) return undefined;
-    return storeDocument.pages.find(page => page.id === activePageId) ?? storeDocument.pages[0];
-  }, [storeDocument, activePageId]);
-
   // Keep store in sync with prop document
   useEffect(() => {
     setDocument(document);
@@ -56,35 +51,25 @@ export function DesignEditorV2Shell({ document, engine, onDocumentChange }: Desi
     activePageRef.current = activePage ?? null;
   }, [activePage]);
 
+  const activePage: DesignPage | undefined = useMemo(() => {
+    if (!storeDocument) return undefined;
+    return storeDocument.pages.find(page => page.id === activePageId) ?? storeDocument.pages[0];
+  }, [storeDocument, activePageId]);
+
   // Mount the canvas engine once
   useEffect(() => {
-    const container = canvasContainerRef.current;
-    if (!container) {
-      console.log('[V2Shell] Container ref not ready');
-      return;
-    }
-    
-    console.log('[V2Shell] Mounting engine...');
-    
-    try {
-      engine.mount(container, { enableGrid: showGrid }, {
-        onSelectionChange: ids => setSelection(ids),
-        onElementsChange: elements => {
-          const page = activePageRef.current;
-          if (!page) return;
-          updatePage(page.id, { elements });
-        }
-      });
-      console.log('[V2Shell] Engine mounted successfully');
-    } catch (err) {
-      console.error('[V2Shell] Engine mount failed:', err);
-    }
+    if (!canvasContainerRef.current) return;
+    engine.mount(canvasContainerRef.current, { enableGrid: showGrid }, {
+      onSelectionChange: ids => setSelection(ids),
+      onElementsChange: elements => {
+        const page = activePageRef.current;
+        if (!page) return;
+        updatePage(page.id, { elements });
+      }
+    });
 
-    return () => {
-      console.log('[V2Shell] Unmounting engine...');
-      engine.unmount();
-    };
-  }, [engine, setSelection, updatePage, showGrid]);
+    return () => engine.unmount();
+  }, [engine, setSelection, updatePage]);
 
   useEffect(() => {
     engine.setGrid(showGrid);

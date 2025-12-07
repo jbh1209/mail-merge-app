@@ -4,30 +4,55 @@ import { Loader2 } from 'lucide-react';
 import { createBarcodeAssetSource } from './barcodeAssetSource';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
+import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
 
 // Get the correct assets URL - must match the installed package version
 const CESDK_VERSION = '1.65.0';
 const CESDK_ASSETS_URL = `https://cdn.img.ly/packages/imgly/cesdk-js/${CESDK_VERSION}/assets`;
 
+// Helper to parse barcode metadata from block name
+function parseBarcodeMetadata(name: string): { type: 'barcode' | 'qrcode'; format: string; dataSource: 'static' | 'field'; staticValue: string; variableField: string } | null {
+  if (!name) return null;
+  
+  // Format: "barcode:format:dataSource:value" or "qrcode:dataSource:value"
+  if (name.startsWith('barcode:')) {
+    const parts = name.split(':');
+    const format = parts[1] || 'code128';
+    const dataSource = parts[2] as 'static' | 'field' || 'static';
+    const value = parts[3] || '';
+    return {
+      type: 'barcode',
+      format,
+      dataSource,
+      staticValue: dataSource === 'static' ? value : '',
+      variableField: dataSource === 'field' ? value : '',
+    };
+  }
+  if (name.startsWith('qrcode:')) {
+    const parts = name.split(':');
+    const dataSource = parts[1] as 'static' | 'field' || 'static';
+    const value = parts[2] || '';
+    return {
+      type: 'qrcode',
+      format: 'qrcode',
+      dataSource,
+      staticValue: dataSource === 'static' ? value : '',
+      variableField: dataSource === 'field' ? value : '',
+    };
+  }
+  return null;
+}
+
 interface CreativeEditorWrapperProps {
-  // Available merge fields from data source
   availableFields?: string[];
-  // Sample data for preview
   sampleData?: Record<string, string>;
-  // Template scene to load (JSON string or URL)
   initialScene?: string;
-  // Callback when scene is saved
   onSave?: (sceneString: string) => void;
-  // Callback when editor is ready
   onReady?: (editor: CreativeEditorSDK) => void;
-  // License key (optional - works in trial mode without it)
   licenseKey?: string;
-  // Label dimensions in mm
   labelWidth?: number;
   labelHeight?: number;
-  // Bleed margin in mm (for print-ready output)
   bleedMm?: number;
-  // Enable white underlayer for clear substrates
   whiteUnderlayer?: boolean;
 }
 
@@ -47,6 +72,12 @@ export function CreativeEditorWrapper({
   const editorRef = useRef<CreativeEditorSDK | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for barcode/QR config panel
+  const [configPanelOpen, setConfigPanelOpen] = useState(false);
+  const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null);
+  const [selectedBlockType, setSelectedBlockType] = useState<'barcode' | 'qrcode'>('barcode');
+  const [initialBarcodeConfig, setInitialBarcodeConfig] = useState<Partial<BarcodeConfig>>({});
 
   // Export function exposed to parent components
   const handleExport = useCallback(async (options?: Partial<ExportOptions>) => {
@@ -308,6 +339,31 @@ export function CreativeEditorWrapper({
           }
         }
 
+        // Add selection listener to detect barcode/QR blocks
+        cesdk.engine.block.onSelectionChanged(() => {
+          const selected = cesdk.engine.block.findAllSelected();
+          if (selected.length === 1) {
+            const blockId = selected[0];
+            try {
+              const name = cesdk.engine.block.getName(blockId);
+              const metadata = parseBarcodeMetadata(name);
+              if (metadata) {
+                setSelectedBlockId(blockId);
+                setSelectedBlockType(metadata.type);
+                setInitialBarcodeConfig({
+                  format: metadata.format,
+                  dataSource: metadata.dataSource,
+                  staticValue: metadata.staticValue,
+                  variableField: metadata.variableField,
+                });
+                setConfigPanelOpen(true);
+              }
+            } catch {
+              // Not a barcode block
+            }
+          }
+        });
+
         setIsLoading(false);
         onReady?.(cesdk);
       } catch (err) {
@@ -353,6 +409,39 @@ export function CreativeEditorWrapper({
     }
   }, [sampleData]);
 
+  // Handle barcode/QR config changes
+  const handleBarcodeConfigConfirm = useCallback((config: BarcodeConfig) => {
+    if (!editorRef.current || selectedBlockId === null) return;
+
+    const engine = editorRef.current.engine;
+    const value = config.dataSource === 'static' ? config.staticValue : config.variableField;
+    
+    // Generate new image
+    let dataUrl: string;
+    if (config.type === 'qrcode') {
+      dataUrl = generateQRCodeDataUrl(value || 'https://example.com', { width: 150, height: 150 });
+    } else {
+      dataUrl = generateBarcodeDataUrl(value || '12345', config.format, { height: 75, includetext: true });
+    }
+
+    // Update block image
+    try {
+      const fill = engine.block.getFill(selectedBlockId);
+      engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
+      
+      // Update block name with new metadata
+      const metadataName = config.type === 'qrcode'
+        ? `qrcode:${config.dataSource}:${value}`
+        : `barcode:${config.format}:${config.dataSource}:${value}`;
+      engine.block.setName(selectedBlockId, metadataName);
+    } catch (e) {
+      console.error('Failed to update barcode block:', e);
+    }
+
+    setSelectedBlockId(null);
+    setConfigPanelOpen(false);
+  }, [selectedBlockId]);
+
   if (error) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-muted">
@@ -375,6 +464,16 @@ export function CreativeEditorWrapper({
         </div>
       )}
       <div ref={containerRef} className="h-full w-full" />
+      
+      {/* Barcode/QR Configuration Panel */}
+      <BarcodeConfigPanel
+        open={configPanelOpen}
+        onOpenChange={setConfigPanelOpen}
+        onConfirm={handleBarcodeConfigConfirm}
+        availableFields={availableFields}
+        initialConfig={initialBarcodeConfig}
+        type={selectedBlockType}
+      />
     </div>
   );
 }

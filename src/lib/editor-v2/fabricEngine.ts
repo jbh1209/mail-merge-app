@@ -25,19 +25,26 @@ export class FabricCanvasEngine implements CanvasEngine {
     this.container = container;
     this.events = events;
     this.showGrid = Boolean(options?.enableGrid);
+    this.zoom = 1; // Reset zoom on mount
 
     const canvasEl = document.createElement('canvas');
-    canvasEl.className = 'h-full w-full';
     container.innerHTML = '';
     container.appendChild(canvasEl);
 
+    // Set initial canvas size based on container
+    const rect = container.getBoundingClientRect();
+    const initialWidth = rect.width || 800;
+    const initialHeight = rect.height || 600;
+
     this.canvas = new FabricCanvas(canvasEl, {
+      width: initialWidth,
+      height: initialHeight,
       preserveObjectStacking: true,
-      selection: true
+      selection: true,
+      backgroundColor: '#f3f4f6'
     });
 
     this.bindSelectionEvents();
-    this.setZoom(options?.devicePixelRatio ?? 1);
 
     if (this.currentPage) {
       this.renderPage();

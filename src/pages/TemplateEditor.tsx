@@ -223,6 +223,7 @@ export default function TemplateEditor() {
           labelWidth={template.width_mm || 100}
           labelHeight={template.height_mm || 50}
           bleedMm={template.bleed_mm || 0}
+          whiteUnderlayer={(template.design_config as { whiteUnderlayer?: boolean } | null)?.whiteUnderlayer ?? false}
         />
       </main>
     </div>

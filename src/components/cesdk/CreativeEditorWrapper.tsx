@@ -309,7 +309,7 @@ export function CreativeEditorWrapper({
 
         // Register custom asset source for data fields (text variables)
         if (availableFields.length > 0) {
-          cesdk.engine.asset.addSource(createDataFieldsAssetSource(availableFields, sampleData));
+          cesdk.engine.asset.addSource(createDataFieldsAssetSource(availableFields, sampleData, cesdk.engine));
         }
         
         // Register barcode/QR code asset source with engine reference
@@ -322,9 +322,22 @@ export function CreativeEditorWrapper({
         if (initialScene) {
           try {
             await cesdk.engine.scene.loadFromString(initialScene);
+            // Force page dimensions to match template (in case scene was saved with different size)
+            const pages = cesdk.engine.scene.getPages();
+            if (pages.length > 0) {
+              const page = pages[0];
+              cesdk.engine.block.setWidth(page, widthPoints);
+              cesdk.engine.block.setHeight(page, heightPoints);
+            }
           } catch (e) {
             console.warn('Failed to load scene, creating new design:', e);
             await cesdk.createDesignScene();
+            const pages = cesdk.engine.scene.getPages();
+            if (pages.length > 0) {
+              const page = pages[0];
+              cesdk.engine.block.setWidth(page, widthPoints);
+              cesdk.engine.block.setHeight(page, heightPoints);
+            }
           }
         } else {
           // Create a new design with specified dimensions
@@ -479,7 +492,11 @@ export function CreativeEditorWrapper({
 }
 
 // Create a custom asset source for data fields (VDP variables)
-function createDataFieldsAssetSource(fields: string[], sampleData: Record<string, string>): AssetSource {
+function createDataFieldsAssetSource(
+  fields: string[], 
+  sampleData: Record<string, string>,
+  engine: CreativeEditorSDK['engine']
+): AssetSource {
   return {
     id: 'data-fields',
     findAssets: async (): Promise<AssetsQueryResult> => {
@@ -492,6 +509,7 @@ function createDataFieldsAssetSource(fields: string[], sampleData: Record<string
           blockType: '//ly.img.ubq/text',
           fillType: '//ly.img.ubq/fill/solid',
           value: sampleData[field] || `{{${field}}}`,
+          fieldName: field,
         },
       }));
       
@@ -502,10 +520,37 @@ function createDataFieldsAssetSource(fields: string[], sampleData: Record<string
         total: fields.length,
       };
     },
-    applyAsset: async (): Promise<number> => {
-      // This is handled by the engine automatically for text blocks
-      // Return 0 to indicate success
-      return 0;
+    applyAsset: async (assetResult: AssetResult): Promise<number> => {
+      // Create a text block on the canvas
+      const pages = engine.scene.getPages();
+      if (pages.length === 0) return 0;
+      
+      const page = pages[0];
+      const fieldName = String(assetResult.meta?.fieldName || assetResult.label || 'field');
+      const displayValue = sampleData[fieldName] || `{{${fieldName}}}`;
+      
+      // Create text block
+      const textBlock = engine.block.create('//ly.img.ubq/text');
+      
+      // Set text content with variable placeholder for merge, show sample data for preview
+      engine.block.setString(textBlock, 'text/text', displayValue);
+      
+      // Store the field name in the block name for VDP resolution
+      engine.block.setName(textBlock, `vdp:text:${fieldName}`);
+      
+      // Set reasonable default size and position
+      engine.block.setWidth(textBlock, 150);
+      engine.block.setHeight(textBlock, 30);
+      engine.block.setPositionX(textBlock, 20);
+      engine.block.setPositionY(textBlock, 20);
+      
+      // Add to page
+      engine.block.appendChild(page, textBlock);
+      
+      // Select the new block
+      engine.block.setSelected(textBlock, true);
+      
+      return textBlock;
     },
   };
 }

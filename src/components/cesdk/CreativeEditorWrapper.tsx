@@ -197,8 +197,8 @@ async function generateInitialLayout(
           
           // Use replaceText instead of setString for proper text run initialization
           engine.block.replaceText(textBlock, textContent);
-          // Apply font size to ALL existing text characters using the correct CE.SDK API
-          engine.block.setTextFontSize(textBlock, autoFitFontSize, 0, textContent.length);
+          // Apply font size to entire text block (omit range params for whole-block styling)
+          engine.block.setTextFontSize(textBlock, autoFitFontSize);
           engine.block.setName(textBlock, blockName);
           engine.block.appendChild(page, textBlock);
 
@@ -219,9 +219,9 @@ async function generateInitialLayout(
           // Use replaceText instead of setString for proper text run initialization
           engine.block.replaceText(textBlock, textContent);
           
-          // Apply font size to ALL existing text characters using the correct CE.SDK API
+          // Apply font size to entire text block (omit range params for whole-block styling)
           if (field.fontSize) {
-            engine.block.setTextFontSize(textBlock, field.fontSize, 0, textContent.length);
+            engine.block.setTextFontSize(textBlock, field.fontSize);
           }
 
           // Store field name(s) in block name for VDP resolution

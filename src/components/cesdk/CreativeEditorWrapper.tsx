@@ -192,26 +192,23 @@ async function generateInitialLayout(
           // Now set position and size
           engine.block.setPositionX(textBlock, mmToPoints(startXMm));
           engine.block.setPositionY(textBlock, mmToPoints(startYMm));
+          
+          // Set FIXED width (controls line wrapping)
           engine.block.setWidth(textBlock, boxWidthPt);
-          engine.block.setHeight(textBlock, boxHeightPt);
+          
+          // Set height mode to AUTO - this enables CE.SDK's auto-sizing!
+          // Do NOT call setHeight() - that would set mode to 'Absolute' and break auto-sizing
+          engine.block.setHeightMode(textBlock, 'Auto');
           
           // Set text content using replaceText for proper text run initialization
           engine.block.replaceText(textBlock, textContent);
           
-          // Calculate and apply auto-fit font size AFTER block is in scene
-          const autoFitFontSize = calculateAutoFitFontSize(textContent, boxWidthPt, boxHeightPt);
-          console.log('📏 Auto-fit font size for address block:', autoFitFontSize, 'pt');
-          
-          // Apply font size using setTextFontSize (without range params = entire block)
-          engine.block.setTextFontSize(textBlock, autoFitFontSize);
-          
-          // Verify font size was applied
-          const appliedSizes = engine.block.getTextFontSizes(textBlock);
-          console.log('📏 Verified font sizes after setTextFontSize:', appliedSizes);
+          // Set a reasonable font size - CE.SDK will auto-adjust height to fit
+          engine.block.setTextFontSize(textBlock, 24);
           
           engine.block.setName(textBlock, blockName);
-
-          console.log(`✅ Created address block at (${startXMm}mm, ${startYMm}mm) size: ${boxWidthMm}mm x ${boxHeightMm}mm, font: ${autoFitFontSize}pt`);
+          
+          console.log(`✅ Created address block with Auto height mode at (${startXMm}mm, ${startYMm}mm), width: ${boxWidthMm}mm`);
         } else {
           // Individual field - use layout engine positioning
           textContent = sampleData[field.templateField] || `{{${field.templateField}}}`;
@@ -224,24 +221,24 @@ async function generateInitialLayout(
           engine.block.setPositionX(textBlock, mmToPoints(field.x));
           engine.block.setPositionY(textBlock, mmToPoints(field.y));
 
-          // Set size
+          // Set FIXED width
           engine.block.setWidth(textBlock, mmToPoints(field.width));
-          engine.block.setHeight(textBlock, mmToPoints(field.height));
+          
+          // Set height mode to AUTO - enables CE.SDK auto-sizing
+          engine.block.setHeightMode(textBlock, 'Auto');
 
           // Set text content using replaceText
           engine.block.replaceText(textBlock, textContent);
           
-          // Apply font size using setTextFontSize (without range params = entire block)
+          // Apply font size - height will auto-adjust
           if (field.fontSize) {
             engine.block.setTextFontSize(textBlock, field.fontSize);
-            const appliedSizes = engine.block.getTextFontSizes(textBlock);
-            console.log(`📏 Field font size: requested=${field.fontSize}, applied=`, appliedSizes);
           }
 
           // Store field name for VDP resolution
           engine.block.setName(textBlock, blockName);
 
-          console.log(`✅ Created text block: ${blockName} at (${field.x}mm, ${field.y}mm)`);
+          console.log(`✅ Created text block: ${blockName} with Auto height mode at (${field.x}mm, ${field.y}mm)`);
         }
       } catch (blockError) {
         console.error(`❌ Failed to create block for ${field.templateField}:`, blockError);

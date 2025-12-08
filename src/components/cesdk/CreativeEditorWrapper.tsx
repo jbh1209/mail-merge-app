@@ -189,28 +189,27 @@ async function generateInitialLayout(
           // CE.SDK requires blocks to be part of the scene hierarchy before styling takes effect
           engine.block.appendChild(page, textBlock);
 
-          // Now set position
+          // Set position first
           engine.block.setPositionX(textBlock, mmToPoints(startXMm));
           engine.block.setPositionY(textBlock, mmToPoints(startYMm));
           
-          // Set width MODE to Percent FIRST (relative to parent page)
-          engine.block.setWidthMode(textBlock, 'Percent');
-          // Then set width as a percentage (0.8 = 80% of page width)
-          engine.block.setWidth(textBlock, 0.8);
+          // Set FIXED width (Absolute mode) for line wrapping constraint
+          engine.block.setWidthMode(textBlock, 'Absolute');
+          engine.block.setWidth(textBlock, boxWidthPt);
           
-          // Set height mode to Auto - CE.SDK will auto-size based on content
+          // Set height mode to Auto - CE.SDK will auto-size height based on content
           engine.block.setHeightMode(textBlock, 'Auto');
-          // Do NOT call setHeight() - that would override the Auto mode!
+          // Do NOT call setHeight() - that would override Auto mode!
           
           // Set text content using replaceText for proper text run initialization
           engine.block.replaceText(textBlock, textContent);
           
-          // Set a reasonable font size - CE.SDK will auto-adjust height to fit
+          // Set font size - height will auto-adjust to fit content
           engine.block.setTextFontSize(textBlock, 24);
           
           engine.block.setName(textBlock, blockName);
           
-          console.log(`✅ Created address block with Percent width (80%) + Auto height`);
+          console.log(`✅ Created address block: Fixed width (${boxWidthMm.toFixed(1)}mm) + Auto height`);
         } else {
           // Individual field - use layout engine positioning
           textContent = sampleData[field.templateField] || `{{${field.templateField}}}`;
@@ -223,14 +222,18 @@ async function generateInitialLayout(
           engine.block.setPositionX(textBlock, mmToPoints(field.x));
           engine.block.setPositionY(textBlock, mmToPoints(field.y));
 
-          // Set width and height modes to Auto - CE.SDK will auto-size based on content
-          engine.block.setWidthMode(textBlock, 'Auto');
+          // Set FIXED width (Absolute mode) for line wrapping constraint
+          engine.block.setWidthMode(textBlock, 'Absolute');
+          engine.block.setWidth(textBlock, mmToPoints(field.width));
+          
+          // Set height mode to Auto - CE.SDK will auto-size height based on content
           engine.block.setHeightMode(textBlock, 'Auto');
+          // Do NOT call setHeight() - that would override Auto mode!
 
           // Set text content using replaceText
           engine.block.replaceText(textBlock, textContent);
           
-          // Apply font size - dimensions will auto-adjust
+          // Apply font size - height will auto-adjust to fit content
           if (field.fontSize) {
             engine.block.setTextFontSize(textBlock, field.fontSize);
           }
@@ -238,7 +241,7 @@ async function generateInitialLayout(
           // Store field name for VDP resolution
           engine.block.setName(textBlock, blockName);
 
-          console.log(`✅ Created text block: ${blockName} with Auto width + Auto height`);
+          console.log(`✅ Created text block: ${blockName} - Fixed width (${field.width}mm) + Auto height`);
         }
       } catch (blockError) {
         console.error(`❌ Failed to create block for ${field.templateField}:`, blockError);

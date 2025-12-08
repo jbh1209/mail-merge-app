@@ -587,6 +587,54 @@ export function CreativeEditorWrapper({
           );
         }
 
+        // --- PREVIEW MODE EXIT FIX ---
+        // Add state change listener to detect preview mode exit and restore page dimensions
+        let lastEditMode: string | null = null;
+        cesdk.engine.editor.onStateChanged(() => {
+          try {
+            const currentEditMode = cesdk.engine.editor.getEditMode();
+            
+            // Only act when mode actually changes
+            if (currentEditMode !== lastEditMode) {
+              console.log(`🔄 Edit mode changed: ${lastEditMode} → ${currentEditMode}`);
+              
+              // If we just exited preview mode (back to "Transform" mode)
+              if (lastEditMode === 'Preview' && currentEditMode === 'Transform') {
+                console.log('📐 Exited preview mode - checking page dimensions...');
+                
+                const pages = cesdk.engine.scene.getPages();
+                if (pages.length > 0) {
+                  const page = pages[0];
+                  const currentWidth = cesdk.engine.block.getWidth(page);
+                  const currentHeight = cesdk.engine.block.getHeight(page);
+                  
+                  console.log(`📏 Current dimensions: ${currentWidth.toFixed(1)} x ${currentHeight.toFixed(1)} pts`);
+                  console.log(`📏 Expected dimensions: ${widthPoints.toFixed(1)} x ${heightPoints.toFixed(1)} pts`);
+                  
+                  // If dimensions don't match template, restore them
+                  if (Math.abs(currentWidth - widthPoints) > 1 || Math.abs(currentHeight - heightPoints) > 1) {
+                    console.log('⚠️ Page dimensions changed during preview - restoring...');
+                    cesdk.engine.block.setWidth(page, widthPoints);
+                    cesdk.engine.block.setHeight(page, heightPoints);
+                    console.log('✅ Page dimensions restored');
+                  }
+                  
+                  // Check if blocks still exist
+                  const textBlocks = cesdk.engine.block.findByType('//ly.img.ubq/text');
+                  const graphicBlocks = cesdk.engine.block.findByType('//ly.img.ubq/graphic');
+                  console.log(`📦 Blocks after preview exit: ${textBlocks.length} text, ${graphicBlocks.length} graphic`);
+                } else {
+                  console.warn('⚠️ No pages found after exiting preview mode!');
+                }
+              }
+              
+              lastEditMode = currentEditMode;
+            }
+          } catch (e) {
+            console.warn('State change handler error:', e);
+          }
+        });
+
         // Add selection listener to detect barcode/QR blocks
         cesdk.engine.block.onSelectionChanged(() => {
           const selected = cesdk.engine.block.findAllSelected();

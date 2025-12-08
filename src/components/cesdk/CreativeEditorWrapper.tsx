@@ -201,7 +201,8 @@ async function generateInitialLayout(
           // Calculate and apply auto-fit font size AFTER block is in scene
           const autoFitFontSize = calculateAutoFitFontSize(textContent, boxWidthPt, boxHeightPt);
           console.log('📏 Auto-fit font size for address block:', autoFitFontSize, 'pt');
-          engine.block.setTextFontSize(textBlock, autoFitFontSize);
+          // Use block property API to set default font size (not setTextFontSize which is for text runs)
+          engine.block.setFloat(textBlock, 'text/fontSize', autoFitFontSize);
           
           engine.block.setName(textBlock, blockName);
 
@@ -225,9 +226,9 @@ async function generateInitialLayout(
           // Set text content using replaceText
           engine.block.replaceText(textBlock, textContent);
           
-          // Apply font size AFTER block is in scene
+          // Apply font size using block property API (not setTextFontSize which is for text runs)
           if (field.fontSize) {
-            engine.block.setTextFontSize(textBlock, field.fontSize);
+            engine.block.setFloat(textBlock, 'text/fontSize', field.fontSize);
           }
 
           // Store field name for VDP resolution

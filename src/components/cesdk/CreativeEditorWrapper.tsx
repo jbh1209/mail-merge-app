@@ -185,28 +185,34 @@ async function generateInitialLayout(
           const startXMm = widthMm * marginPercent;
           const startYMm = heightMm * marginPercent;
 
-          // Calculate auto-fit font size based on content and box size
-          const autoFitFontSize = calculateAutoFitFontSize(textContent, boxWidthPt, boxHeightPt);
-          console.log('📏 Auto-fit font size for address block:', autoFitFontSize, 'pt');
+          // CRITICAL: Append to page FIRST before setting text content and font size
+          // CE.SDK requires blocks to be part of the scene hierarchy before styling takes effect
+          engine.block.appendChild(page, textBlock);
 
-          // Set position and size first
+          // Now set position and size
           engine.block.setPositionX(textBlock, mmToPoints(startXMm));
           engine.block.setPositionY(textBlock, mmToPoints(startYMm));
           engine.block.setWidth(textBlock, boxWidthPt);
           engine.block.setHeight(textBlock, boxHeightPt);
           
-          // Use replaceText instead of setString for proper text run initialization
+          // Set text content using replaceText for proper text run initialization
           engine.block.replaceText(textBlock, textContent);
-          // Apply font size to entire text block (omit range params for whole-block styling)
+          
+          // Calculate and apply auto-fit font size AFTER block is in scene
+          const autoFitFontSize = calculateAutoFitFontSize(textContent, boxWidthPt, boxHeightPt);
+          console.log('📏 Auto-fit font size for address block:', autoFitFontSize, 'pt');
           engine.block.setTextFontSize(textBlock, autoFitFontSize);
+          
           engine.block.setName(textBlock, blockName);
-          engine.block.appendChild(page, textBlock);
 
           console.log(`✅ Created address block at (${startXMm}mm, ${startYMm}mm) size: ${boxWidthMm}mm x ${boxHeightMm}mm, font: ${autoFitFontSize}pt`);
         } else {
           // Individual field - use layout engine positioning
           textContent = sampleData[field.templateField] || `{{${field.templateField}}}`;
           blockName = `vdp:text:${field.templateField}`;
+
+          // CRITICAL: Append to page FIRST before setting text content and font size
+          engine.block.appendChild(page, textBlock);
 
           // Set position (convert mm to points)
           engine.block.setPositionX(textBlock, mmToPoints(field.x));
@@ -216,19 +222,16 @@ async function generateInitialLayout(
           engine.block.setWidth(textBlock, mmToPoints(field.width));
           engine.block.setHeight(textBlock, mmToPoints(field.height));
 
-          // Use replaceText instead of setString for proper text run initialization
+          // Set text content using replaceText
           engine.block.replaceText(textBlock, textContent);
           
-          // Apply font size to entire text block (omit range params for whole-block styling)
+          // Apply font size AFTER block is in scene
           if (field.fontSize) {
             engine.block.setTextFontSize(textBlock, field.fontSize);
           }
 
-          // Store field name(s) in block name for VDP resolution
+          // Store field name for VDP resolution
           engine.block.setName(textBlock, blockName);
-
-          // Add to page
-          engine.block.appendChild(page, textBlock);
 
           console.log(`✅ Created text block: ${blockName} at (${field.x}mm, ${field.y}mm)`);
         }

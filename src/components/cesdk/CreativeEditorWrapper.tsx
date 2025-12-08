@@ -61,6 +61,32 @@ interface CreativeEditorWrapperProps {
 // Helper: Convert mm to points (72 DPI)
 const mmToPoints = (mm: number) => (mm / 25.4) * 72;
 
+// Calculate auto-fit font size based on text content and available box dimensions
+function calculateAutoFitFontSize(
+  textContent: string,
+  boxWidthPt: number,
+  boxHeightPt: number,
+  minFontSize: number = 10,
+  maxFontSize: number = 48
+): number {
+  const lines = textContent.split('\n').filter(Boolean);
+  const lineCount = Math.max(1, lines.length);
+  const longestLine = Math.max(...lines.map(l => l.length), 1);
+  
+  // Height-based calculation: divide available height by line count (with 1.3 line spacing)
+  const heightBasedSize = boxHeightPt / (lineCount * 1.4);
+  
+  // Width-based calculation: rough estimate based on character count
+  // Approximate 0.5-0.6 em per character for most fonts
+  const widthBasedSize = boxWidthPt / (longestLine * 0.55);
+  
+  // Use the smaller of the two to ensure text fits both ways
+  const optimalSize = Math.min(heightBasedSize, widthBasedSize);
+  
+  // Clamp to reasonable range
+  return Math.max(minFontSize, Math.min(maxFontSize, Math.floor(optimalSize)));
+}
+
 // Generate initial layout using hybrid AI system (generate-layout → layout-engine)
 // This properly handles combined address blocks as a single text element
 async function generateInitialLayout(
@@ -149,34 +175,58 @@ async function generateInitialLayout(
           // Store combined field names for VDP resolution
           blockName = `vdp:address_block:${field.combinedFields.join(',')}`;
           console.log('📦 Creating combined address block with fields:', field.combinedFields, '→', fieldValues.length, 'non-empty values');
+
+          // For address blocks, use 80% of label with 10% margin on each side
+          const marginPercent = 0.10;
+          const boxWidthMm = widthMm * 0.80;
+          const boxHeightMm = heightMm * 0.80;
+          const boxWidthPt = mmToPoints(boxWidthMm);
+          const boxHeightPt = mmToPoints(boxHeightMm);
+          const startXMm = widthMm * marginPercent;
+          const startYMm = heightMm * marginPercent;
+
+          // Calculate auto-fit font size based on content and box size
+          const autoFitFontSize = calculateAutoFitFontSize(textContent, boxWidthPt, boxHeightPt);
+          console.log('📏 Auto-fit font size for address block:', autoFitFontSize, 'pt');
+
+          engine.block.setString(textBlock, 'text/text', textContent);
+          engine.block.setPositionX(textBlock, mmToPoints(startXMm));
+          engine.block.setPositionY(textBlock, mmToPoints(startYMm));
+          engine.block.setWidth(textBlock, boxWidthPt);
+          engine.block.setHeight(textBlock, boxHeightPt);
+          engine.block.setFloat(textBlock, 'text/fontSize', autoFitFontSize);
+          engine.block.setName(textBlock, blockName);
+          engine.block.appendChild(page, textBlock);
+
+          console.log(`✅ Created address block at (${startXMm}mm, ${startYMm}mm) size: ${boxWidthMm}mm x ${boxHeightMm}mm, font: ${autoFitFontSize}pt`);
         } else {
-          // Individual field
+          // Individual field - use layout engine positioning
           textContent = sampleData[field.templateField] || `{{${field.templateField}}}`;
           blockName = `vdp:text:${field.templateField}`;
+
+          engine.block.setString(textBlock, 'text/text', textContent);
+
+          // Set position (convert mm to points)
+          engine.block.setPositionX(textBlock, mmToPoints(field.x));
+          engine.block.setPositionY(textBlock, mmToPoints(field.y));
+
+          // Set size
+          engine.block.setWidth(textBlock, mmToPoints(field.width));
+          engine.block.setHeight(textBlock, mmToPoints(field.height));
+
+          // Set font size
+          if (field.fontSize) {
+            engine.block.setFloat(textBlock, 'text/fontSize', field.fontSize);
+          }
+
+          // Store field name(s) in block name for VDP resolution
+          engine.block.setName(textBlock, blockName);
+
+          // Add to page
+          engine.block.appendChild(page, textBlock);
+
+          console.log(`✅ Created text block: ${blockName} at (${field.x}mm, ${field.y}mm)`);
         }
-
-        engine.block.setString(textBlock, 'text/text', textContent);
-
-        // Set position (convert mm to points)
-        engine.block.setPositionX(textBlock, mmToPoints(field.x));
-        engine.block.setPositionY(textBlock, mmToPoints(field.y));
-
-        // Set size
-        engine.block.setWidth(textBlock, mmToPoints(field.width));
-        engine.block.setHeight(textBlock, mmToPoints(field.height));
-
-        // Set font size
-        if (field.fontSize) {
-          engine.block.setFloat(textBlock, 'text/fontSize', field.fontSize);
-        }
-
-        // Store field name(s) in block name for VDP resolution
-        engine.block.setName(textBlock, blockName);
-
-        // Add to page
-        engine.block.appendChild(page, textBlock);
-
-        console.log(`✅ Created text block: ${blockName} at (${field.x}mm, ${field.y}mm)`);
       } catch (blockError) {
         console.error(`❌ Failed to create block for ${field.templateField}:`, blockError);
       }

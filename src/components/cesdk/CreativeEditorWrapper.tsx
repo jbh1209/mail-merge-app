@@ -204,10 +204,26 @@ async function generateInitialLayout(
           // Set text content using replaceText for proper text run initialization
           engine.block.replaceText(textBlock, textContent);
           
-          // Set font size - height will auto-adjust to fit content
-          engine.block.setTextFontSize(textBlock, 24);
+          // Start with a base font size - CE.SDK will auto-size height
+          const baseFontSize = 24;
+          engine.block.setTextFontSize(textBlock, baseFontSize);
           
           engine.block.setName(textBlock, blockName);
+          
+          // --- AUTOMATIC SCALING TO FILL ~80% OF LABEL ---
+          // Read the auto-sized frame dimensions
+          const actualHeight = engine.block.getFrameHeight(textBlock);
+          const targetHeight = boxHeightPt; // 80% of page height
+          
+          // Calculate scale factor (only scale up if text is smaller than target)
+          if (actualHeight > 0 && actualHeight < targetHeight) {
+            const scaleFactor = targetHeight / actualHeight;
+            // Calculate new font size proportionally
+            const newFontSize = baseFontSize * scaleFactor;
+            // Apply the scaled font size (height will auto-adjust)
+            engine.block.setTextFontSize(textBlock, newFontSize);
+            console.log(`📐 Scaled address block: ${baseFontSize}pt → ${newFontSize.toFixed(1)}pt (factor: ${scaleFactor.toFixed(2)})`);
+          }
           
           console.log(`✅ Created address block: Fixed width (${boxWidthMm.toFixed(1)}mm) + Auto height`);
         } else {

@@ -194,7 +194,8 @@ async function generateInitialLayout(
           engine.block.setPositionY(textBlock, mmToPoints(startYMm));
           engine.block.setWidth(textBlock, boxWidthPt);
           engine.block.setHeight(textBlock, boxHeightPt);
-          engine.block.setFloat(textBlock, 'text/fontSize', autoFitFontSize);
+          // Apply font size to ALL existing text characters using the correct CE.SDK API
+          engine.block.setTextFontSize(textBlock, autoFitFontSize, 0, textContent.length);
           engine.block.setName(textBlock, blockName);
           engine.block.appendChild(page, textBlock);
 
@@ -214,9 +215,9 @@ async function generateInitialLayout(
           engine.block.setWidth(textBlock, mmToPoints(field.width));
           engine.block.setHeight(textBlock, mmToPoints(field.height));
 
-          // Set font size
+          // Apply font size to ALL existing text characters using the correct CE.SDK API
           if (field.fontSize) {
-            engine.block.setFloat(textBlock, 'text/fontSize', field.fontSize);
+            engine.block.setTextFontSize(textBlock, field.fontSize, 0, textContent.length);
           }
 
           // Store field name(s) in block name for VDP resolution

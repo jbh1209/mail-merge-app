@@ -123,10 +123,11 @@ export default function TemplateEditor() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
-  // Extract sample data from data source
+  // Extract sample data from data source - get ALL rows for record navigation
   const parsedFields = dataSource?.parsed_fields as { rows?: any[]; preview?: any[]; columns?: string[] } | null;
   const sampleRows = parsedFields?.rows || parsedFields?.preview || [];
-  const sampleData: Record<string, string> = sampleRows[0] || {};
+  const allSampleData: Record<string, string>[] = sampleRows.map((row: any) => row as Record<string, string>);
+  const sampleData: Record<string, string> = allSampleData[0] || {};
   
   // Get available field names from data source columns or field mappings
   const availableFields: string[] = 
@@ -225,6 +226,7 @@ export default function TemplateEditor() {
           key={`${templateId}-${availableFields.length}`}
           availableFields={availableFields}
           sampleData={sampleData}
+          allSampleData={allSampleData}
           initialScene={initialScene}
           onSave={handleSave}
           labelWidth={template.width_mm || 100}

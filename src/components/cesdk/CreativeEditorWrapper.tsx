@@ -46,6 +46,7 @@ function parseBarcodeMetadata(name: string): { type: 'barcode' | 'qrcode'; forma
 interface CreativeEditorWrapperProps {
   availableFields?: string[];
   sampleData?: Record<string, string>;
+  allSampleData?: Record<string, string>[]; // All data rows for record navigation
   initialScene?: string;
   onSave?: (sceneString: string) => void;
   onReady?: (editor: CreativeEditorSDK) => void;
@@ -135,13 +136,19 @@ async function generateInitialLayout(
         let blockName: string;
 
         if (field.fieldType === 'address_block' && field.combinedFields && field.combinedFields.length > 0) {
-          // Combined address block: join all field values with newlines
-          textContent = field.combinedFields
-            .map(fieldName => sampleData[fieldName] || `{{${fieldName}}}`)
-            .join('\n');
+          // Combined address block: join all field values with newlines, filtering empty values
+          const fieldValues = field.combinedFields
+            .map(fieldName => sampleData[fieldName] || '')
+            .filter(Boolean); // Remove empty lines
+          
+          // If we have actual data, use it; otherwise show a preview placeholder
+          textContent = fieldValues.length > 0 
+            ? fieldValues.join('\n')
+            : field.combinedFields.map(f => `{{${f}}}`).join('\n');
+          
           // Store combined field names for VDP resolution
           blockName = `vdp:address_block:${field.combinedFields.join(',')}`;
-          console.log('📦 Creating combined address block with fields:', field.combinedFields);
+          console.log('📦 Creating combined address block with fields:', field.combinedFields, '→', fieldValues.length, 'non-empty values');
         } else {
           // Individual field
           textContent = sampleData[field.templateField] || `{{${field.templateField}}}`;
@@ -186,6 +193,7 @@ async function generateInitialLayout(
 export function CreativeEditorWrapper({
   availableFields = [],
   sampleData = {},
+  allSampleData = [],
   initialScene,
   onSave,
   onReady,
@@ -201,6 +209,11 @@ export function CreativeEditorWrapper({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [layoutStatus, setLayoutStatus] = useState<string | null>(null);
+  
+  // Record navigation state
+  const totalRecords = allSampleData.length || (Object.keys(sampleData).length > 0 ? 1 : 0);
+  const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
+  const currentSampleData = allSampleData[currentRecordIndex] || sampleData;
   
   // State for barcode/QR config panel
   const [configPanelOpen, setConfigPanelOpen] = useState(false);
@@ -536,31 +549,41 @@ export function CreativeEditorWrapper({
     };
   }, [licenseKey, labelWidth, labelHeight]);
 
-  // Update variables when sample data changes
+  // Update text content when record changes
   useEffect(() => {
-    if (!editorRef.current || Object.keys(sampleData).length === 0) return;
+    if (!editorRef.current || Object.keys(currentSampleData).length === 0) return;
 
     const engine = editorRef.current.engine;
     
-    // Find all text blocks and update variable values
+    // Find all text blocks and update with current record's data
     try {
       const textBlocks = engine.block.findByType('//ly.img.ubq/text');
       textBlocks.forEach((blockId) => {
-        const text = engine.block.getString(blockId, 'text/text');
-        // Replace {{fieldName}} with actual values for preview
-        let updatedText = text;
-        Object.entries(sampleData).forEach(([key, value]) => {
-          const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-          updatedText = updatedText.replace(regex, value);
-        });
-        if (updatedText !== text) {
-          engine.block.setString(blockId, 'text/text', updatedText);
+        const blockName = engine.block.getName(blockId);
+        
+        if (blockName.startsWith('vdp:address_block:')) {
+          // Combined address block - extract field names and rebuild content
+          const fieldNamesStr = blockName.replace('vdp:address_block:', '');
+          const fieldNames = fieldNamesStr.split(',');
+          const newContent = fieldNames
+            .map(fieldName => currentSampleData[fieldName] || '')
+            .filter(Boolean)
+            .join('\n');
+          
+          if (newContent) {
+            engine.block.setString(blockId, 'text/text', newContent);
+          }
+        } else if (blockName.startsWith('vdp:text:')) {
+          // Individual field
+          const fieldName = blockName.replace('vdp:text:', '');
+          const value = currentSampleData[fieldName] || `{{${fieldName}}}`;
+          engine.block.setString(blockId, 'text/text', value);
         }
       });
     } catch (e) {
-      console.warn('Failed to update variables:', e);
+      console.warn('Failed to update record preview:', e);
     }
-  }, [sampleData]);
+  }, [currentRecordIndex, currentSampleData]);
 
   // Handle barcode/QR config changes
   const handleBarcodeConfigConfirm = useCallback((config: BarcodeConfig) => {
@@ -606,6 +629,15 @@ export function CreativeEditorWrapper({
     );
   }
 
+  // Record navigation handlers
+  const goToPreviousRecord = useCallback(() => {
+    setCurrentRecordIndex(prev => Math.max(0, prev - 1));
+  }, []);
+
+  const goToNextRecord = useCallback(() => {
+    setCurrentRecordIndex(prev => Math.min(totalRecords - 1, prev + 1));
+  }, [totalRecords]);
+
   return (
     <div className="relative h-full w-full">
       {(isLoading || layoutStatus) && (
@@ -618,6 +650,32 @@ export function CreativeEditorWrapper({
           </div>
         </div>
       )}
+      
+      {/* Record Navigation Bar */}
+      {totalRecords > 1 && !isLoading && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-card border rounded-lg shadow-lg px-3 py-2">
+          <button
+            onClick={goToPreviousRecord}
+            disabled={currentRecordIndex === 0}
+            className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Previous record"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <span className="text-sm font-medium tabular-nums min-w-[80px] text-center">
+            Record {currentRecordIndex + 1} of {totalRecords}
+          </span>
+          <button
+            onClick={goToNextRecord}
+            disabled={currentRecordIndex === totalRecords - 1}
+            className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Next record"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      )}
+      
       <div ref={containerRef} className="h-full w-full" />
       
       {/* Barcode/QR Configuration Panel */}

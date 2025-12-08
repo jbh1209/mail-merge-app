@@ -189,11 +189,14 @@ async function generateInitialLayout(
           const autoFitFontSize = calculateAutoFitFontSize(textContent, boxWidthPt, boxHeightPt);
           console.log('📏 Auto-fit font size for address block:', autoFitFontSize, 'pt');
 
-          engine.block.setString(textBlock, 'text/text', textContent);
+          // Set position and size first
           engine.block.setPositionX(textBlock, mmToPoints(startXMm));
           engine.block.setPositionY(textBlock, mmToPoints(startYMm));
           engine.block.setWidth(textBlock, boxWidthPt);
           engine.block.setHeight(textBlock, boxHeightPt);
+          
+          // Use replaceText instead of setString for proper text run initialization
+          engine.block.replaceText(textBlock, textContent);
           // Apply font size to ALL existing text characters using the correct CE.SDK API
           engine.block.setTextFontSize(textBlock, autoFitFontSize, 0, textContent.length);
           engine.block.setName(textBlock, blockName);
@@ -205,8 +208,6 @@ async function generateInitialLayout(
           textContent = sampleData[field.templateField] || `{{${field.templateField}}}`;
           blockName = `vdp:text:${field.templateField}`;
 
-          engine.block.setString(textBlock, 'text/text', textContent);
-
           // Set position (convert mm to points)
           engine.block.setPositionX(textBlock, mmToPoints(field.x));
           engine.block.setPositionY(textBlock, mmToPoints(field.y));
@@ -215,6 +216,9 @@ async function generateInitialLayout(
           engine.block.setWidth(textBlock, mmToPoints(field.width));
           engine.block.setHeight(textBlock, mmToPoints(field.height));
 
+          // Use replaceText instead of setString for proper text run initialization
+          engine.block.replaceText(textBlock, textContent);
+          
           // Apply font size to ALL existing text characters using the correct CE.SDK API
           if (field.fontSize) {
             engine.block.setTextFontSize(textBlock, field.fontSize, 0, textContent.length);
@@ -622,13 +626,15 @@ export function CreativeEditorWrapper({
             .join('\n');
           
           if (newContent) {
-            engine.block.setString(blockId, 'text/text', newContent);
+            // Use replaceText for proper text run handling
+            engine.block.replaceText(blockId, newContent);
           }
         } else if (blockName.startsWith('vdp:text:')) {
           // Individual field
           const fieldName = blockName.replace('vdp:text:', '');
           const value = currentSampleData[fieldName] || `{{${fieldName}}}`;
-          engine.block.setString(blockId, 'text/text', value);
+          // Use replaceText for proper text run handling
+          engine.block.replaceText(blockId, value);
         }
       });
     } catch (e) {

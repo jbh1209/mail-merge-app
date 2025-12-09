@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import CreativeEditorSDK, { Configuration, AssetSource, AssetResult, AssetsQueryResult } from '@cesdk/cesdk-js';
 import { Loader2 } from 'lucide-react';
 import { createBarcodeAssetSource } from './barcodeAssetSource';
+import { createSequenceAssetSource, SequenceConfig, parseSequenceMetadata, formatSequenceNumber, createSequenceBlockName } from './sequenceAssetSource';
+import { SequenceConfigDialog } from '@/components/canvas/SequenceConfigDialog';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
@@ -302,6 +304,9 @@ export function CreativeEditorWrapper({
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null);
   const [selectedBlockType, setSelectedBlockType] = useState<'barcode' | 'qrcode'>('barcode');
   const [initialBarcodeConfig, setInitialBarcodeConfig] = useState<Partial<BarcodeConfig>>({});
+  
+  // State for sequence config dialog
+  const [sequenceDialogOpen, setSequenceDialogOpen] = useState(false);
 
   // Export function exposed to parent components
   const handleExport = useCallback(async (options?: Partial<ExportOptions>) => {
@@ -557,6 +562,11 @@ export function CreativeEditorWrapper({
           availableFields,
           sampleData,
         }, cesdk.engine));
+        
+        // Register sequence asset source
+        cesdk.engine.asset.addSource(createSequenceAssetSource(() => {
+          setSequenceDialogOpen(true);
+        }));
 
         // Create a new design or load existing scene
         if (initialScene) {
@@ -647,9 +657,9 @@ export function CreativeEditorWrapper({
     };
   }, [licenseKey, labelWidth, labelHeight]);
 
-  // Update text content when record changes
+  // Update text content when record changes (including sequences)
   useEffect(() => {
-    if (!editorRef.current || Object.keys(currentSampleData).length === 0) return;
+    if (!editorRef.current) return;
 
     const engine = editorRef.current.engine;
     
@@ -659,7 +669,14 @@ export function CreativeEditorWrapper({
       textBlocks.forEach((blockId) => {
         const blockName = engine.block.getName(blockId);
         
-        if (blockName.startsWith('vdp:address_block:')) {
+        if (blockName.startsWith('vdp:sequence:')) {
+          // Sequential number block - calculate value based on record index
+          const seqConfig = parseSequenceMetadata(blockName);
+          if (seqConfig) {
+            const formattedValue = formatSequenceNumber(seqConfig, currentRecordIndex);
+            engine.block.replaceText(blockId, formattedValue);
+          }
+        } else if (blockName.startsWith('vdp:address_block:')) {
           // Combined address block - extract field names and rebuild content
           const fieldNamesStr = blockName.replace('vdp:address_block:', '');
           const fieldNames = fieldNamesStr.split(',');
@@ -669,14 +686,12 @@ export function CreativeEditorWrapper({
             .join('\n');
           
           if (newContent) {
-            // Use replaceText for proper text run handling
             engine.block.replaceText(blockId, newContent);
           }
         } else if (blockName.startsWith('vdp:text:')) {
           // Individual field
           const fieldName = blockName.replace('vdp:text:', '');
           const value = currentSampleData[fieldName] || `{{${fieldName}}}`;
-          // Use replaceText for proper text run handling
           engine.block.replaceText(blockId, value);
         }
       });
@@ -717,6 +732,51 @@ export function CreativeEditorWrapper({
     setSelectedBlockId(null);
     setConfigPanelOpen(false);
   }, [selectedBlockId]);
+
+  // Handle sequence config confirm - create text block with sequence
+  const handleSequenceConfirm = useCallback((config: any) => {
+    if (!editorRef.current) return;
+    
+    const engine = editorRef.current.engine;
+    const pages = engine.scene.getPages();
+    if (pages.length === 0) return;
+    
+    const page = pages[0];
+    
+    // Extract sequence config from the config object
+    const seqConfig: SequenceConfig = {
+      start: config.typeConfig?.sequenceStart || 1,
+      prefix: config.typeConfig?.sequencePrefix || '',
+      suffix: config.typeConfig?.sequenceSuffix || '',
+      padding: config.typeConfig?.sequencePadding || 4,
+    };
+    
+    // Create formatted preview value
+    const displayValue = formatSequenceNumber(seqConfig, currentRecordIndex);
+    
+    // Create text block
+    const textBlock = engine.block.create('//ly.img.ubq/text');
+    engine.block.setString(textBlock, 'text/text', displayValue);
+    
+    // Store sequence config in block name
+    engine.block.setName(textBlock, createSequenceBlockName(seqConfig));
+    
+    // Set reasonable default size and position (center of page)
+    const pageWidth = engine.block.getWidth(page);
+    const pageHeight = engine.block.getHeight(page);
+    engine.block.setWidth(textBlock, Math.min(150, pageWidth * 0.6));
+    engine.block.setHeight(textBlock, 30);
+    engine.block.setPositionX(textBlock, (pageWidth - 150) / 2);
+    engine.block.setPositionY(textBlock, (pageHeight - 30) / 2);
+    
+    // Add to page
+    engine.block.appendChild(page, textBlock);
+    
+    // Select the new block
+    engine.block.setSelected(textBlock, true);
+    
+    setSequenceDialogOpen(false);
+  }, [currentRecordIndex]);
 
   if (error) {
     return (
@@ -786,6 +846,14 @@ export function CreativeEditorWrapper({
         availableFields={availableFields}
         initialConfig={initialBarcodeConfig}
         type={selectedBlockType}
+      />
+      
+      {/* Sequence Configuration Dialog */}
+      <SequenceConfigDialog
+        open={sequenceDialogOpen}
+        onOpenChange={setSequenceDialogOpen}
+        onConfirm={handleSequenceConfirm}
+        templateSize={{ width: labelWidth, height: labelHeight }}
       />
     </div>
   );

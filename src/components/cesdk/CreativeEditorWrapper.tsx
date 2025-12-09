@@ -482,8 +482,29 @@ export function CreativeEditorWrapper({
                       icon: () => 'https://img.icons8.com/ios/50/barcode.png',
                       title: () => 'Barcodes & QR',
                     };
+
+                    // Add a custom "Sequences" section
+                    const sequencesEntry = {
+                      id: 'sequences',
+                      sourceIds: ['sequences'],
+                      previewLength: 1,
+                      gridColumns: 1,
+                      gridItemHeight: 'auto' as const,
+                      cardLabel: (asset: AssetResult) => asset.label || asset.id,
+                      cardLabelStyle: () => ({
+                        height: '24px',
+                        width: '100%',
+                        fontSize: '11px',
+                        textAlign: 'center' as const,
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap' as const,
+                        textOverflow: 'ellipsis',
+                      }),
+                      icon: () => 'https://img.icons8.com/ios/50/123.png',
+                      title: () => 'Sequential Numbers',
+                    };
                     
-                    return [dataFieldsEntry, barcodesEntry, ...defaultEntries];
+                    return [dataFieldsEntry, barcodesEntry, sequencesEntry, ...defaultEntries];
                   },
                 },
               },

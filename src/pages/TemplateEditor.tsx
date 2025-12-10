@@ -2,10 +2,12 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, FileDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { useState, useCallback, useEffect } from 'react';
-import CreativeEditorWrapper from '@/components/cesdk/CreativeEditorWrapper';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import CreativeEditorWrapper, { CesdkEditorHandle } from '@/components/cesdk/CreativeEditorWrapper';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
 
 export default function TemplateEditor() {
   const { projectId, templateId } = useParams<{ projectId: string; templateId: string }>();
@@ -13,6 +15,10 @@ export default function TemplateEditor() {
   const queryClient = useQueryClient();
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
+  
+  // Ref to store CE.SDK handle for imperative save
+  const editorHandleRef = useRef<CesdkEditorHandle | null>(null);
 
   // Fetch template details
   const { data: template, isLoading: templateLoading } = useQuery({
@@ -103,13 +109,76 @@ export default function TemplateEditor() {
     },
   });
 
-  // Handle save from CE.SDK
+  // Handle save from CE.SDK callback
   const handleSave = useCallback((sceneString: string) => {
     setIsSaving(true);
     saveMutation.mutate(sceneString, {
       onSettled: () => setIsSaving(false),
     });
   }, [saveMutation]);
+
+  // Manual save button click - triggers save via handle
+  const handleManualSave = useCallback(async () => {
+    if (!editorHandleRef.current) {
+      toast.error('Editor not ready');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await editorHandleRef.current.saveScene();
+    } catch (error) {
+      console.error('Manual save error:', error);
+      toast.error('Failed to save');
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
+
+  // Auto-save before navigating away
+  const autoSaveAndNavigate = useCallback(async () => {
+    if (hasUnsavedChanges && editorHandleRef.current) {
+      try {
+        setIsSaving(true);
+        await editorHandleRef.current.saveScene();
+        toast.success('Design auto-saved');
+      } catch (error) {
+        console.error('Auto-save error:', error);
+        // Still navigate even if save fails - user was warned
+      } finally {
+        setIsSaving(false);
+      }
+    }
+    navigate(`/projects/${projectId}`);
+  }, [hasUnsavedChanges, navigate, projectId]);
+
+  // Handle Generate PDFs click - auto-save first, then open dialog
+  const handleGeneratePdfs = useCallback(async () => {
+    // Auto-save before generating PDFs
+    if (hasUnsavedChanges && editorHandleRef.current) {
+      try {
+        setIsSaving(true);
+        await editorHandleRef.current.saveScene();
+        toast.success('Design saved before export');
+      } catch (error) {
+        console.error('Save before export error:', error);
+        toast.error('Failed to save before export');
+        return;
+      } finally {
+        setIsSaving(false);
+      }
+    }
+    setPdfDialogOpen(true);
+  }, [hasUnsavedChanges]);
+
+  // Track when scene changes
+  const handleSceneChange = useCallback((hasChanges: boolean) => {
+    setHasUnsavedChanges(hasChanges);
+  }, []);
+
+  // Store editor handle when ready
+  const handleEditorReady = useCallback((handle: CesdkEditorHandle) => {
+    editorHandleRef.current = handle;
+  }, []);
 
   // Warn user about unsaved changes
   useEffect(() => {
@@ -171,16 +240,8 @@ export default function TemplateEditor() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              if (hasUnsavedChanges) {
-                if (confirm('You have unsaved changes. Are you sure you want to leave?')) {
-                  navigate(`/projects/${projectId}`);
-                }
-              } else {
-                navigate(`/projects/${projectId}`);
-              }
-            }}
-            title="Back to project"
+            onClick={autoSaveAndNavigate}
+            title="Save and go back"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -208,15 +269,35 @@ export default function TemplateEditor() {
               {template.width_mm}×{template.height_mm}mm
             </span>
           )}
-          {isSaving && (
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Saving...</span>
-            </div>
-          )}
+          
           {hasUnsavedChanges && !isSaving && (
-            <span className="text-xs text-amber-500">Unsaved changes</span>
+            <span className="text-xs text-amber-500 hidden sm:inline">Unsaved</span>
           )}
+          
+          {/* Save Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleManualSave}
+            disabled={isSaving || !editorHandleRef.current}
+          >
+            {isSaving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            <span className="ml-1.5 hidden sm:inline">Save</span>
+          </Button>
+          
+          {/* Generate PDFs Button - Prominent */}
+          <Button
+            size="sm"
+            onClick={handleGeneratePdfs}
+            disabled={!editorHandleRef.current || allSampleData.length === 0}
+          >
+            <FileDown className="h-4 w-4" />
+            <span className="ml-1.5">Generate PDFs</span>
+          </Button>
         </div>
       </header>
 
@@ -229,6 +310,8 @@ export default function TemplateEditor() {
           allSampleData={allSampleData}
           initialScene={initialScene}
           onSave={handleSave}
+          onSceneChange={handleSceneChange}
+          onReady={handleEditorReady}
           labelWidth={template.width_mm || 100}
           labelHeight={template.height_mm || 50}
           bleedMm={template.bleed_mm || 0}
@@ -236,6 +319,33 @@ export default function TemplateEditor() {
           templateType={template.template_type || 'address_label'}
         />
       </main>
+
+      {/* PDF Generation Dialog */}
+      <Dialog open={pdfDialogOpen} onOpenChange={setPdfDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generate PDFs</DialogTitle>
+          </DialogHeader>
+          <CesdkPdfGenerator
+            cesdk={editorHandleRef.current?.cesdk || null}
+            mergeJobId={templateId || ''}
+            dataRecords={allSampleData}
+            templateConfig={{
+              widthMm: template.width_mm || 100,
+              heightMm: template.height_mm || 50,
+              // Full page layouts don't need tiling
+              isFullPage: (template.width_mm || 100) > 150 && (template.height_mm || 50) > 100,
+            }}
+            onComplete={(result) => {
+              setPdfDialogOpen(false);
+              toast.success(`Generated ${result.pageCount} pages`);
+            }}
+            onError={(error) => {
+              toast.error(error);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

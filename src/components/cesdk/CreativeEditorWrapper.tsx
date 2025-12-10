@@ -45,13 +45,20 @@ function parseBarcodeMetadata(name: string): { type: 'barcode' | 'qrcode'; forma
   return null;
 }
 
+// Ref handle exposed to parent for imperative actions
+export interface CesdkEditorHandle {
+  saveScene: () => Promise<string>;
+  cesdk: CreativeEditorSDK;
+}
+
 interface CreativeEditorWrapperProps {
   availableFields?: string[];
   sampleData?: Record<string, string>;
   allSampleData?: Record<string, string>[]; // All data rows for record navigation
   initialScene?: string;
   onSave?: (sceneString: string) => void;
-  onReady?: (editor: CreativeEditorSDK) => void;
+  onSceneChange?: (hasChanges: boolean) => void; // Called when scene is modified
+  onReady?: (handle: CesdkEditorHandle) => void; // Now exposes handle with save method
   licenseKey?: string;
   labelWidth?: number;
   labelHeight?: number;
@@ -280,6 +287,7 @@ export function CreativeEditorWrapper({
   allSampleData = [],
   initialScene,
   onSave,
+  onSceneChange,
   onReady,
   licenseKey,
   labelWidth = 100,
@@ -659,8 +667,22 @@ export function CreativeEditorWrapper({
           }
         });
 
+        // Add history listener to track unsaved changes
+        cesdk.engine.editor.onHistoryUpdated(() => {
+          onSceneChange?.(true);
+        });
+
         setIsLoading(false);
-        onReady?.(cesdk);
+        
+        // Expose handle with save method to parent
+        onReady?.({
+          cesdk,
+          saveScene: async () => {
+            const sceneString = await cesdk.engine.scene.saveToString();
+            onSave?.(sceneString);
+            return sceneString;
+          },
+        });
       } catch (err) {
         console.error('Failed to initialize CE.SDK:', err);
         setError(err instanceof Error ? err.message : 'Failed to initialize editor');

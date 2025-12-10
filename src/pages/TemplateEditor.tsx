@@ -17,6 +17,7 @@ export default function TemplateEditor() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
+  const [currentMergeJobId, setCurrentMergeJobId] = useState<string | null>(null);
   
   // Ref to store CE.SDK handle for imperative save
   const editorHandleRef = useRef<CesdkEditorHandle | null>(null);
@@ -110,6 +111,42 @@ export default function TemplateEditor() {
     },
   });
 
+  // Create merge job mutation
+  const createMergeJobMutation = useMutation({
+    mutationFn: async (totalPages: number) => {
+      // Get user's workspace
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('workspace_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile?.workspace_id) throw new Error('No workspace found');
+      if (!dataSource?.id) throw new Error('No data source found');
+
+      const { data, error } = await supabase
+        .from('merge_jobs')
+        .insert({
+          project_id: projectId!,
+          template_id: templateId!,
+          data_source_id: dataSource.id,
+          workspace_id: profile.workspace_id,
+          status: 'processing',
+          total_pages: totalPages,
+          processed_pages: 0,
+          processing_started_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      return data.id;
+    },
+  });
+
   // Handle save from CE.SDK callback
   const handleSave = useCallback((sceneString: string) => {
     setIsSaving(true);
@@ -152,7 +189,7 @@ export default function TemplateEditor() {
     navigate(`/projects/${projectId}`);
   }, [hasUnsavedChanges, navigate, projectId]);
 
-  // Handle Generate PDFs click - auto-save first, then open dialog
+  // Handle Generate PDFs click - create merge job, auto-save, then open dialog
   const handleGeneratePdfs = useCallback(async () => {
     // Auto-save before generating PDFs
     if (hasUnsavedChanges && editorHandleRef.current) {
@@ -168,8 +205,17 @@ export default function TemplateEditor() {
         setIsSaving(false);
       }
     }
-    setPdfDialogOpen(true);
-  }, [hasUnsavedChanges]);
+
+    // Create merge job before opening dialog
+    try {
+      const mergeJobId = await createMergeJobMutation.mutateAsync(allSampleData.length);
+      setCurrentMergeJobId(mergeJobId);
+      setPdfDialogOpen(true);
+    } catch (error: any) {
+      console.error('Failed to create merge job:', error);
+      toast.error('Failed to start PDF generation: ' + error.message);
+    }
+  }, [hasUnsavedChanges, createMergeJobMutation]);
 
   // Track when scene changes
   const handleSceneChange = useCallback((hasChanges: boolean) => {
@@ -234,6 +280,16 @@ export default function TemplateEditor() {
     );
   }
 
+  // Handle dialog close - clear the current merge job
+  const handleDialogClose = (open: boolean) => {
+    setPdfDialogOpen(open);
+    if (!open) {
+      setCurrentMergeJobId(null);
+      // Refresh merge jobs list on the project page
+      queryClient.invalidateQueries({ queryKey: ['merge-jobs', projectId] });
+    }
+  };
+
   return (
     <div className="flex h-screen w-screen flex-col bg-background">
       {/* Header */}
@@ -295,9 +351,13 @@ export default function TemplateEditor() {
           <Button
             size="sm"
             onClick={handleGeneratePdfs}
-            disabled={!isEditorReady || allSampleData.length === 0}
+            disabled={!isEditorReady || allSampleData.length === 0 || createMergeJobMutation.isPending}
           >
-            <FileDown className="h-4 w-4" />
+            {createMergeJobMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileDown className="h-4 w-4" />
+            )}
             <span className="ml-1.5">Generate PDFs</span>
           </Button>
         </div>
@@ -323,29 +383,31 @@ export default function TemplateEditor() {
       </main>
 
       {/* PDF Generation Dialog */}
-      <Dialog open={pdfDialogOpen} onOpenChange={setPdfDialogOpen}>
+      <Dialog open={pdfDialogOpen} onOpenChange={handleDialogClose}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Generate PDFs</DialogTitle>
           </DialogHeader>
-          <CesdkPdfGenerator
-            cesdk={editorHandleRef.current?.cesdk || null}
-            mergeJobId={templateId || ''}
-            dataRecords={allSampleData}
-            templateConfig={{
-              widthMm: template.width_mm || 100,
-              heightMm: template.height_mm || 50,
-              // Full page layouts don't need tiling
-              isFullPage: (template.width_mm || 100) > 150 && (template.height_mm || 50) > 100,
-            }}
-            onComplete={(result) => {
-              setPdfDialogOpen(false);
-              toast.success(`Generated ${result.pageCount} pages`);
-            }}
-            onError={(error) => {
-              toast.error(error);
-            }}
-          />
+          {currentMergeJobId && (
+            <CesdkPdfGenerator
+              cesdk={editorHandleRef.current?.cesdk || null}
+              mergeJobId={currentMergeJobId}
+              dataRecords={allSampleData}
+              templateConfig={{
+                widthMm: template.width_mm || 100,
+                heightMm: template.height_mm || 50,
+                // Full page layouts don't need tiling
+                isFullPage: (template.width_mm || 100) > 150 && (template.height_mm || 50) > 100,
+              }}
+              onComplete={(result) => {
+                // Don't auto-close - let user download first
+                toast.success(`Generated ${result.pageCount} pages`);
+              }}
+              onError={(error) => {
+                toast.error(error);
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Rocket, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useState } from "react";
+import { Rocket, Loader2, AlertCircle, CheckCircle2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -33,6 +33,11 @@ export function CesdkPdfGenerator({
 }: CesdkPdfGeneratorProps) {
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState<BatchExportProgress | null>(null);
+  const [completed, setCompleted] = useState<{
+    outputUrl: string;
+    pageCount: number;
+  } | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const { toast } = useToast();
 
   const handleGenerate = async () => {
@@ -68,6 +73,13 @@ export function CesdkPdfGenerator({
           title: "PDF generated successfully",
           description: `Created ${result.pageCount} pages`,
         });
+        
+        // Store completed state for download button
+        setCompleted({
+          outputUrl: result.outputUrl,
+          pageCount: result.pageCount || dataRecords.length,
+        });
+        
         onComplete({
           outputUrl: result.outputUrl,
           pageCount: result.pageCount || dataRecords.length,
@@ -85,6 +97,48 @@ export function CesdkPdfGenerator({
       onError(error.message);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!mergeJobId) return;
+
+    setDownloading(true);
+    try {
+      // Get signed URL from edge function
+      const { data, error } = await supabase.functions.invoke('get-download-url', {
+        body: { mergeJobId },
+      });
+
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error('No download URL returned');
+
+      // Fetch the PDF and open in new tab
+      const response = await fetch(data.signedUrl);
+      if (!response.ok) throw new Error('Failed to fetch PDF');
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      // Open in new tab
+      window.open(url, '_blank');
+      
+      // Clean up after a delay
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      
+      toast({
+        title: "Download started",
+        description: "Your PDF is opening in a new tab",
+      });
+    } catch (error: any) {
+      console.error('Download error:', error);
+      toast({
+        title: "Download failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -121,6 +175,46 @@ export function CesdkPdfGenerator({
         return <Loader2 className="h-4 w-4 animate-spin" />;
     }
   };
+
+  // Show completed state with download button
+  if (completed) {
+    return (
+      <Card className="border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/20">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-green-700 dark:text-green-400">
+            <CheckCircle2 className="h-5 w-5" />
+            PDF Generated Successfully!
+          </CardTitle>
+          <CardDescription>
+            Created {completed.pageCount} pages ready for download
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button
+            onClick={handleDownload}
+            disabled={downloading}
+            size="lg"
+            className="w-full"
+          >
+            {downloading ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Opening PDF...
+              </>
+            ) : (
+              <>
+                <Download className="h-5 w-5 mr-2" />
+                Download PDF
+              </>
+            )}
+          </Button>
+          <p className="text-xs text-muted-foreground text-center">
+            You can also access this PDF from the project's Merge Jobs tab
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

@@ -101,12 +101,8 @@ serve(async (req) => {
       throw new Error(`Failed to upload PDF: ${uploadError.message}`);
     }
 
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('generated-pdfs')
-      .getPublicUrl(filename);
-
-    const outputUrl = urlData.publicUrl;
+    // Store filename as output_url (get-download-url will create signed URL)
+    const outputUrl = filename;
 
     // Update merge job
     const { error: updateError } = await supabase

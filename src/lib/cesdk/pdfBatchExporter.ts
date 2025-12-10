@@ -71,6 +71,18 @@ export function calculateAveryLayout(
 }
 
 /**
+ * Helper to load scene from archive blob
+ */
+async function loadFromArchiveBlob(engine: CreativeEditorSDK['engine'], blob: Blob): Promise<void> {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    await engine.scene.loadFromArchiveURL(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
  * Export individual label PDFs from CE.SDK in batches
  */
 async function exportLabelPdfs(
@@ -82,8 +94,8 @@ async function exportLabelPdfs(
   const engine = cesdk.engine;
   const pdfBuffers: ArrayBuffer[] = [];
   
-  // Store original scene
-  const originalScene = await engine.scene.saveToString();
+  // Store original scene as archive (handles embedded assets like barcodes)
+  const originalArchiveBlob = await engine.scene.saveToArchive();
   
   try {
     for (let i = 0; i < dataRecords.length; i++) {
@@ -103,19 +115,19 @@ async function exportLabelPdfs(
       // Get the first page and export as PDF
       const pages = engine.scene.getPages();
       if (pages.length > 0) {
-        const blob = await engine.block.export(pages[0], 'application/pdf');
+        const blob = await engine.block.export(pages[0], { mimeType: 'application/pdf' });
         const buffer = await blob.arrayBuffer();
         pdfBuffers.push(buffer);
       }
       
       // Restore original scene for next iteration
       if (i < dataRecords.length - 1) {
-        await engine.scene.loadFromString(originalScene);
+        await loadFromArchiveBlob(engine, originalArchiveBlob);
       }
     }
   } finally {
     // Restore original scene
-    await engine.scene.loadFromString(originalScene);
+    await loadFromArchiveBlob(engine, originalArchiveBlob);
   }
   
   return pdfBuffers;

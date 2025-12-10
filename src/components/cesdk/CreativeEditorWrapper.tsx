@@ -519,8 +519,8 @@ export function CreativeEditorWrapper({
               navigation: {
                 show: true,
                 action: {
-                  export: true,
-                  save: !!onSave,
+                  export: false,  // Hide CE.SDK export - we have our own button
+                  save: false,    // Hide CE.SDK save - we have our own button
                 },
               },
             },
@@ -600,7 +600,26 @@ export function CreativeEditorWrapper({
         // Create a new design or load existing scene
         if (initialScene) {
           try {
-            await cesdk.engine.scene.loadFromString(initialScene);
+            // Check if scene is saved as archive (base64) or legacy string format
+            if (initialScene.startsWith('archive:')) {
+              // Load from archive blob (handles data URIs like barcodes)
+              const base64 = initialScene.slice(8); // Remove 'archive:' prefix
+              const binaryString = atob(base64);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              const blob = new Blob([bytes], { type: 'application/zip' });
+              const archiveUrl = URL.createObjectURL(blob);
+              try {
+                await cesdk.engine.scene.loadFromArchiveURL(archiveUrl);
+              } finally {
+                URL.revokeObjectURL(archiveUrl);
+              }
+            } else {
+              // Legacy: Load from string
+              await cesdk.engine.scene.loadFromString(initialScene);
+            }
             // Force page dimensions to match template (in case scene was saved with different size)
             const pages = cesdk.engine.scene.getPages();
             if (pages.length > 0) {
@@ -678,9 +697,19 @@ export function CreativeEditorWrapper({
         onReady?.({
           cesdk,
           saveScene: async () => {
-            const sceneString = await cesdk.engine.scene.saveToString();
-            onSave?.(sceneString);
-            return sceneString;
+            // Use saveToArchive to handle data URIs (barcodes, embedded images)
+            const archiveBlob = await cesdk.engine.scene.saveToArchive();
+            // Convert blob to base64 string for storage
+            const arrayBuffer = await archiveBlob.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binaryString = '';
+            for (let i = 0; i < bytes.length; i++) {
+              binaryString += String.fromCharCode(bytes[i]);
+            }
+            const base64 = btoa(binaryString);
+            const archiveString = `archive:${base64}`;
+            onSave?.(archiveString);
+            return archiveString;
           },
         });
       } catch (err) {

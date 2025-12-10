@@ -29,3 +29,6 @@ verify_jwt = true
 
 [functions.diagnose-layout]
 verify_jwt = true
+
+[functions.compose-label-sheet]
+verify_jwt = false

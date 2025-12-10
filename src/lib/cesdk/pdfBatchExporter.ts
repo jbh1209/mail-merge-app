@@ -42,18 +42,26 @@ export function calculateAveryLayout(
   const sheetWidthMm = 215.9;
   const sheetHeightMm = 279.4;
   
-  // Calculate how many labels fit
-  const usableWidth = sheetWidthMm - 12.7 * 2; // 0.5" margins
-  const usableHeight = sheetHeightMm - 12.7 * 2;
+  // Use smaller margins (10mm ~ 0.4")
+  const marginMm = 10;
+  const usableWidth = sheetWidthMm - marginMm * 2;
+  const usableHeight = sheetHeightMm - marginMm * 2;
   
-  const columns = Math.floor(usableWidth / labelWidthMm);
-  const rows = Math.floor(usableHeight / labelHeightMm);
+  // Calculate how many labels fit (ensure at least 1)
+  const columns = Math.max(1, Math.floor(usableWidth / labelWidthMm));
+  const rows = Math.max(1, Math.floor(usableHeight / labelHeightMm));
   
-  // Calculate gaps to center labels
+  console.log(`Layout calc: label ${labelWidthMm}x${labelHeightMm}mm, usable ${usableWidth.toFixed(1)}x${usableHeight.toFixed(1)}mm, grid ${columns}x${rows}`);
+  
+  // Calculate gaps to distribute remaining space
   const totalLabelsWidth = columns * labelWidthMm;
   const totalLabelsHeight = rows * labelHeightMm;
-  const gapXMm = columns > 1 ? (usableWidth - totalLabelsWidth) / (columns - 1) : 0;
-  const gapYMm = rows > 1 ? (usableHeight - totalLabelsHeight) / (rows - 1) : 0;
+  const remainingWidth = usableWidth - totalLabelsWidth;
+  const remainingHeight = usableHeight - totalLabelsHeight;
+  
+  // Distribute remaining space as gaps between labels
+  const gapXMm = columns > 1 ? remainingWidth / (columns - 1) : 0;
+  const gapYMm = rows > 1 ? remainingHeight / (rows - 1) : 0;
   
   return {
     sheetWidthMm,
@@ -63,8 +71,8 @@ export function calculateAveryLayout(
     labelsPerSheet: labelsPerSheet || columns * rows,
     columns,
     rows,
-    marginTopMm: 12.7,
-    marginLeftMm: 12.7,
+    marginTopMm: marginMm,
+    marginLeftMm: marginMm,
     gapXMm,
     gapYMm,
   };
@@ -101,6 +109,11 @@ async function exportLabelPdfs(
     for (let i = 0; i < dataRecords.length; i++) {
       const data = dataRecords[i];
       
+      // Reload original scene BEFORE resolving variables (except first iteration)
+      if (i > 0) {
+        await loadFromArchiveBlob(engine, originalArchiveBlob);
+      }
+      
       // Report progress
       onProgress({
         phase: 'exporting',
@@ -112,21 +125,23 @@ async function exportLabelPdfs(
       // Resolve variables with current data record
       await resolveVariables(engine, data);
       
+      // Force engine to process variable changes
+      engine.editor.addUndoStep();
+      
+      // Small delay to ensure variables are applied before export
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
       // Get the first page and export as PDF
       const pages = engine.scene.getPages();
       if (pages.length > 0) {
         const blob = await engine.block.export(pages[0], { mimeType: 'application/pdf' });
         const buffer = await blob.arrayBuffer();
         pdfBuffers.push(buffer);
-      }
-      
-      // Restore original scene for next iteration
-      if (i < dataRecords.length - 1) {
-        await loadFromArchiveBlob(engine, originalArchiveBlob);
+        console.log(`Exported label ${i + 1} with data:`, Object.keys(data));
       }
     }
   } finally {
-    // Restore original scene
+    // Restore original scene after all exports
     await loadFromArchiveBlob(engine, originalArchiveBlob);
   }
   

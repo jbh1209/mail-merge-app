@@ -113,22 +113,27 @@ export function CesdkPdfGenerator({
       if (error) throw error;
       if (!data?.signedUrl) throw new Error('No download URL returned');
 
-      // Fetch the PDF and open in new tab
+      // Fetch the PDF
       const response = await fetch(data.signedUrl);
       if (!response.ok) throw new Error('Failed to fetch PDF');
       
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       
-      // Open in new tab
-      window.open(url, '_blank');
+      // Create download link and trigger it
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `labels-${mergeJobId.slice(0, 8)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       
       // Clean up after a delay
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       
       toast({
         title: "Download started",
-        description: "Your PDF is opening in a new tab",
+        description: "Your PDF is downloading",
       });
     } catch (error: any) {
       console.error('Download error:', error);

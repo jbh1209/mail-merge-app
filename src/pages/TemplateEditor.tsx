@@ -16,6 +16,7 @@ export default function TemplateEditor() {
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
+  const [isEditorReady, setIsEditorReady] = useState(false);
   
   // Ref to store CE.SDK handle for imperative save
   const editorHandleRef = useRef<CesdkEditorHandle | null>(null);
@@ -178,6 +179,7 @@ export default function TemplateEditor() {
   // Store editor handle when ready
   const handleEditorReady = useCallback((handle: CesdkEditorHandle) => {
     editorHandleRef.current = handle;
+    setIsEditorReady(true);
   }, []);
 
   // Warn user about unsaved changes
@@ -279,7 +281,7 @@ export default function TemplateEditor() {
             variant="outline"
             size="sm"
             onClick={handleManualSave}
-            disabled={isSaving || !editorHandleRef.current}
+            disabled={isSaving || !isEditorReady}
           >
             {isSaving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -293,7 +295,7 @@ export default function TemplateEditor() {
           <Button
             size="sm"
             onClick={handleGeneratePdfs}
-            disabled={!editorHandleRef.current || allSampleData.length === 0}
+            disabled={!isEditorReady || allSampleData.length === 0}
           >
             <FileDown className="h-4 w-4" />
             <span className="ml-1.5">Generate PDFs</span>

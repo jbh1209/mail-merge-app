@@ -30,8 +30,82 @@ export interface BatchExportResult {
   error?: string;
 }
 
+// Database label template type
+export interface LabelTemplate {
+  id: string;
+  brand: string;
+  part_number: string;
+  equivalent_to: string | null;
+  paper_size: string;
+  region: string;
+  label_width_mm: number;
+  label_height_mm: number;
+  label_shape: string;
+  corner_radius_mm: number;
+  columns: number;
+  rows: number;
+  margin_left_mm: number;
+  margin_top_mm: number;
+  spacing_x_mm: number;
+  spacing_y_mm: number;
+  labels_per_sheet: number;
+  gap_x_mm: number;
+  gap_y_mm: number;
+  description: string | null;
+  categories: string[] | null;
+}
+
 /**
- * Calculate Avery layout configuration from label template
+ * Get layout from database label template by part number
+ */
+export async function getLayoutFromTemplate(
+  partNumber: string
+): Promise<AveryLayoutConfig | null> {
+  const { data, error } = await supabase
+    .from('label_templates')
+    .select('*')
+    .eq('part_number', partNumber)
+    .limit(1)
+    .single();
+  
+  if (error || !data) {
+    console.log(`No template found for part number: ${partNumber}`);
+    return null;
+  }
+  
+  const template = data as LabelTemplate;
+  
+  // Determine sheet size from paper_size field
+  let sheetWidthMm = 215.9; // US Letter
+  let sheetHeightMm = 279.4;
+  
+  if (template.paper_size.includes('A4')) {
+    sheetWidthMm = 210;
+    sheetHeightMm = 297;
+  } else if (template.paper_size.includes('A5')) {
+    sheetWidthMm = 148;
+    sheetHeightMm = 210;
+  }
+  
+  console.log(`📋 Using template ${template.brand} ${template.part_number}: ${template.columns}×${template.rows} layout`);
+  
+  return {
+    sheetWidthMm,
+    sheetHeightMm,
+    labelWidthMm: Number(template.label_width_mm),
+    labelHeightMm: Number(template.label_height_mm),
+    labelsPerSheet: template.labels_per_sheet,
+    columns: template.columns,
+    rows: template.rows,
+    marginTopMm: Number(template.margin_top_mm),
+    marginLeftMm: Number(template.margin_left_mm),
+    gapXMm: Number(template.gap_x_mm),
+    gapYMm: Number(template.gap_y_mm),
+  };
+}
+
+/**
+ * Calculate Avery layout configuration from label dimensions (fallback)
  */
 export function calculateAveryLayout(
   labelWidthMm: number,
@@ -51,7 +125,7 @@ export function calculateAveryLayout(
   const columns = Math.max(1, Math.floor(usableWidth / labelWidthMm));
   const rows = Math.max(1, Math.floor(usableHeight / labelHeightMm));
   
-  console.log(`Layout calc: label ${labelWidthMm}x${labelHeightMm}mm, usable ${usableWidth.toFixed(1)}x${usableHeight.toFixed(1)}mm, grid ${columns}x${rows}`);
+  console.log(`📐 Fallback layout calc: label ${labelWidthMm}×${labelHeightMm}mm, usable ${usableWidth.toFixed(1)}×${usableHeight.toFixed(1)}mm, grid ${columns}×${rows}`);
   
   // Calculate gaps to distribute remaining space
   const totalLabelsWidth = columns * labelWidthMm;
@@ -212,6 +286,7 @@ export async function batchExportWithCesdk(
     heightMm: number;
     labelsPerSheet?: number;
     isFullPage?: boolean;
+    averyPartNumber?: string; // NEW: Avery/label part number for exact layout
   },
   mergeJobId: string,
   onProgress: (progress: BatchExportProgress) => void
@@ -254,12 +329,29 @@ export async function batchExportWithCesdk(
       if (error) throw new Error(error.message);
       result = { outputUrl: data.outputUrl, pageCount: data.pageCount };
     } else {
-      // Labels - tile onto sheets
-      const layout = calculateAveryLayout(
-        templateConfig.widthMm,
-        templateConfig.heightMm,
-        templateConfig.labelsPerSheet
-      );
+      // Labels - try to get exact layout from database first
+      let layout: AveryLayoutConfig;
+      
+      if (templateConfig.averyPartNumber) {
+        const dbLayout = await getLayoutFromTemplate(templateConfig.averyPartNumber);
+        if (dbLayout) {
+          layout = dbLayout;
+        } else {
+          // Fallback to calculated layout
+          layout = calculateAveryLayout(
+            templateConfig.widthMm,
+            templateConfig.heightMm,
+            templateConfig.labelsPerSheet
+          );
+        }
+      } else {
+        // No part number - use calculated layout
+        layout = calculateAveryLayout(
+          templateConfig.widthMm,
+          templateConfig.heightMm,
+          templateConfig.labelsPerSheet
+        );
+      }
       
       result = await composeLabelsOnServer(pdfBase64s, layout, mergeJobId, onProgress);
     }

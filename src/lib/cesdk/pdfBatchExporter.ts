@@ -196,8 +196,8 @@ async function exportLabelPdfs(
         message: `Exporting label ${i + 1} of ${dataRecords.length}...`,
       });
       
-      // Resolve variables with current data record
-      await resolveVariables(engine, data);
+      // Resolve variables with current data record (pass recordIndex for sequences)
+      await resolveVariables(engine, data, i);
       
       // Force engine to process variable changes
       engine.editor.addUndoStep();

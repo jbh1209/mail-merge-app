@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { Search, CheckCircle2, Package, FileText, Tag } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Search, CheckCircle2, Package, FileText, Tag, ExternalLink, PlusCircle, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AVERY_LABELS, STANDARD_SIZES, LabelSize } from "@/lib/avery-labels";
+import { supabase } from "@/integrations/supabase/client";
+import { useRegionPreference } from "@/hooks/useRegionPreference";
+import { CustomLabelSizeDialog } from "@/components/CustomLabelSizeDialog";
+import { STANDARD_SIZES, LabelSize } from "@/lib/avery-labels";
 
 interface TemplateLibraryProps {
   onSelect: (template: LabelSize) => void;
@@ -14,20 +18,126 @@ interface TemplateLibraryProps {
 
 export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [showCustomSize, setShowCustomSize] = useState(false);
+  const { formatDimensions } = useRegionPreference();
 
-  const filterTemplates = (templates: LabelSize[]) => {
-    if (!searchQuery) return templates;
+  const { data: dbTemplates, isLoading } = useQuery({
+    queryKey: ['label-templates'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('label_templates')
+        .select('*')
+        .order('part_number');
+      
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const filterDbTemplates = () => {
+    if (!dbTemplates) return [];
+    if (!searchQuery) return dbTemplates;
     const query = searchQuery.toLowerCase();
-    return templates.filter(
+    return dbTemplates.filter(
       t =>
-        t.name.toLowerCase().includes(query) ||
-        t.averyCode?.toLowerCase().includes(query) ||
+        t.part_number.toLowerCase().includes(query) ||
+        t.brand.toLowerCase().includes(query) ||
         t.description?.toLowerCase().includes(query) ||
-        t.useCase?.toLowerCase().includes(query)
+        t.categories?.some(c => c.toLowerCase().includes(query))
     );
   };
 
-  const TemplateCard = ({ template }: { template: LabelSize }) => {
+  const filterStandardSizes = () => {
+    if (!searchQuery) return STANDARD_SIZES;
+    const query = searchQuery.toLowerCase();
+    return STANDARD_SIZES.filter(
+      t =>
+        t.name.toLowerCase().includes(query) ||
+        t.description?.toLowerCase().includes(query)
+    );
+  };
+
+  const filteredDbTemplates = filterDbTemplates();
+  const filteredStandardSizes = filterStandardSizes();
+
+  const handleDbTemplateSelect = (template: typeof dbTemplates[0]) => {
+    onSelect({
+      id: template.id,
+      name: `${template.brand} ${template.part_number}`,
+      width_mm: template.label_width_mm,
+      height_mm: template.label_height_mm,
+      labelsPerSheet: template.labels_per_sheet ?? undefined,
+      averyCode: template.part_number,
+      description: template.description ?? undefined,
+      useCase: template.categories?.join(", "),
+      category: "avery",
+    });
+  };
+
+  const handleCustomSizeSubmit = (size: { width_mm: number; height_mm: number; labelsPerSheet?: number; paperSize: string }) => {
+    onSelect({
+      id: `custom-${Date.now()}`,
+      name: "Custom Size",
+      width_mm: size.width_mm,
+      height_mm: size.height_mm,
+      labelsPerSheet: size.labelsPerSheet,
+      description: `${size.paperSize} sheet`,
+      category: "custom",
+    });
+  };
+
+  const DbTemplateCard = ({ template }: { template: typeof dbTemplates[0] }) => {
+    const isSelected = selectedId === template.id;
+    
+    return (
+      <Card 
+        className={`cursor-pointer transition-all hover:shadow-md ${
+          isSelected ? "ring-2 ring-primary" : ""
+        }`}
+        onClick={() => handleDbTemplateSelect(template)}
+      >
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <CardTitle className="text-base flex items-center gap-2">
+                {template.brand} {template.part_number}
+                {isSelected && <CheckCircle2 className="h-4 w-4 text-primary" />}
+              </CardTitle>
+              <CardDescription className="text-xs mt-1">
+                {template.region} • {template.paper_size}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex gap-2 text-xs text-muted-foreground flex-wrap">
+            <Badge variant="outline" className="font-mono">
+              {formatDimensions(template.label_width_mm, template.label_height_mm)}
+            </Badge>
+            {template.labels_per_sheet && (
+              <Badge variant="secondary">
+                {template.labels_per_sheet} per sheet
+              </Badge>
+            )}
+            <Badge variant="outline">
+              {template.columns}×{template.rows}
+            </Badge>
+          </div>
+          {template.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2">{template.description}</p>
+          )}
+          {template.categories && template.categories.length > 0 && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Tag className="h-3 w-3" />
+              <span className="truncate">{template.categories.slice(0, 2).join(", ")}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const StandardTemplateCard = ({ template }: { template: LabelSize }) => {
     const isSelected = selectedId === template.id;
     
     return (
@@ -44,18 +154,13 @@ export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) 
                 {template.name}
                 {isSelected && <CheckCircle2 className="h-4 w-4 text-primary" />}
               </CardTitle>
-              {template.averyCode && (
-                <CardDescription className="text-xs mt-1">
-                  Avery {template.averyCode}
-                </CardDescription>
-              )}
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex gap-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="font-mono">
-              {template.width_mm}mm × {template.height_mm}mm
+              {formatDimensions(template.width_mm, template.height_mm)}
             </Badge>
             {template.labelsPerSheet && (
               <Badge variant="secondary">
@@ -66,23 +171,47 @@ export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) 
           {template.description && (
             <p className="text-xs text-muted-foreground">{template.description}</p>
           )}
-          {template.useCase && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Tag className="h-3 w-3" />
-              <span>{template.useCase}</span>
-            </div>
-          )}
         </CardContent>
       </Card>
     );
   };
+
+  const NoResultsPanel = () => (
+    <div className="text-center py-8 space-y-4 border rounded-lg bg-muted/30">
+      <p className="text-muted-foreground">
+        No templates found matching "<span className="font-medium">{searchQuery}</span>"
+      </p>
+      
+      <div className="flex flex-col gap-3 max-w-xs mx-auto">
+        <Button variant="outline" asChild>
+          <a 
+            href={`https://www.avery.com/templates/${searchQuery}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Look up "{searchQuery}" on Avery.com
+          </a>
+        </Button>
+        
+        <Button variant="secondary" onClick={() => setShowCustomSize(true)}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Enter Custom Dimensions
+        </Button>
+      </div>
+      
+      <p className="text-xs text-muted-foreground mt-4">
+        Find the label dimensions on the packaging or Avery's website, then enter them manually.
+      </p>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search by name, Avery code, or use case..."
+          placeholder="Search by part number, brand, or use case..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-9"
@@ -93,7 +222,7 @@ export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) 
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="avery" className="flex items-center gap-2">
             <Package className="h-4 w-4" />
-            Avery Labels
+            Label Templates {dbTemplates && `(${dbTemplates.length})`}
           </TabsTrigger>
           <TabsTrigger value="standard" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -102,31 +231,44 @@ export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) 
         </TabsList>
 
         <TabsContent value="avery" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filterTemplates(AVERY_LABELS).map((template) => (
-              <TemplateCard key={template.id} template={template} />
-            ))}
-          </div>
-          {filterTemplates(AVERY_LABELS).length === 0 && (
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredDbTemplates.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredDbTemplates.map((template) => (
+                <DbTemplateCard key={template.id} template={template} />
+              ))}
+            </div>
+          ) : searchQuery ? (
+            <NoResultsPanel />
+          ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No templates found matching "{searchQuery}"
+              No templates available
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="standard" className="space-y-4 mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filterTemplates(STANDARD_SIZES).map((template) => (
-              <TemplateCard key={template.id} template={template} />
-            ))}
-          </div>
-          {filterTemplates(STANDARD_SIZES).length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              No templates found matching "{searchQuery}"
+          {filteredStandardSizes.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredStandardSizes.map((template) => (
+                <StandardTemplateCard key={template.id} template={template} />
+              ))}
             </div>
+          ) : (
+            <NoResultsPanel />
           )}
         </TabsContent>
       </Tabs>
+
+      <CustomLabelSizeDialog
+        open={showCustomSize}
+        onOpenChange={setShowCustomSize}
+        onSubmit={handleCustomSizeSubmit}
+        initialPartNumber={searchQuery || undefined}
+      />
     </div>
   );
 }

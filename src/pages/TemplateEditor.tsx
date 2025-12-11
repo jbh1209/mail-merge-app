@@ -398,6 +398,7 @@ export default function TemplateEditor() {
                 heightMm: template.height_mm || 50,
                 // Full page layouts don't need tiling
                 isFullPage: (template.width_mm || 100) > 150 && (template.height_mm || 50) > 100,
+                averyPartNumber: (template as any).avery_part_number || (template.design_config as any)?.averyCode,
               }}
               onComplete={(result) => {
                 // Don't auto-close - let user download first

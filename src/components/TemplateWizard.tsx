@@ -82,6 +82,7 @@ export function TemplateWizard({
         template_type: "built_in_library",
         width_mm: width,
         height_mm: height,
+        avery_part_number: selectedTemplate.averyCode || null,
         design_config: {
           baseTemplate: selectedTemplate.id,
           averyCode: selectedTemplate.averyCode,

@@ -18,6 +18,7 @@ interface CesdkPdfGeneratorProps {
     heightMm: number;
     labelsPerSheet?: number;
     isFullPage?: boolean;
+    averyPartNumber?: string;
   };
   onComplete: (result: { outputUrl: string; pageCount: number }) => void;
   onError: (error: string) => void;

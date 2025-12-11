@@ -712,6 +712,7 @@ export type Database = {
       templates: {
         Row: {
           ai_layout_suggestions: Json | null
+          avery_part_number: string | null
           bleed_mm: number | null
           created_at: string
           design_config: Json | null
@@ -729,6 +730,7 @@ export type Database = {
         }
         Insert: {
           ai_layout_suggestions?: Json | null
+          avery_part_number?: string | null
           bleed_mm?: number | null
           created_at?: string
           design_config?: Json | null
@@ -746,6 +748,7 @@ export type Database = {
         }
         Update: {
           ai_layout_suggestions?: Json | null
+          avery_part_number?: string | null
           bleed_mm?: number | null
           created_at?: string
           design_config?: Json | null

@@ -473,6 +473,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
                           template_type: 'built_in_library',
                           width_mm: template.width_mm,
                           height_mm: template.height_mm,
+                          avery_part_number: template.averyCode || null,
                           design_config: {
                             baseTemplate: template.id,
                             averyCode: template.averyCode,

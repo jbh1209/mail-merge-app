@@ -14,6 +14,65 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, stripe-signature',
 };
 
+// Helper logging function
+const logStep = (step: string, details?: any) => {
+  const detailsStr = details ? ` - ${JSON.stringify(details)}` : '';
+  console.log(`[STRIPE-WEBHOOK] ${step}${detailsStr}`);
+};
+
+// Find workspace by customer ID with fallbacks
+async function findWorkspaceByCustomer(supabase: any, customerId: string, customerEmail?: string): Promise<string | null> {
+  logStep('Finding workspace for customer', { customerId, customerEmail });
+  
+  // Try 1: Direct lookup by stripe_customer_id
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('id')
+    .eq('stripe_customer_id', customerId)
+    .single();
+
+  if (workspace) {
+    logStep('Found workspace by stripe_customer_id', { workspaceId: workspace.id });
+    return workspace.id;
+  }
+
+  // Try 2: Lookup by customer email -> profile -> workspace
+  if (customerEmail) {
+    logStep('Trying fallback lookup by email', { email: customerEmail });
+    
+    // Get user by email from auth.users via profiles
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('workspace_id, id')
+      .limit(100);
+    
+    if (profiles) {
+      // Get the auth user by email
+      const { data: authData } = await supabase.auth.admin.listUsers();
+      const authUser = authData?.users?.find((u: any) => u.email === customerEmail);
+      
+      if (authUser) {
+        const profile = profiles.find((p: any) => p.id === authUser.id);
+        if (profile?.workspace_id) {
+          logStep('Found workspace by email fallback', { workspaceId: profile.workspace_id });
+          
+          // Update workspace with stripe_customer_id for future lookups
+          await supabase
+            .from('workspaces')
+            .update({ stripe_customer_id: customerId })
+            .eq('id', profile.workspace_id);
+          
+          logStep('Updated workspace with stripe_customer_id');
+          return profile.workspace_id;
+        }
+      }
+    }
+  }
+
+  logStep('No workspace found for customer');
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -22,8 +81,13 @@ Deno.serve(async (req) => {
   const signature = req.headers.get('stripe-signature');
   const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
 
+  logStep('Webhook received', { 
+    hasSignature: !!signature, 
+    hasSecret: !!webhookSecret 
+  });
+
   if (!signature || !webhookSecret) {
-    console.error('Missing signature or webhook secret');
+    logStep('ERROR: Missing signature or webhook secret');
     return new Response('Webhook signature verification failed', { status: 400 });
   }
 
@@ -31,7 +95,7 @@ Deno.serve(async (req) => {
     const body = await req.text();
     const event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
     
-    console.log('Webhook event type:', event.type);
+    logStep('Event verified', { type: event.type, id: event.id });
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -41,25 +105,35 @@ Deno.serve(async (req) => {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
         
-        // Get workspace by stripe customer ID
-        const { data: workspace } = await supabase
-          .from('workspaces')
-          .select('id')
-          .eq('stripe_customer_id', customerId)
-          .single();
+        logStep('Processing subscription event', { 
+          eventType: event.type,
+          subscriptionId: subscription.id, 
+          customerId,
+          status: subscription.status 
+        });
 
-        if (!workspace) {
-          console.error('Workspace not found for customer:', customerId);
+        // Get customer email for fallback lookup
+        const customer = await stripe.customers.retrieve(customerId);
+        const customerEmail = (customer as Stripe.Customer).email || undefined;
+
+        const workspaceId = await findWorkspaceByCustomer(supabase, customerId, customerEmail);
+
+        if (!workspaceId) {
+          logStep('ERROR: Workspace not found for customer', { customerId, customerEmail });
           break;
         }
 
         // Determine tier from price ID
         const priceId = subscription.items.data[0].price.id;
+        logStep('Looking up tier for price', { priceId });
+        
         const { data: tier } = await supabase
           .from('subscription_tiers')
           .select('tier_name, pages_per_month')
           .eq('stripe_price_id', priceId)
           .single();
+
+        logStep('Tier lookup result', { tier });
 
         // Update workspace subscription
         const updateData: any = {
@@ -72,20 +146,27 @@ Deno.serve(async (req) => {
         if (subscription.trial_end) {
           updateData.trial_end_date = new Date(subscription.trial_end * 1000).toISOString();
         } else if (subscription.status === 'active') {
-          // Clear trial if subscription is now active without trial
           updateData.trial_end_date = null;
         }
         
-        await supabase
+        logStep('Updating workspace', { workspaceId, updateData });
+        
+        const { error: updateError } = await supabase
           .from('workspaces')
           .update(updateData)
-          .eq('id', workspace.id);
+          .eq('id', workspaceId);
+
+        if (updateError) {
+          logStep('ERROR: Failed to update workspace', { error: updateError });
+        } else {
+          logStep('Workspace updated successfully');
+        }
 
         // Upsert stripe subscription record
-        await supabase
+        const { error: upsertError } = await supabase
           .from('stripe_subscriptions')
           .upsert({
-            workspace_id: workspace.id,
+            workspace_id: workspaceId,
             stripe_subscription_id: subscription.id,
             stripe_customer_id: customerId,
             status: subscription.status,
@@ -94,7 +175,13 @@ Deno.serve(async (req) => {
             cancel_at_period_end: subscription.cancel_at_period_end,
           });
 
-        console.log('Subscription updated for workspace:', workspace.id);
+        if (upsertError) {
+          logStep('ERROR: Failed to upsert stripe_subscriptions', { error: upsertError });
+        } else {
+          logStep('Stripe subscription record upserted');
+        }
+
+        logStep('Subscription event processed successfully', { workspaceId });
         break;
       }
 
@@ -102,13 +189,17 @@ Deno.serve(async (req) => {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
 
-        const { data: workspace } = await supabase
-          .from('workspaces')
-          .select('id')
-          .eq('stripe_customer_id', customerId)
-          .single();
+        logStep('Processing subscription deletion', { 
+          subscriptionId: subscription.id, 
+          customerId 
+        });
 
-        if (workspace) {
+        const customer = await stripe.customers.retrieve(customerId);
+        const customerEmail = (customer as Stripe.Customer).email || undefined;
+
+        const workspaceId = await findWorkspaceByCustomer(supabase, customerId, customerEmail);
+
+        if (workspaceId) {
           // Downgrade to free tier
           await supabase
             .from('workspaces')
@@ -117,7 +208,7 @@ Deno.serve(async (req) => {
               subscription_status: 'canceled',
               pages_quota: 100,
             })
-            .eq('id', workspace.id);
+            .eq('id', workspaceId);
 
           // Update subscription record
           await supabase
@@ -128,14 +219,14 @@ Deno.serve(async (req) => {
             })
             .eq('stripe_subscription_id', subscription.id);
 
-          console.log('Subscription canceled for workspace:', workspace.id);
+          logStep('Subscription canceled for workspace', { workspaceId });
         }
         break;
       }
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice;
-        console.log('Payment succeeded for invoice:', invoice.id);
+        logStep('Payment succeeded', { invoiceId: invoice.id });
         break;
       }
 
@@ -143,25 +234,37 @@ Deno.serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
 
-        const { data: workspace } = await supabase
-          .from('workspaces')
-          .select('id')
-          .eq('stripe_customer_id', customerId)
-          .single();
+        logStep('Payment failed', { invoiceId: invoice.id, customerId });
 
-        if (workspace) {
+        const customer = await stripe.customers.retrieve(customerId);
+        const customerEmail = (customer as Stripe.Customer).email || undefined;
+
+        const workspaceId = await findWorkspaceByCustomer(supabase, customerId, customerEmail);
+
+        if (workspaceId) {
           await supabase
             .from('workspaces')
             .update({ subscription_status: 'past_due' })
-            .eq('id', workspace.id);
+            .eq('id', workspaceId);
 
-          console.log('Payment failed for workspace:', workspace.id);
+          logStep('Workspace marked as past_due', { workspaceId });
         }
         break;
       }
 
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        logStep('Checkout session completed', { 
+          sessionId: session.id,
+          customerId: session.customer,
+          subscriptionId: session.subscription
+        });
+        // Subscription events will handle the actual update
+        break;
+      }
+
       default:
-        console.log('Unhandled event type:', event.type);
+        logStep('Unhandled event type', { type: event.type });
     }
 
     return new Response(JSON.stringify({ received: true }), {
@@ -169,7 +272,9 @@ Deno.serve(async (req) => {
       status: 200,
     });
   } catch (err) {
-    console.error('Webhook error:', err);
+    logStep('ERROR: Webhook processing failed', { 
+      error: err instanceof Error ? err.message : 'Unknown error' 
+    });
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
     return new Response(
       JSON.stringify({ error: errorMessage }),

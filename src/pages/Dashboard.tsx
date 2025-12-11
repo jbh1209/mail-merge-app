@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState, useCallback } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,52 @@ import { QuotaExceededBanner } from "@/components/QuotaExceededBanner";
 
 export default function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+
+  // Sync subscription status from Stripe
+  const syncSubscription = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      console.log('[Dashboard] Syncing subscription status...');
+      const response = await supabase.functions.invoke('check-subscription');
+      
+      if (response.error) {
+        console.error('[Dashboard] Subscription sync error:', response.error);
+        return;
+      }
+      
+      console.log('[Dashboard] Subscription synced:', response.data);
+      // Refresh profile data to get updated subscription info
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+    } catch (error) {
+      console.error('[Dashboard] Failed to sync subscription:', error);
+    }
+  }, [queryClient]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUserId(user?.id || null);
     });
   }, []);
+
+  // Sync subscription on mount and after checkout redirect
+  useEffect(() => {
+    if (!userId) return;
+    
+    const isSuccess = searchParams.get('success') === 'true';
+    
+    // Always sync on mount, prioritize if coming from checkout
+    syncSubscription();
+    
+    // Clear success param from URL
+    if (isSuccess) {
+      searchParams.delete('success');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [userId, searchParams, setSearchParams, syncSubscription]);
 
   const { data: profile } = useQuery({
     queryKey: ["profile", userId],

@@ -8,14 +8,28 @@ const corsHeaders = {
 
 // XML template sources from glabels-qt repository
 const TEMPLATE_SOURCES = [
+  // Avery templates (primary focus)
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/avery-us-templates.xml', region: 'US' },
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/avery-iso-templates.xml', region: 'EU' },
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/avery-other-templates.xml', region: 'Other' },
+  
+  // Other major brands
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/herma-iso-templates.xml', region: 'EU' },
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/zweckform-iso-templates.xml', region: 'EU' },
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/uline-us-templates.xml', region: 'US' },
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/worldlabel-us-templates.xml', region: 'US' },
   { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/maco-us-templates.xml', region: 'US' },
+  
+  // Additional US sources
+  { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/sheetlabels-us-templates.xml', region: 'US' },
+  { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/misc-us-templates.xml', region: 'US' },
+  
+  // Additional EU/ISO sources
+  { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/misc-iso-templates.xml', region: 'EU' },
+  
+  // Label printer brands
+  { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/dymo-other-templates.xml', region: 'Other' },
+  { url: 'https://raw.githubusercontent.com/jimevins/glabels-qt/master/templates/brother-other-templates.xml', region: 'Other' },
 ];
 
 // Convert various units to mm
@@ -34,11 +48,31 @@ function unitToMm(value: string): number {
   return num * 0.3528;
 }
 
-// Simple XML parsing using regex (Deno doesn't have DOMParser easily)
-function parseTemplates(xml: string, defaultRegion: string): any[] {
-  const templates: any[] = [];
+interface TemplateData {
+  brand: string;
+  part_number: string;
+  equivalent_to: string | null;
+  paper_size: string;
+  region: string;
+  label_width_mm: number;
+  label_height_mm: number;
+  label_shape: string;
+  corner_radius_mm: number;
+  columns: number;
+  rows: number;
+  margin_left_mm: number;
+  margin_top_mm: number;
+  spacing_x_mm: number;
+  spacing_y_mm: number;
+  description: string | null;
+  categories: string[];
+}
+
+// Parse master templates (templates with full Layout data)
+function parseMasterTemplates(xml: string, defaultRegion: string): Map<string, TemplateData> {
+  const masterTemplates = new Map<string, TemplateData>();
   
-  // Match Template elements
+  // Match Template elements with content
   const templateRegex = /<Template\s+([^>]+)>([\s\S]*?)<\/Template>/g;
   let templateMatch;
   
@@ -50,7 +84,6 @@ function parseTemplates(xml: string, defaultRegion: string): any[] {
     const brand = attrs.match(/brand="([^"]+)"/)?.[1] || 'Unknown';
     const part = attrs.match(/part="([^"]+)"/)?.[1];
     const size = attrs.match(/size="([^"]+)"/)?.[1] || 'US-Letter';
-    const equiv = attrs.match(/equiv="([^"]+)"/)?.[1];
     const description = attrs.match(/_description="([^"]+)"/)?.[1] || 
                         attrs.match(/description="([^"]+)"/)?.[1];
     
@@ -108,10 +141,10 @@ function parseTemplates(xml: string, defaultRegion: string): any[] {
       region = 'EU';
     }
     
-    templates.push({
+    const templateData: TemplateData = {
       brand,
       part_number: part,
-      equivalent_to: equiv || null,
+      equivalent_to: null,
       paper_size: size,
       region,
       label_width_mm: unitToMm(width),
@@ -126,10 +159,63 @@ function parseTemplates(xml: string, defaultRegion: string): any[] {
       spacing_y_mm: unitToMm(dy),
       description: description || null,
       categories: ['label'],
+    };
+    
+    masterTemplates.set(part, templateData);
+  }
+  
+  return masterTemplates;
+}
+
+// Parse equivalent templates (self-closing templates with equiv attribute)
+function parseEquivalentTemplates(xml: string, masterTemplates: Map<string, TemplateData>): TemplateData[] {
+  const equivalentTemplates: TemplateData[] = [];
+  
+  // Match self-closing Template elements with equiv attribute
+  // Pattern: <Template brand="X" part="Y" equiv="Z"/>
+  const equivRegex = /<Template\s+([^>]*equiv="[^"]+")[^>]*\/>/g;
+  let match;
+  
+  while ((match = equivRegex.exec(xml)) !== null) {
+    const attrs = match[1];
+    
+    const brand = attrs.match(/brand="([^"]+)"/)?.[1];
+    const part = attrs.match(/part="([^"]+)"/)?.[1];
+    const equiv = attrs.match(/equiv="([^"]+)"/)?.[1];
+    
+    if (!brand || !part || !equiv) continue;
+    
+    // Find the master template
+    const master = masterTemplates.get(equiv);
+    if (!master) {
+      console.log(`Master template not found for equiv: ${equiv} (part: ${part})`);
+      continue;
+    }
+    
+    // Create equivalent template by copying master specs
+    equivalentTemplates.push({
+      ...master,
+      brand,
+      part_number: part,
+      equivalent_to: equiv,
     });
   }
   
-  return templates;
+  return equivalentTemplates;
+}
+
+// Main parsing function
+function parseTemplates(xml: string, defaultRegion: string): TemplateData[] {
+  // First pass: parse master templates
+  const masterTemplates = parseMasterTemplates(xml, defaultRegion);
+  console.log(`Found ${masterTemplates.size} master templates`);
+  
+  // Second pass: parse equivalent templates
+  const equivalentTemplates = parseEquivalentTemplates(xml, masterTemplates);
+  console.log(`Found ${equivalentTemplates.length} equivalent templates`);
+  
+  // Combine all templates
+  return [...masterTemplates.values(), ...equivalentTemplates];
 }
 
 serve(async (req) => {
@@ -163,7 +249,7 @@ serve(async (req) => {
         const xml = await response.text();
         const templates = parseTemplates(xml, source.region);
         
-        console.log(`Parsed ${templates.length} templates from ${source.url}`);
+        console.log(`Parsed ${templates.length} total templates from ${source.url}`);
         
         // Insert templates in batches
         const batchSize = 50;

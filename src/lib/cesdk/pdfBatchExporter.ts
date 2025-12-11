@@ -89,6 +89,7 @@ export async function getLayoutFromTemplate(
   
   console.log(`📋 Using template ${template.brand} ${template.part_number}: ${template.columns}×${template.rows} layout`);
   
+  // Use spacing_x_mm and spacing_y_mm for the gaps between labels (gap_x_mm/gap_y_mm have incorrect values)
   return {
     sheetWidthMm,
     sheetHeightMm,
@@ -99,8 +100,8 @@ export async function getLayoutFromTemplate(
     rows: template.rows,
     marginTopMm: Number(template.margin_top_mm),
     marginLeftMm: Number(template.margin_left_mm),
-    gapXMm: Number(template.gap_x_mm),
-    gapYMm: Number(template.gap_y_mm),
+    gapXMm: Number(template.spacing_x_mm),  // Use spacing_x_mm, not gap_x_mm
+    gapYMm: Number(template.spacing_y_mm),  // Use spacing_y_mm, not gap_y_mm
   };
 }
 

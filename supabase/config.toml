@@ -32,3 +32,6 @@ verify_jwt = true
 
 [functions.compose-label-sheet]
 verify_jwt = false
+
+[functions.import-label-templates]
+verify_jwt = true

@@ -266,6 +266,81 @@ export type Database = {
           },
         ]
       }
+      label_templates: {
+        Row: {
+          brand: string
+          categories: string[] | null
+          columns: number
+          corner_radius_mm: number | null
+          created_at: string | null
+          description: string | null
+          equivalent_to: string | null
+          gap_x_mm: number | null
+          gap_y_mm: number | null
+          id: string
+          label_height_mm: number
+          label_shape: string
+          label_width_mm: number
+          labels_per_sheet: number | null
+          margin_left_mm: number
+          margin_top_mm: number
+          paper_size: string
+          part_number: string
+          region: string
+          rows: number
+          spacing_x_mm: number
+          spacing_y_mm: number
+        }
+        Insert: {
+          brand: string
+          categories?: string[] | null
+          columns: number
+          corner_radius_mm?: number | null
+          created_at?: string | null
+          description?: string | null
+          equivalent_to?: string | null
+          gap_x_mm?: number | null
+          gap_y_mm?: number | null
+          id?: string
+          label_height_mm: number
+          label_shape?: string
+          label_width_mm: number
+          labels_per_sheet?: number | null
+          margin_left_mm: number
+          margin_top_mm: number
+          paper_size: string
+          part_number: string
+          region?: string
+          rows: number
+          spacing_x_mm: number
+          spacing_y_mm: number
+        }
+        Update: {
+          brand?: string
+          categories?: string[] | null
+          columns?: number
+          corner_radius_mm?: number | null
+          created_at?: string | null
+          description?: string | null
+          equivalent_to?: string | null
+          gap_x_mm?: number | null
+          gap_y_mm?: number | null
+          id?: string
+          label_height_mm?: number
+          label_shape?: string
+          label_width_mm?: number
+          labels_per_sheet?: number | null
+          margin_left_mm?: number
+          margin_top_mm?: number
+          paper_size?: string
+          part_number?: string
+          region?: string
+          rows?: number
+          spacing_x_mm?: number
+          spacing_y_mm?: number
+        }
+        Relationships: []
+      }
       merge_jobs: {
         Row: {
           created_at: string

@@ -1,5 +1,6 @@
 import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { generateBarcodeSVG, generateQRCodeSVG } from '@/lib/barcode-svg-utils';
+import { parseSequenceMetadata, formatSequenceNumber } from '@/components/cesdk/sequenceAssetSource';
 
 export interface VariableData {
   [key: string]: string | number | boolean;
@@ -7,20 +8,47 @@ export interface VariableData {
 
 /**
  * Resolve all variables in a CE.SDK scene with actual data values
- * This handles both text variables and barcode/QR code regeneration
+ * Uses direct text replacement (replaceText) to match canvas preview behavior
  */
 export async function resolveVariables(
   engine: CreativeEditorSDK['engine'],
-  data: VariableData
+  data: VariableData,
+  recordIndex: number = 0
 ): Promise<void> {
-  // Set all string variables using CE.SDK's native variable system
-  Object.entries(data).forEach(([key, value]) => {
+  // Find all text blocks and update content based on VDP naming convention
+  const textBlocks = engine.block.findByType('//ly.img.ubq/text');
+  
+  for (const blockId of textBlocks) {
     try {
-      engine.variable.setString(key, String(value));
+      const blockName = engine.block.getName(blockId);
+      
+      if (!blockName) continue;
+      
+      if (blockName.startsWith('vdp:sequence:')) {
+        // Sequential number - calculate based on record index
+        const seqConfig = parseSequenceMetadata(blockName);
+        if (seqConfig) {
+          const value = formatSequenceNumber(seqConfig, recordIndex);
+          engine.block.replaceText(blockId, value);
+        }
+      } else if (blockName.startsWith('vdp:address_block:')) {
+        // Combined address block - multiple fields joined with newlines
+        const fieldNames = blockName.replace('vdp:address_block:', '').split(',');
+        const content = fieldNames
+          .map(f => String(data[f.trim()] || ''))
+          .filter(Boolean)
+          .join('\n');
+        engine.block.replaceText(blockId, content || ' ');
+      } else if (blockName.startsWith('vdp:text:')) {
+        // Individual field
+        const fieldName = blockName.replace('vdp:text:', '');
+        const value = data[fieldName];
+        engine.block.replaceText(blockId, value !== undefined ? String(value) : ' ');
+      }
     } catch (e) {
-      console.warn(`Failed to set variable ${key}:`, e);
+      console.warn(`Failed to update text block ${blockId}:`, e);
     }
-  });
+  }
   
   // Update barcode/QR graphic blocks with resolved values
   await updateBarcodeBlocks(engine, data);
@@ -38,20 +66,43 @@ async function updateBarcodeBlocks(
     const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
     
     for (const blockId of graphicBlocks) {
-      // Check if this block has barcode metadata
-      const metadata = getBarcodeMetadata(engine, blockId);
+      const blockName = engine.block.getName(blockId);
       
-      if (metadata && metadata.isVariable && metadata.variableField) {
-        const fieldValue = data[metadata.variableField];
+      if (!blockName) continue;
+      
+      // Check for barcode naming convention: vdp:barcode:FORMAT:FIELD or vdp:qrcode:FIELD
+      if (blockName.startsWith('vdp:barcode:')) {
+        const parts = blockName.replace('vdp:barcode:', '').split(':');
+        const format = parts[0] || 'code128';
+        const fieldName = parts[1];
         
-        if (fieldValue !== undefined) {
-          // Regenerate the barcode/QR with the actual value
-          const newSvgDataUrl = metadata.barcodeType === 'qrcode'
-            ? generateQRCodeDataUrl(String(fieldValue))
-            : generateBarcodeDataUrl(String(fieldValue), metadata.barcodeFormat || 'code128');
-          
-          // Update the block's image fill
+        if (fieldName && data[fieldName] !== undefined) {
+          const value = String(data[fieldName]);
+          const newSvgDataUrl = generateBarcodeDataUrl(value, format);
           await updateBlockImage(engine, blockId, newSvgDataUrl);
+        }
+      } else if (blockName.startsWith('vdp:qrcode:')) {
+        const fieldName = blockName.replace('vdp:qrcode:', '');
+        
+        if (fieldName && data[fieldName] !== undefined) {
+          const value = String(data[fieldName]);
+          const newSvgDataUrl = generateQRCodeDataUrl(value);
+          await updateBlockImage(engine, blockId, newSvgDataUrl);
+        }
+      } else {
+        // Legacy format: barcode:format:field or qrcode::field
+        const metadata = getBarcodeMetadata(engine, blockId);
+        
+        if (metadata && metadata.isVariable && metadata.variableField) {
+          const fieldValue = data[metadata.variableField];
+          
+          if (fieldValue !== undefined) {
+            const newSvgDataUrl = metadata.barcodeType === 'qrcode'
+              ? generateQRCodeDataUrl(String(fieldValue))
+              : generateBarcodeDataUrl(String(fieldValue), metadata.barcodeFormat || 'code128');
+            
+            await updateBlockImage(engine, blockId, newSvgDataUrl);
+          }
         }
       }
     }
@@ -61,34 +112,23 @@ async function updateBarcodeBlocks(
 }
 
 /**
- * Get barcode metadata from a block's fill
+ * Get barcode metadata from a block's name (legacy format)
  */
 function getBarcodeMetadata(
   engine: CreativeEditorSDK['engine'],
   blockId: number
 ): BarcodeMetadata | null {
   try {
-    // Check if block has image fill
-    const fill = engine.block.getFill(blockId);
-    if (!fill) return null;
+    const name = engine.block.getName(blockId);
     
-    // Try to get the image URI and parse metadata from it
-    const uri = engine.block.getString(fill, 'fill/image/imageFileURI');
-    
-    // Check if this is a barcode data URL with metadata
-    if (uri && uri.includes('data:image/svg+xml')) {
-      // Look for metadata in block name or custom properties
-      const name = engine.block.getName(blockId);
-      
-      if (name?.startsWith('barcode:') || name?.startsWith('qrcode:')) {
-        const [type, format, field] = name.split(':');
-        return {
-          barcodeType: type as 'barcode' | 'qrcode',
-          barcodeFormat: format,
-          variableField: field,
-          isVariable: !!field,
-        };
-      }
+    if (name?.startsWith('barcode:') || name?.startsWith('qrcode:')) {
+      const [type, format, field] = name.split(':');
+      return {
+        barcodeType: type as 'barcode' | 'qrcode',
+        barcodeFormat: format,
+        variableField: field,
+        isVariable: !!field,
+      };
     }
     
     return null;
@@ -148,10 +188,20 @@ export function getUsedVariables(engine: CreativeEditorSDK['engine']): string[] 
   const variables = new Set<string>();
   
   try {
-    // Find text blocks with {{variable}} syntax
+    // Find text blocks with VDP naming
     const textBlocks = engine.block.findByType('//ly.img.ubq/text');
     
     textBlocks.forEach((blockId) => {
+      const name = engine.block.getName(blockId);
+      
+      if (name?.startsWith('vdp:text:')) {
+        variables.add(name.replace('vdp:text:', ''));
+      } else if (name?.startsWith('vdp:address_block:')) {
+        const fields = name.replace('vdp:address_block:', '').split(',');
+        fields.forEach(f => variables.add(f.trim()));
+      }
+      
+      // Also check for {{variable}} syntax in text content
       const text = engine.block.getString(blockId, 'text/text');
       const matches = text.matchAll(/\{\{(\w+)\}\}/g);
       
@@ -160,17 +210,21 @@ export function getUsedVariables(engine: CreativeEditorSDK['engine']): string[] 
       }
     });
     
-    // Find barcode blocks with variable fields
+    // Find barcode/QR blocks with variable fields
     const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
     
     graphicBlocks.forEach((blockId) => {
       const name = engine.block.getName(blockId);
       
-      if (name?.startsWith('barcode:') || name?.startsWith('qrcode:')) {
+      if (name?.startsWith('vdp:barcode:')) {
+        const parts = name.replace('vdp:barcode:', '').split(':');
+        if (parts[1]) variables.add(parts[1]);
+      } else if (name?.startsWith('vdp:qrcode:')) {
+        const field = name.replace('vdp:qrcode:', '');
+        if (field) variables.add(field);
+      } else if (name?.startsWith('barcode:') || name?.startsWith('qrcode:')) {
         const parts = name.split(':');
-        if (parts[2]) {
-          variables.add(parts[2]);
-        }
+        if (parts[2]) variables.add(parts[2]);
       }
     });
   } catch (e) {

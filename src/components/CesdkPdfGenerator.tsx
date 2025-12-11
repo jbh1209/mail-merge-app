@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Rocket, Loader2, AlertCircle, CheckCircle2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { batchExportWithCesdk, BatchExportProgress } from "@/lib/cesdk/pdfBatchExporter";
+import { createPortal } from "react-dom";
 
 interface CesdkPdfGeneratorProps {
   cesdk: CreativeEditorSDK | null;
@@ -222,59 +223,93 @@ export function CesdkPdfGenerator({
     );
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Rocket className="h-5 w-5" />
-          Generate PDFs
-        </CardTitle>
-        <CardDescription>
-          Export {dataRecords.length} labels using your template design
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!cesdk && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Please wait for the editor to initialize before generating PDFs.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {progress && generating && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              {getPhaseIcon()}
-              <span>{progress.message}</span>
-            </div>
-            <Progress value={getProgressPercentage()} className="h-2" />
-            <p className="text-xs text-muted-foreground text-right">
-              {Math.round(getProgressPercentage())}%
+  // Render an overlay during generation to hide the flickering canvas
+  const GeneratingOverlay = () => {
+    if (!generating) return null;
+    
+    return createPortal(
+      <div className="fixed inset-0 z-[100] bg-background/95 backdrop-blur-sm flex items-center justify-center">
+        <Card className="w-[400px] max-w-[90vw] shadow-2xl">
+          <CardHeader className="text-center pb-2">
+            <CardTitle className="flex items-center justify-center gap-2">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              Generating PDFs
+            </CardTitle>
+            <CardDescription>
+              Please wait while we export your labels...
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {progress && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-center gap-2 text-sm font-medium">
+                  {getPhaseIcon()}
+                  <span>{progress.message}</span>
+                </div>
+                <Progress value={getProgressPercentage()} className="h-3" />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>
+                    {progress.phase === 'exporting' && `Label ${progress.current} of ${progress.total}`}
+                    {progress.phase === 'composing' && 'Arranging on sheets...'}
+                    {progress.phase === 'uploading' && 'Finalizing...'}
+                  </span>
+                  <span>{Math.round(getProgressPercentage())}%</span>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-center text-muted-foreground">
+              This may take a moment for large batches
             </p>
-          </div>
-        )}
+          </CardContent>
+        </Card>
+      </div>,
+      document.body
+    );
+  };
 
-        <Button
-          onClick={handleGenerate}
-          disabled={!cesdk || generating || dataRecords.length === 0}
-          size="lg"
-          className="w-full"
-        >
-          {generating ? (
-            <>
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              Generating...
-            </>
-          ) : (
-            <>
-              <Rocket className="h-5 w-5 mr-2" />
-              Generate {dataRecords.length} PDFs
-            </>
+  return (
+    <>
+      <GeneratingOverlay />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Rocket className="h-5 w-5" />
+            Generate PDFs
+          </CardTitle>
+          <CardDescription>
+            Export {dataRecords.length} labels using your template design
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!cesdk && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Please wait for the editor to initialize before generating PDFs.
+              </AlertDescription>
+            </Alert>
           )}
-        </Button>
-      </CardContent>
-    </Card>
+
+          <Button
+            onClick={handleGenerate}
+            disabled={!cesdk || generating || dataRecords.length === 0}
+            size="lg"
+            className="w-full"
+          >
+            {generating ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Rocket className="h-5 w-5 mr-2" />
+                Generate {dataRecords.length} PDFs
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+    </>
   );
 }

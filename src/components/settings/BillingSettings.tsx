@@ -5,14 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Loader2, CreditCard, TrendingUp } from "lucide-react";
+import { Loader2, CreditCard, TrendingUp, RefreshCw } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 export function BillingSettings() {
   const [workspaceId, setWorkspaceId] = useState<string>();
   const [loading, setLoading] = useState(false);
-  const { data: subscription } = useSubscription(workspaceId);
+  const [syncing, setSyncing] = useState(false);
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const { data: subscription, refetch: refetchSubscription } = useSubscription(workspaceId);
 
   const { data: workspace } = useQuery({
     queryKey: ["workspace", workspaceId],
@@ -43,6 +47,50 @@ export function BillingSettings() {
     },
   });
 
+  const checkSubscription = async () => {
+    setSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/check-subscription`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+      
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+
+      if (result.synced) {
+        // Refresh all subscription-related queries
+        await queryClient.invalidateQueries({ queryKey: ["subscription"] });
+        await queryClient.invalidateQueries({ queryKey: ["workspace"] });
+        await refetchSubscription();
+        
+        if (result.subscribed) {
+          toast.success(`Subscription synced: ${result.tier.charAt(0).toUpperCase() + result.tier.slice(1)} plan active`);
+        } else {
+          toast.info("No active subscription found");
+        }
+      }
+    } catch (error: any) {
+      toast.error("Failed to sync subscription");
+      console.error("Check subscription error:", error);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   useEffect(() => {
     const loadWorkspace = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -60,6 +108,20 @@ export function BillingSettings() {
     };
     loadWorkspace();
   }, []);
+
+  // Auto-check subscription after checkout success
+  useEffect(() => {
+    if (searchParams.get("success") === "true" && workspaceId) {
+      checkSubscription();
+    }
+  }, [searchParams, workspaceId]);
+
+  // Check subscription on mount
+  useEffect(() => {
+    if (workspaceId) {
+      checkSubscription();
+    }
+  }, [workspaceId]);
 
   const handleManageBilling = async () => {
     setLoading(true);
@@ -144,9 +206,20 @@ export function BillingSettings() {
               <CardTitle>Current Plan</CardTitle>
               <CardDescription>Your active subscription</CardDescription>
             </div>
-            <Badge variant="outline" className="capitalize">
-              {subscription?.subscription_tier}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="capitalize">
+                {subscription?.subscription_tier}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={checkSubscription}
+                disabled={syncing}
+                title="Refresh subscription status"
+              >
+                <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -160,21 +233,23 @@ export function BillingSettings() {
             <Progress value={usagePercent} className="h-2" />
           </div>
 
-          {workspace?.stripe_customer_id && (
-            <Button
-              onClick={handleManageBilling}
-              disabled={loading}
-              variant="outline"
-              className="w-full"
-            >
-              {loading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CreditCard className="mr-2 h-4 w-4" />
-              )}
-              Manage Billing
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {workspace?.stripe_customer_id && (
+              <Button
+                onClick={handleManageBilling}
+                disabled={loading}
+                variant="outline"
+                className="flex-1"
+              >
+                {loading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <CreditCard className="mr-2 h-4 w-4" />
+                )}
+                Manage Billing
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 

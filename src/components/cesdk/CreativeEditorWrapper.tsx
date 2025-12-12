@@ -65,6 +65,8 @@ interface CreativeEditorWrapperProps {
   bleedMm?: number;
   whiteUnderlayer?: boolean;
   templateType?: string;
+  // Page size can be updated externally (for non-label projects)
+  key?: string; // Forces re-init when dimensions change
 }
 
 // Helper: Convert mm to points (72 DPI)

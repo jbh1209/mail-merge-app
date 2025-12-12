@@ -8,7 +8,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import CreativeEditorWrapper, { CesdkEditorHandle } from '@/components/cesdk/CreativeEditorWrapper';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
-
+import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
 export default function TemplateEditor() {
   const { projectId, templateId } = useParams<{ projectId: string; templateId: string }>();
   const navigate = useNavigate();
@@ -37,13 +37,13 @@ export default function TemplateEditor() {
     enabled: !!templateId,
   });
 
-  // Fetch project details for breadcrumb
+  // Fetch project details for breadcrumb and project type
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('projects')
-        .select('name')
+        .select('name, project_type')
         .eq('id', projectId!)
         .single();
       if (error) throw error;
@@ -108,6 +108,25 @@ export default function TemplateEditor() {
     onError: (error) => {
       console.error('Save error:', error);
       toast.error('Failed to save design');
+    },
+  });
+
+  // Update template dimensions mutation
+  const updateDimensionsMutation = useMutation({
+    mutationFn: async ({ width, height }: { width: number; height: number }) => {
+      const { error } = await supabase
+        .from('templates')
+        .update({ width_mm: width, height_mm: height })
+        .eq('id', templateId!);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['template', templateId] });
+      toast.success('Page size updated');
+    },
+    onError: (error) => {
+      console.error('Failed to update dimensions:', error);
+      toast.error('Failed to update page size');
     },
   });
 
@@ -240,6 +259,14 @@ export default function TemplateEditor() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [hasUnsavedChanges]);
 
+  // Handle page size change from PageSizeControls
+  const handlePageSizeChange = useCallback((width: number, height: number) => {
+    updateDimensionsMutation.mutate({ width, height });
+  }, [updateDimensionsMutation]);
+
+  // Determine if this is a label project (labels use fixed template sizes)
+  const isLabelProject = project?.project_type === 'label';
+
   // Extract sample data from data source - get ALL rows for record navigation
   const parsedFields = dataSource?.parsed_fields as { rows?: any[]; preview?: any[]; columns?: string[] } | null;
   const sampleRows = parsedFields?.rows || parsedFields?.preview || [];
@@ -322,11 +349,18 @@ export default function TemplateEditor() {
         </div>
         
         <div className="flex items-center gap-2">
-          {template.width_mm && template.height_mm && (
+          {/* Page Size Controls - only for non-label projects */}
+          {!isLabelProject && template.width_mm && template.height_mm ? (
+            <PageSizeControls
+              widthMm={template.width_mm}
+              heightMm={template.height_mm}
+              onChange={handlePageSizeChange}
+            />
+          ) : template.width_mm && template.height_mm ? (
             <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
               {template.width_mm}×{template.height_mm}mm
             </span>
-          )}
+          ) : null}
           
           {hasUnsavedChanges && !isSaving && (
             <span className="text-xs text-amber-500 hidden sm:inline">Unsaved</span>
@@ -366,7 +400,7 @@ export default function TemplateEditor() {
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
         <CreativeEditorWrapper
-          key={`${templateId}-${availableFields.length}`}
+          key={`${templateId}-${availableFields.length}-${template.width_mm}-${template.height_mm}`}
           availableFields={availableFields}
           sampleData={sampleData}
           allSampleData={allSampleData}

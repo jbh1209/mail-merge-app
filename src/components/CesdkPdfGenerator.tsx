@@ -10,10 +10,25 @@ import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { batchExportWithCesdk, BatchExportProgress } from "@/lib/cesdk/pdfBatchExporter";
 import { createPortal } from "react-dom";
 
+// Helper to get document terminology based on project type
+const getDocumentName = (type: string, plural = false): string => {
+  const names: Record<string, [string, string]> = {
+    label: ['label', 'labels'],
+    certificate: ['certificate', 'certificates'],
+    card: ['card', 'cards'],
+    badge: ['badge', 'badges'],
+    shelf_strip: ['shelf strip', 'shelf strips'],
+    custom: ['document', 'documents'],
+  };
+  const pair = names[type] || names.custom;
+  return pair[plural ? 1 : 0];
+};
+
 interface CesdkPdfGeneratorProps {
   cesdk: CreativeEditorSDK | null;
   mergeJobId: string;
   dataRecords: Record<string, any>[];
+  projectType?: string;
   templateConfig: {
     widthMm: number;
     heightMm: number;
@@ -29,10 +44,14 @@ export function CesdkPdfGenerator({
   cesdk,
   mergeJobId,
   dataRecords,
+  projectType = 'label',
   templateConfig,
   onComplete,
   onError,
 }: CesdkPdfGeneratorProps) {
+  const docName = getDocumentName(projectType);
+  const docNamePlural = getDocumentName(projectType, true);
+  const isFullPage = templateConfig.isFullPage;
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState<BatchExportProgress | null>(null);
   const [completed, setCompleted] = useState<{
@@ -125,7 +144,7 @@ export function CesdkPdfGenerator({
       // Create download link and trigger it
       const link = document.createElement('a');
       link.href = url;
-      link.download = `labels-${mergeJobId.slice(0, 8)}.pdf`;
+      link.download = `${docNamePlural}-${mergeJobId.slice(0, 8)}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -236,7 +255,7 @@ export function CesdkPdfGenerator({
               Generating PDFs
             </CardTitle>
             <CardDescription>
-              Please wait while we export your labels...
+              Please wait while we export your {docNamePlural}...
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -249,8 +268,8 @@ export function CesdkPdfGenerator({
                 <Progress value={getProgressPercentage()} className="h-3" />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>
-                    {progress.phase === 'exporting' && `Label ${progress.current} of ${progress.total}`}
-                    {progress.phase === 'composing' && 'Arranging on sheets...'}
+                    {progress.phase === 'exporting' && `${docName.charAt(0).toUpperCase() + docName.slice(1)} ${progress.current} of ${progress.total}`}
+                    {progress.phase === 'composing' && (isFullPage ? 'Merging pages...' : 'Arranging on sheets...')}
                     {progress.phase === 'uploading' && 'Finalizing...'}
                   </span>
                   <span>{Math.round(getProgressPercentage())}%</span>
@@ -277,7 +296,7 @@ export function CesdkPdfGenerator({
             Generate PDFs
           </CardTitle>
           <CardDescription>
-            Export {dataRecords.length} labels using your template design
+            Export {dataRecords.length} {docNamePlural} using your template design
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -304,7 +323,7 @@ export function CesdkPdfGenerator({
             ) : (
               <>
                 <Rocket className="h-5 w-5 mr-2" />
-                Generate {dataRecords.length} PDFs
+                Export {dataRecords.length} {docNamePlural}
               </>
             )}
           </Button>

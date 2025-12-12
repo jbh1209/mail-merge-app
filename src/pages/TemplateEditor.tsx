@@ -427,11 +427,12 @@ export default function TemplateEditor() {
               cesdk={editorHandleRef.current?.cesdk || null}
               mergeJobId={currentMergeJobId}
               dataRecords={allSampleData}
+              projectType={project?.project_type || 'label'}
               templateConfig={{
                 widthMm: template.width_mm || 100,
                 heightMm: template.height_mm || 50,
-                // Full page layouts don't need tiling
-                isFullPage: (template.width_mm || 100) > 150 && (template.height_mm || 50) > 100,
+                // Non-label projects are full page (certificates, cards, etc.)
+                isFullPage: project?.project_type !== 'label',
                 averyPartNumber: (template as any).avery_part_number || (template.design_config as any)?.averyCode,
               }}
               onComplete={(result) => {

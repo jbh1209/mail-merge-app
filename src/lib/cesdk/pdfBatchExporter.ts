@@ -166,13 +166,13 @@ async function loadFromArchiveBlob(engine: CreativeEditorSDK['engine'], blob: Bl
 }
 
 /**
- * Export individual label PDFs from CE.SDK in batches
+ * Export individual PDFs from CE.SDK
  */
 async function exportLabelPdfs(
   cesdk: CreativeEditorSDK,
   dataRecords: VariableData[],
   onProgress: (progress: BatchExportProgress) => void,
-  batchSize: number = 25
+  docType: string = 'document'
 ): Promise<ArrayBuffer[]> {
   const engine = cesdk.engine;
   const pdfBuffers: ArrayBuffer[] = [];
@@ -194,7 +194,7 @@ async function exportLabelPdfs(
         phase: 'exporting',
         current: i + 1,
         total: dataRecords.length,
-        message: `Exporting label ${i + 1} of ${dataRecords.length}...`,
+        message: `Exporting ${docType} ${i + 1} of ${dataRecords.length}...`,
       });
       
       // Resolve variables with current data record (pass recordIndex for sequences)
@@ -212,7 +212,7 @@ async function exportLabelPdfs(
         const blob = await engine.block.export(pages[0], { mimeType: 'application/pdf' });
         const buffer = await blob.arrayBuffer();
         pdfBuffers.push(buffer);
-        console.log(`Exported label ${i + 1} with data:`, Object.keys(data));
+        console.log(`Exported ${docType} ${i + 1} with data:`, Object.keys(data));
       }
     }
   } finally {
@@ -293,8 +293,12 @@ export async function batchExportWithCesdk(
   onProgress: (progress: BatchExportProgress) => void
 ): Promise<BatchExportResult> {
   try {
-    // Step 1: Export individual label PDFs
-    const pdfBuffers = await exportLabelPdfs(cesdk, dataRecords, onProgress);
+    // Determine if this is full-page mode (non-label documents like certificates)
+    const isFullPage = templateConfig.isFullPage;
+    const docType = isFullPage ? 'page' : 'label';
+    
+    // Step 1: Export individual PDFs
+    const pdfBuffers = await exportLabelPdfs(cesdk, dataRecords, onProgress, docType);
     
     if (pdfBuffers.length === 0) {
       throw new Error('No PDFs were exported');
@@ -305,20 +309,22 @@ export async function batchExportWithCesdk(
       phase: 'uploading',
       current: 0,
       total: 1,
-      message: 'Preparing labels for composition...',
+      message: isFullPage ? 'Merging pages into final PDF...' : 'Preparing labels for composition...',
     });
     
     const pdfBase64s = arrayBuffersToBase64(pdfBuffers);
-
-    // Step 3: If full-page template (certificates, etc.), just merge pages
-    // If labels, tile onto sheets using Avery layout
-    const isFullPage = templateConfig.isFullPage || 
-      (templateConfig.widthMm >= 200 && templateConfig.heightMm >= 250);
 
     let result: { outputUrl: string; pageCount: number };
 
     if (isFullPage) {
       // Full-page documents - just merge into single PDF
+      onProgress({
+        phase: 'composing',
+        current: 1,
+        total: 1,
+        message: 'Merging pages...',
+      });
+      
       const { data, error } = await supabase.functions.invoke('compose-label-sheet', {
         body: {
           labelPdfs: pdfBase64s,

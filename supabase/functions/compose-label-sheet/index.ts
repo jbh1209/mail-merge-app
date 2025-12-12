@@ -48,35 +48,54 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Decode base64 PDFs to Uint8Array
-    const labelPdfBytes: Uint8Array[] = labelPdfs.map((base64: string) => {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return bytes;
-    });
-
-    let outputPdf: PDFDocument;
-    let pageCount: number;
+    // Process PDFs in chunks to avoid memory issues
+    const CHUNK_SIZE = 25;
+    let outputPdf: PDFDocument = await PDFDocument.create();
+    let pageCount: number = 0;
 
     if (fullPageMode) {
-      // Full page mode - just merge all PDFs into one
-      outputPdf = await PDFDocument.create();
+      // Full page mode - merge PDFs in chunks
+      console.log(`Full page mode: processing ${labelPdfs.length} pages in chunks of ${CHUNK_SIZE}`);
       
-      for (const pdfBytes of labelPdfBytes) {
-        const labelPdf = await PDFDocument.load(pdfBytes);
-        const pages = await outputPdf.copyPages(labelPdf, labelPdf.getPageIndices());
-        pages.forEach(page => outputPdf.addPage(page));
+      for (let i = 0; i < labelPdfs.length; i += CHUNK_SIZE) {
+        const chunk = labelPdfs.slice(i, i + CHUNK_SIZE);
+        console.log(`Processing chunk ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunk.length} pages`);
+        
+        for (const base64 of chunk) {
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let j = 0; j < binary.length; j++) {
+            bytes[j] = binary.charCodeAt(j);
+          }
+          
+          const labelPdf = await PDFDocument.load(bytes);
+          const pages = await outputPdf.copyPages(labelPdf, labelPdf.getPageIndices());
+          pages.forEach(page => outputPdf.addPage(page));
+        }
       }
       
       pageCount = outputPdf.getPageCount();
-      console.log(`Full page mode: merged ${labelPdfBytes.length} pages`);
+      console.log(`Full page mode: merged ${labelPdfs.length} pages total`);
     } else {
-      // Label mode - tile onto sheets
+      // Label mode - decode all PDFs first, then tile onto sheets
       if (!layout) {
         throw new Error('Layout configuration required for label mode');
+      }
+
+      const labelPdfBytes: Uint8Array[] = [];
+      
+      for (let i = 0; i < labelPdfs.length; i += CHUNK_SIZE) {
+        const chunk = labelPdfs.slice(i, i + CHUNK_SIZE);
+        console.log(`Decoding chunk ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunk.length} labels`);
+        
+        for (const base64 of chunk) {
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let j = 0; j < binary.length; j++) {
+            bytes[j] = binary.charCodeAt(j);
+          }
+          labelPdfBytes.push(bytes);
+        }
       }
 
       outputPdf = await createLabelSheet(labelPdfBytes, layout as AveryLayoutConfig);
@@ -110,7 +129,7 @@ serve(async (req) => {
       .update({
         status: 'complete',
         output_url: outputUrl,
-        processed_pages: labelPdfBytes.length,
+        processed_pages: labelPdfs.length,
         processing_completed_at: new Date().toISOString(),
       })
       .eq('id', mergeJobId);
@@ -138,20 +157,20 @@ serve(async (req) => {
         await supabase
           .from('workspaces')
           .update({
-            pages_used_this_month: (workspace.pages_used_this_month || 0) + labelPdfBytes.length,
+            pages_used_this_month: (workspace.pages_used_this_month || 0) + labelPdfs.length,
           })
           .eq('id', jobData.workspace_id);
       }
     }
 
-    console.log(`Successfully composed ${labelPdfBytes.length} labels into ${pageCount} pages`);
+    console.log(`Successfully composed ${labelPdfs.length} items into ${pageCount} pages`);
 
     return new Response(
       JSON.stringify({
         success: true,
         outputUrl,
         pageCount,
-        labelCount: labelPdfBytes.length,
+        labelCount: labelPdfs.length,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -224,40 +224,83 @@ async function exportLabelPdfs(
 }
 
 /**
- * Convert ArrayBuffers to base64 strings for transport
+ * Upload a single PDF to temporary storage
  */
-function arrayBuffersToBase64(buffers: ArrayBuffer[]): string[] {
-  return buffers.map(buffer => {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  });
+async function uploadTempPdf(
+  buffer: ArrayBuffer, 
+  jobId: string, 
+  index: number
+): Promise<string> {
+  const filename = `temp/${jobId}/page-${index.toString().padStart(4, '0')}.pdf`;
+  
+  const { error } = await supabase.storage
+    .from('generated-pdfs')
+    .upload(filename, buffer, {
+      contentType: 'application/pdf',
+      upsert: true,
+    });
+  
+  if (error) {
+    throw new Error(`Failed to upload temp PDF ${index}: ${error.message}`);
+  }
+  
+  return filename;
 }
 
 /**
- * Send PDF batches to edge function for composition
+ * Upload all PDFs to temp storage in batches
  */
-async function composeLabelsOnServer(
-  pdfBase64s: string[],
-  layout: AveryLayoutConfig,
+async function uploadPdfsToStorage(
+  buffers: ArrayBuffer[],
+  jobId: string,
+  onProgress: (progress: BatchExportProgress) => void
+): Promise<string[]> {
+  const paths: string[] = [];
+  const UPLOAD_BATCH = 5; // Upload 5 at a time
+  
+  for (let i = 0; i < buffers.length; i += UPLOAD_BATCH) {
+    const batch = buffers.slice(i, i + UPLOAD_BATCH);
+    const batchPromises = batch.map((buffer, idx) => 
+      uploadTempPdf(buffer, jobId, i + idx)
+    );
+    
+    const batchPaths = await Promise.all(batchPromises);
+    paths.push(...batchPaths);
+    
+    onProgress({
+      phase: 'uploading',
+      current: paths.length,
+      total: buffers.length,
+      message: `Uploading ${paths.length} of ${buffers.length}...`,
+    });
+  }
+  
+  return paths;
+}
+
+/**
+ * Send PDF paths to edge function for composition
+ */
+async function composeFromStorage(
+  pdfPaths: string[],
+  layout: AveryLayoutConfig | null,
   mergeJobId: string,
+  fullPageMode: boolean,
   onProgress: (progress: BatchExportProgress) => void
 ): Promise<{ outputUrl: string; pageCount: number }> {
   onProgress({
     phase: 'composing',
     current: 0,
     total: 1,
-    message: 'Composing labels onto sheets...',
+    message: fullPageMode ? 'Merging pages...' : 'Composing labels onto sheets...',
   });
 
   const { data, error } = await supabase.functions.invoke('compose-label-sheet', {
     body: {
-      labelPdfs: pdfBase64s,
+      pdfPaths,
       layout,
       mergeJobId,
+      fullPageMode,
     },
   });
 
@@ -304,47 +347,25 @@ export async function batchExportWithCesdk(
       throw new Error('No PDFs were exported');
     }
 
-    // Step 2: Convert to base64 for transport
+    // Step 2: Upload PDFs to temp storage (avoids memory issues with large payloads)
     onProgress({
       phase: 'uploading',
       current: 0,
-      total: 1,
-      message: isFullPage ? 'Merging pages into final PDF...' : 'Preparing labels for composition...',
+      total: pdfBuffers.length,
+      message: `Uploading ${pdfBuffers.length} ${docType}s...`,
     });
     
-    const pdfBase64s = arrayBuffersToBase64(pdfBuffers);
+    const pdfPaths = await uploadPdfsToStorage(pdfBuffers, mergeJobId, onProgress);
 
-    let result: { outputUrl: string; pageCount: number };
-
-    if (isFullPage) {
-      // Full-page documents - just merge into single PDF
-      onProgress({
-        phase: 'composing',
-        current: 1,
-        total: 1,
-        message: 'Merging pages...',
-      });
-      
-      const { data, error } = await supabase.functions.invoke('compose-label-sheet', {
-        body: {
-          labelPdfs: pdfBase64s,
-          mergeJobId,
-          fullPageMode: true,
-        },
-      });
-
-      if (error) throw new Error(error.message);
-      result = { outputUrl: data.outputUrl, pageCount: data.pageCount };
-    } else {
-      // Labels - try to get exact layout from database first
-      let layout: AveryLayoutConfig;
-      
+    // Step 3: Determine layout (for labels only)
+    let layout: AveryLayoutConfig | null = null;
+    
+    if (!isFullPage) {
       if (templateConfig.averyPartNumber) {
         const dbLayout = await getLayoutFromTemplate(templateConfig.averyPartNumber);
         if (dbLayout) {
           layout = dbLayout;
         } else {
-          // Fallback to calculated layout
           layout = calculateAveryLayout(
             templateConfig.widthMm,
             templateConfig.heightMm,
@@ -352,16 +373,22 @@ export async function batchExportWithCesdk(
           );
         }
       } else {
-        // No part number - use calculated layout
         layout = calculateAveryLayout(
           templateConfig.widthMm,
           templateConfig.heightMm,
           templateConfig.labelsPerSheet
         );
       }
-      
-      result = await composeLabelsOnServer(pdfBase64s, layout, mergeJobId, onProgress);
     }
+
+    // Step 4: Compose on server (downloads from storage, processes in batches)
+    const result = await composeFromStorage(
+      pdfPaths,
+      layout,
+      mergeJobId,
+      isFullPage,
+      onProgress
+    );
 
     onProgress({
       phase: 'complete',

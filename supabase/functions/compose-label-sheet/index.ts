@@ -31,82 +31,106 @@ serve(async (req) => {
   }
 
   try {
-    const { labelPdfs, layout, mergeJobId, fullPageMode } = await req.json();
+    const { pdfPaths, layout, mergeJobId, fullPageMode } = await req.json();
 
-    if (!labelPdfs || !Array.isArray(labelPdfs) || labelPdfs.length === 0) {
-      throw new Error('No label PDFs provided');
+    if (!pdfPaths || !Array.isArray(pdfPaths) || pdfPaths.length === 0) {
+      throw new Error('No PDF paths provided');
     }
 
     if (!mergeJobId) {
       throw new Error('No merge job ID provided');
     }
 
-    console.log(`Processing ${labelPdfs.length} labels for job ${mergeJobId}`);
+    console.log(`Processing ${pdfPaths.length} PDFs for job ${mergeJobId} (fullPageMode: ${fullPageMode})`);
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Process PDFs in chunks to avoid memory issues
-    const CHUNK_SIZE = 25;
+    // Process PDFs in small batches to manage memory
+    const BATCH_SIZE = 5;
     let outputPdf: PDFDocument = await PDFDocument.create();
     let pageCount: number = 0;
+    let processedCount = 0;
 
     if (fullPageMode) {
-      // Full page mode - merge PDFs in chunks
-      console.log(`Full page mode: processing ${labelPdfs.length} pages in chunks of ${CHUNK_SIZE}`);
+      // Full page mode - download and merge PDFs one batch at a time
+      console.log(`Full page mode: processing ${pdfPaths.length} pages in batches of ${BATCH_SIZE}`);
       
-      for (let i = 0; i < labelPdfs.length; i += CHUNK_SIZE) {
-        const chunk = labelPdfs.slice(i, i + CHUNK_SIZE);
-        console.log(`Processing chunk ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunk.length} pages`);
+      for (let i = 0; i < pdfPaths.length; i += BATCH_SIZE) {
+        const batchPaths = pdfPaths.slice(i, i + BATCH_SIZE);
+        console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchPaths.length} pages`);
         
-        for (const base64 of chunk) {
-          const binary = atob(base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let j = 0; j < binary.length; j++) {
-            bytes[j] = binary.charCodeAt(j);
+        for (const path of batchPaths) {
+          try {
+            // Download PDF from storage
+            const { data, error } = await supabase.storage
+              .from('generated-pdfs')
+              .download(path);
+            
+            if (error) {
+              console.error(`Error downloading ${path}:`, error);
+              continue;
+            }
+            
+            const bytes = new Uint8Array(await data.arrayBuffer());
+            const labelPdf = await PDFDocument.load(bytes);
+            const pages = await outputPdf.copyPages(labelPdf, labelPdf.getPageIndices());
+            pages.forEach(page => outputPdf.addPage(page));
+            processedCount++;
+          } catch (err) {
+            console.error(`Error processing ${path}:`, err);
           }
-          
-          const labelPdf = await PDFDocument.load(bytes);
-          const pages = await outputPdf.copyPages(labelPdf, labelPdf.getPageIndices());
-          pages.forEach(page => outputPdf.addPage(page));
         }
       }
       
       pageCount = outputPdf.getPageCount();
-      console.log(`Full page mode: merged ${labelPdfs.length} pages total`);
+      console.log(`Full page mode: merged ${processedCount} pages into ${pageCount} output pages`);
     } else {
-      // Label mode - decode all PDFs first, then tile onto sheets
+      // Label mode - download PDFs and tile onto sheets
       if (!layout) {
         throw new Error('Layout configuration required for label mode');
       }
 
+      console.log(`Label mode: downloading and tiling ${pdfPaths.length} labels`);
+      
+      // Download all PDFs first (in batches to manage memory)
       const labelPdfBytes: Uint8Array[] = [];
       
-      for (let i = 0; i < labelPdfs.length; i += CHUNK_SIZE) {
-        const chunk = labelPdfs.slice(i, i + CHUNK_SIZE);
-        console.log(`Decoding chunk ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunk.length} labels`);
+      for (let i = 0; i < pdfPaths.length; i += BATCH_SIZE) {
+        const batchPaths = pdfPaths.slice(i, i + BATCH_SIZE);
+        console.log(`Downloading batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchPaths.length} labels`);
         
-        for (const base64 of chunk) {
-          const binary = atob(base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let j = 0; j < binary.length; j++) {
-            bytes[j] = binary.charCodeAt(j);
+        for (const path of batchPaths) {
+          try {
+            const { data, error } = await supabase.storage
+              .from('generated-pdfs')
+              .download(path);
+            
+            if (error) {
+              console.error(`Error downloading ${path}:`, error);
+              continue;
+            }
+            
+            const bytes = new Uint8Array(await data.arrayBuffer());
+            labelPdfBytes.push(bytes);
+          } catch (err) {
+            console.error(`Error downloading ${path}:`, err);
           }
-          labelPdfBytes.push(bytes);
         }
       }
 
       outputPdf = await createLabelSheet(labelPdfBytes, layout as AveryLayoutConfig);
       pageCount = outputPdf.getPageCount();
-      console.log(`Label mode: created ${pageCount} sheets from ${labelPdfBytes.length} labels`);
+      processedCount = labelPdfBytes.length;
+      console.log(`Label mode: created ${pageCount} sheets from ${processedCount} labels`);
     }
 
     // Save the output PDF
     const outputBytes = await outputPdf.save();
     
-    // Upload to storage
+    // Upload final PDF to storage
     const filename = `merge-${mergeJobId}-${Date.now()}.pdf`;
     const { error: uploadError } = await supabase.storage
       .from('generated-pdfs')
@@ -120,6 +144,9 @@ serve(async (req) => {
       throw new Error(`Failed to upload PDF: ${uploadError.message}`);
     }
 
+    // Clean up temp files (in background)
+    cleanupTempFiles(supabase, pdfPaths);
+
     // Store filename as output_url (get-download-url will create signed URL)
     const outputUrl = filename;
 
@@ -129,7 +156,7 @@ serve(async (req) => {
       .update({
         status: 'complete',
         output_url: outputUrl,
-        processed_pages: labelPdfs.length,
+        processed_pages: processedCount,
         processing_completed_at: new Date().toISOString(),
       })
       .eq('id', mergeJobId);
@@ -146,7 +173,6 @@ serve(async (req) => {
       .single();
 
     if (jobData?.workspace_id) {
-      // Get current usage and increment
       const { data: workspace } = await supabase
         .from('workspaces')
         .select('pages_used_this_month')
@@ -157,20 +183,20 @@ serve(async (req) => {
         await supabase
           .from('workspaces')
           .update({
-            pages_used_this_month: (workspace.pages_used_this_month || 0) + labelPdfs.length,
+            pages_used_this_month: (workspace.pages_used_this_month || 0) + processedCount,
           })
           .eq('id', jobData.workspace_id);
       }
     }
 
-    console.log(`Successfully composed ${labelPdfs.length} items into ${pageCount} pages`);
+    console.log(`Successfully composed ${processedCount} items into ${pageCount} pages`);
 
     return new Response(
       JSON.stringify({
         success: true,
         outputUrl,
         pageCount,
-        labelCount: labelPdfs.length,
+        labelCount: processedCount,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -191,6 +217,23 @@ serve(async (req) => {
     );
   }
 });
+
+/**
+ * Clean up temporary PDF files after composition
+ */
+async function cleanupTempFiles(supabase: any, paths: string[]): Promise<void> {
+  try {
+    // Delete in batches
+    const CLEANUP_BATCH = 10;
+    for (let i = 0; i < paths.length; i += CLEANUP_BATCH) {
+      const batch = paths.slice(i, i + CLEANUP_BATCH);
+      await supabase.storage.from('generated-pdfs').remove(batch);
+    }
+    console.log(`Cleaned up ${paths.length} temp files`);
+  } catch (err) {
+    console.error('Cleanup error (non-fatal):', err);
+  }
+}
 
 /**
  * Create label sheets by tiling individual label PDFs onto pages
@@ -245,7 +288,6 @@ async function createLabelSheet(
       });
     } catch (embedError) {
       console.error(`Error embedding label ${labelIndex}:`, embedError);
-      // Continue with next label
     }
 
     labelIndex++;

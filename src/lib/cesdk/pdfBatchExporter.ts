@@ -7,6 +7,7 @@ export interface BatchExportProgress {
   current: number;
   total: number;
   message: string;
+  estimatedSecondsRemaining?: number;
 }
 
 export interface AveryLayoutConfig {
@@ -180,8 +181,13 @@ async function exportLabelPdfs(
   // Store original scene as archive (handles embedded assets like barcodes)
   const originalArchiveBlob = await engine.scene.saveToArchive();
   
+  // Time tracking for ETA estimates
+  const exportStartTime = Date.now();
+  let exportTimes: number[] = [];
+  
   try {
     for (let i = 0; i < dataRecords.length; i++) {
+      const itemStartTime = Date.now();
       const data = dataRecords[i];
       
       // Reload original scene BEFORE resolving variables (except first iteration)
@@ -189,32 +195,54 @@ async function exportLabelPdfs(
         await loadFromArchiveBlob(engine, originalArchiveBlob);
       }
       
-      // Report progress
+      // Calculate ETA based on average export time
+      let estimatedSecondsRemaining: number | undefined;
+      if (exportTimes.length >= 2) {
+        const avgTime = exportTimes.reduce((a, b) => a + b, 0) / exportTimes.length;
+        const remaining = dataRecords.length - i;
+        estimatedSecondsRemaining = Math.round((avgTime * remaining) / 1000);
+      }
+      
+      // Report progress with ETA
       onProgress({
         phase: 'exporting',
         current: i + 1,
         total: dataRecords.length,
-        message: `Exporting ${docType} ${i + 1} of ${dataRecords.length}...`,
+        message: estimatedSecondsRemaining 
+          ? `Exporting ${docType} ${i + 1} of ${dataRecords.length} (~${estimatedSecondsRemaining}s remaining)...`
+          : `Exporting ${docType} ${i + 1} of ${dataRecords.length}...`,
+        estimatedSecondsRemaining,
       });
       
       // Resolve variables with current data record (pass recordIndex for sequences)
       await resolveVariables(engine, data, i);
       
-      // Force engine to process variable changes
+      // Force engine to process variable changes (replaces unnecessary delay)
       engine.editor.addUndoStep();
       
-      // Small delay to ensure variables are applied before export
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      // Get the first page and export as PDF
+      // Get the first page and export as PDF with FAST mode (6-15x faster)
       const pages = engine.scene.getPages();
       if (pages.length > 0) {
-        const blob = await engine.block.export(pages[0], { mimeType: 'application/pdf' });
+        const blob = await engine.block.export(pages[0], { 
+          mimeType: 'application/pdf',
+          // Disable high compatibility for 6-15x faster exports
+          // Only causes minor rendering differences in Safari/macOS Preview with transparent gradients
+          exportPdfWithHighCompatibility: false,
+        });
         const buffer = await blob.arrayBuffer();
         pdfBuffers.push(buffer);
-        console.log(`Exported ${docType} ${i + 1} with data:`, Object.keys(data));
+        
+        // Track export time for ETA calculation
+        exportTimes.push(Date.now() - itemStartTime);
+        // Keep only last 5 times for rolling average
+        if (exportTimes.length > 5) exportTimes.shift();
+        
+        console.log(`Exported ${docType} ${i + 1}/${dataRecords.length} in ${Date.now() - itemStartTime}ms`);
       }
     }
+    
+    const totalTime = ((Date.now() - exportStartTime) / 1000).toFixed(1);
+    console.log(`✅ Exported ${pdfBuffers.length} ${docType}s in ${totalTime}s`);
   } finally {
     // Restore original scene after all exports
     await loadFromArchiveBlob(engine, originalArchiveBlob);

@@ -252,14 +252,16 @@ async function exportLabelPdfs(
 }
 
 /**
- * Upload a single PDF to temporary storage
+ * Upload a single PDF to temporary storage (workspace-scoped for RLS)
  */
 async function uploadTempPdf(
   buffer: ArrayBuffer, 
+  workspaceId: string,
   jobId: string, 
   index: number
 ): Promise<string> {
-  const filename = `temp/${jobId}/page-${index.toString().padStart(4, '0')}.pdf`;
+  // Path includes workspaceId for RLS validation
+  const filename = `${workspaceId}/temp/${jobId}/page-${index.toString().padStart(4, '0')}.pdf`;
   
   const { error } = await supabase.storage
     .from('generated-pdfs')
@@ -276,10 +278,33 @@ async function uploadTempPdf(
 }
 
 /**
- * Upload all PDFs to temp storage in batches
+ * Get current user's workspace ID
+ */
+async function getCurrentWorkspaceId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+  
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('workspace_id')
+    .eq('id', user.id)
+    .single();
+  
+  if (error || !profile?.workspace_id) {
+    throw new Error('Failed to get workspace ID');
+  }
+  
+  return profile.workspace_id;
+}
+
+/**
+ * Upload all PDFs to temp storage in batches (workspace-scoped for RLS)
  */
 async function uploadPdfsToStorage(
   buffers: ArrayBuffer[],
+  workspaceId: string,
   jobId: string,
   onProgress: (progress: BatchExportProgress) => void
 ): Promise<string[]> {
@@ -289,7 +314,7 @@ async function uploadPdfsToStorage(
   for (let i = 0; i < buffers.length; i += UPLOAD_BATCH) {
     const batch = buffers.slice(i, i + UPLOAD_BATCH);
     const batchPromises = batch.map((buffer, idx) => 
-      uploadTempPdf(buffer, jobId, i + idx)
+      uploadTempPdf(buffer, workspaceId, jobId, i + idx)
     );
     
     const batchPaths = await Promise.all(batchPromises);
@@ -375,7 +400,9 @@ export async function batchExportWithCesdk(
       throw new Error('No PDFs were exported');
     }
 
-    // Step 2: Upload PDFs to temp storage (avoids memory issues with large payloads)
+    // Step 2: Get workspace ID and upload PDFs to temp storage (workspace-scoped for RLS)
+    const workspaceId = await getCurrentWorkspaceId();
+    
     onProgress({
       phase: 'uploading',
       current: 0,
@@ -383,7 +410,7 @@ export async function batchExportWithCesdk(
       message: `Uploading ${pdfBuffers.length} ${docType}s...`,
     });
     
-    const pdfPaths = await uploadPdfsToStorage(pdfBuffers, mergeJobId, onProgress);
+    const pdfPaths = await uploadPdfsToStorage(pdfBuffers, workspaceId, mergeJobId, onProgress);
 
     // Step 3: Determine layout (for labels only)
     let layout: AveryLayoutConfig | null = null;

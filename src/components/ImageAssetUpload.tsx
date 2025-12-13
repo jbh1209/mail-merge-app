@@ -1,14 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Image, Trash2, Check, AlertCircle, X, FolderArchive } from 'lucide-react';
+import { Upload, Image, Trash2, AlertCircle, X, FolderArchive, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import JSZip from 'jszip';
 
-interface UploadedImage {
+export interface UploadedImage {
   name: string;
   url: string;
   path: string;
@@ -22,17 +23,65 @@ interface ImageAssetUploadProps {
 }
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per image
 
 export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: ImageAssetUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
 
   const getStoragePath = (filename: string) => {
     return `${workspaceId}/${projectId}/images/${filename}`;
+  };
+
+  // Load existing images from storage on mount
+  useEffect(() => {
+    loadExistingImages();
+  }, [projectId, workspaceId]);
+
+  const loadExistingImages = async () => {
+    setLoading(true);
+    try {
+      const folderPath = `${workspaceId}/${projectId}/images`;
+      const { data: files, error } = await supabase.storage
+        .from('project-assets')
+        .list(folderPath);
+
+      if (error) {
+        console.error('Failed to load existing images:', error);
+        setLoading(false);
+        return;
+      }
+
+      if (files && files.length > 0) {
+        const images: UploadedImage[] = files
+          .filter(file => !file.name.startsWith('.') && file.metadata)
+          .map(file => {
+            const path = `${folderPath}/${file.name}`;
+            const { data: urlData } = supabase.storage
+              .from('project-assets')
+              .getPublicUrl(path);
+
+            return {
+              name: file.name,
+              url: urlData.publicUrl,
+              path,
+              size: file.metadata?.size || 0,
+            };
+          });
+
+        setUploadedImages(images);
+        onImagesChange?.(images);
+      }
+    } catch (err) {
+      console.error('Error loading images:', err);
+    }
+    setLoading(false);
   };
 
   const uploadSingleImage = async (file: File): Promise<UploadedImage | null> => {
@@ -68,6 +117,50 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
     };
   };
 
+  const extractZipFile = async (zipFile: File): Promise<File[]> => {
+    setExtracting(true);
+    const extractedFiles: File[] = [];
+    
+    try {
+      const zip = await JSZip.loadAsync(zipFile);
+      const entries = Object.entries(zip.files);
+      
+      for (const [filename, zipEntry] of entries) {
+        // Skip directories and hidden files
+        if (zipEntry.dir || filename.startsWith('__MACOSX') || filename.includes('/.')) {
+          continue;
+        }
+        
+        // Check if it's an allowed image type
+        const ext = '.' + filename.split('.').pop()?.toLowerCase();
+        if (!ALLOWED_EXTENSIONS.includes(ext)) {
+          continue;
+        }
+        
+        // Get just the filename without path
+        const baseName = filename.split('/').pop() || filename;
+        
+        // Extract the file content
+        const blob = await zipEntry.async('blob');
+        const mimeType = ext === '.png' ? 'image/png' 
+          : ext === '.gif' ? 'image/gif'
+          : ext === '.webp' ? 'image/webp'
+          : 'image/jpeg';
+        
+        const file = new File([blob], baseName, { type: mimeType });
+        extractedFiles.push(file);
+      }
+      
+      toast.success(`Extracted ${extractedFiles.length} images from ZIP`);
+    } catch (err) {
+      console.error('ZIP extraction error:', err);
+      toast.error('Failed to extract ZIP file');
+    }
+    
+    setExtracting(false);
+    return extractedFiles;
+  };
+
   const processFiles = async (files: File[]) => {
     setUploading(true);
     setProgress(0);
@@ -90,9 +183,18 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
     }
 
     setUploadedImages(prev => {
-      const updated = [...prev, ...newImages];
-      onImagesChange?.(updated);
-      return updated;
+      // Merge and dedupe by name
+      const merged = [...prev];
+      for (const newImg of newImages) {
+        const existingIdx = merged.findIndex(img => img.name === newImg.name);
+        if (existingIdx >= 0) {
+          merged[existingIdx] = newImg;
+        } else {
+          merged.push(newImg);
+        }
+      }
+      onImagesChange?.(merged);
+      return merged;
     });
     setErrors(newErrors);
     setUploading(false);
@@ -112,11 +214,13 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
     const files = Array.from(e.dataTransfer.files);
     
     // Check for ZIP files
-    const zipFiles = files.filter(f => f.name.endsWith('.zip'));
-    const imageFiles = files.filter(f => !f.name.endsWith('.zip'));
+    const zipFiles = files.filter(f => f.name.toLowerCase().endsWith('.zip'));
+    const imageFiles = files.filter(f => !f.name.toLowerCase().endsWith('.zip'));
 
-    if (zipFiles.length > 0) {
-      toast.info('ZIP file support coming soon. Please upload individual images for now.');
+    // Extract ZIP files first
+    for (const zipFile of zipFiles) {
+      const extracted = await extractZipFile(zipFile);
+      imageFiles.push(...extracted);
     }
 
     if (imageFiles.length > 0) {
@@ -128,7 +232,20 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    await processFiles(Array.from(files));
+    const fileArray = Array.from(files);
+    const zipFiles = fileArray.filter(f => f.name.toLowerCase().endsWith('.zip'));
+    const imageFiles = fileArray.filter(f => !f.name.toLowerCase().endsWith('.zip'));
+
+    // Extract ZIP files
+    for (const zipFile of zipFiles) {
+      const extracted = await extractZipFile(zipFile);
+      imageFiles.push(...extracted);
+    }
+
+    if (imageFiles.length > 0) {
+      await processFiles(imageFiles);
+    }
+    
     e.target.value = ''; // Reset input
   };
 
@@ -169,22 +286,27 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
         className={cn(
           "relative border-2 border-dashed rounded-lg p-8 text-center transition-colors",
           isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-primary/50",
-          uploading && "pointer-events-none opacity-50"
+          (uploading || extracting) && "pointer-events-none opacity-50"
         )}
       >
         <input
           type="file"
           id="image-upload"
           className="hidden"
-          accept=".png,.jpg,.jpeg,.gif,.webp"
+          accept=".png,.jpg,.jpeg,.gif,.webp,.zip"
           multiple
           onChange={handleFileSelect}
-          disabled={uploading}
+          disabled={uploading || extracting}
         />
         
         <label htmlFor="image-upload" className="cursor-pointer">
           <div className="flex flex-col items-center gap-3">
-            {uploading ? (
+            {extracting ? (
+              <>
+                <FolderArchive className="h-10 w-10 text-primary animate-pulse" />
+                <p className="text-sm text-muted-foreground">Extracting ZIP file...</p>
+              </>
+            ) : uploading ? (
               <>
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
                 <p className="text-sm text-muted-foreground">Uploading... {progress}%</p>
@@ -196,9 +318,9 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
                   <Upload className="h-6 w-6 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium">Drop images here or click to browse</p>
+                  <p className="font-medium">Drop images or ZIP files here, or click to browse</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    PNG, JPG, GIF, WebP up to 10MB each
+                    PNG, JPG, GIF, WebP, or ZIP archives • Up to 10MB per image
                   </p>
                 </div>
               </>
@@ -231,8 +353,16 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
         </Card>
       )}
 
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">Loading existing images...</span>
+        </div>
+      )}
+
       {/* Uploaded Images Grid */}
-      {uploadedImages.length > 0 && (
+      {!loading && uploadedImages.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="font-medium">Uploaded Images ({uploadedImages.length})</h4>
@@ -279,7 +409,7 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
       )}
 
       {/* Empty state */}
-      {uploadedImages.length === 0 && !uploading && (
+      {!loading && uploadedImages.length === 0 && !uploading && (
         <div className="text-center py-6 text-muted-foreground">
           <Image className="h-12 w-12 mx-auto mb-3 opacity-50" />
           <p className="text-sm">No images uploaded yet</p>

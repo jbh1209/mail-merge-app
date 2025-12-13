@@ -220,7 +220,7 @@ async function generateInitialLayout(
           
           engine.block.setName(textBlock, blockName);
           
-          // --- CONSTRAINED SCALING TO FIT WITHIN LABEL ---
+          // --- SCALE UP TO FILL LABEL (only if text is smaller than target) ---
           // Read the auto-sized frame dimensions (returned in current design unit = mm)
           const actualHeightMm = engine.block.getFrameHeight(textBlock);
           const actualWidthMm = engine.block.getFrameWidth(textBlock);
@@ -231,12 +231,11 @@ async function generateInitialLayout(
             const widthRatio = boxWidthMm / actualWidthMm;
             
             // Use the smaller ratio to ensure text fits both dimensions
-            // Cap at 2x max scale to prevent oversized text on small content
-            const scaleFactor = Math.min(heightRatio, widthRatio, 2.0);
+            const scaleFactor = Math.min(heightRatio, widthRatio);
             
-            // Only scale if needed and cap max font size at 36pt for labels
-            if (scaleFactor !== 1.0) {
-              const newFontSize = Math.min(baseFontSize * scaleFactor, 36);
+            // Only scale UP if text is smaller than target (scaleFactor > 1)
+            if (scaleFactor > 1.0) {
+              const newFontSize = Math.min(baseFontSize * scaleFactor, 72);
               engine.block.setTextFontSize(textBlock, newFontSize);
               console.log(`📐 Scaled address block: ${baseFontSize}pt → ${newFontSize.toFixed(1)}pt (factor: ${scaleFactor.toFixed(2)})`);
             }

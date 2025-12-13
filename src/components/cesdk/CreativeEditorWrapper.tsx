@@ -214,24 +214,32 @@ async function generateInitialLayout(
           engine.block.replaceText(textBlock, textContent);
           
           // Font sizes are always in points, regardless of design unit
-          const baseFontSize = 24;
+          // Use layout engine's calculated font size as base (field.fontSize)
+          const baseFontSize = field.fontSize || 12;
           engine.block.setTextFontSize(textBlock, baseFontSize);
           
           engine.block.setName(textBlock, blockName);
           
-          // --- AUTOMATIC SCALING TO FILL ~80% OF LABEL ---
+          // --- CONSTRAINED SCALING TO FIT WITHIN LABEL ---
           // Read the auto-sized frame dimensions (returned in current design unit = mm)
           const actualHeightMm = engine.block.getFrameHeight(textBlock);
-          const targetHeightMm = boxHeightMm; // 80% of page height
+          const actualWidthMm = engine.block.getFrameWidth(textBlock);
           
-          // Calculate scale factor (only scale up if text is smaller than target)
-          if (actualHeightMm > 0 && actualHeightMm < targetHeightMm) {
-            const scaleFactor = targetHeightMm / actualHeightMm;
-            // Calculate new font size proportionally
-            const newFontSize = baseFontSize * scaleFactor;
-            // Apply the scaled font size (height will auto-adjust)
-            engine.block.setTextFontSize(textBlock, newFontSize);
-            console.log(`📐 Scaled address block: ${baseFontSize}pt → ${newFontSize.toFixed(1)}pt (factor: ${scaleFactor.toFixed(2)})`);
+          // Calculate scale factors for both dimensions
+          if (actualHeightMm > 0 && actualWidthMm > 0) {
+            const heightRatio = boxHeightMm / actualHeightMm;
+            const widthRatio = boxWidthMm / actualWidthMm;
+            
+            // Use the smaller ratio to ensure text fits both dimensions
+            // Cap at 2x max scale to prevent oversized text on small content
+            const scaleFactor = Math.min(heightRatio, widthRatio, 2.0);
+            
+            // Only scale if needed and cap max font size at 36pt for labels
+            if (scaleFactor !== 1.0) {
+              const newFontSize = Math.min(baseFontSize * scaleFactor, 36);
+              engine.block.setTextFontSize(textBlock, newFontSize);
+              console.log(`📐 Scaled address block: ${baseFontSize}pt → ${newFontSize.toFixed(1)}pt (factor: ${scaleFactor.toFixed(2)})`);
+            }
           }
           
           console.log(`✅ Created address block: Fixed width (${boxWidthMm.toFixed(1)}mm) + Auto height`);

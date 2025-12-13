@@ -96,13 +96,25 @@ function calculateLabelLayout(template: any): LabelLayout {
   const pageWidth = 612; // US Letter width
   const pageHeight = 792; // US Letter height
   
-  const marginTop = mmToPoints(12.7);
-  const marginLeft = mmToPoints(4.76);
-  const horizontalGap = mmToPoints(3.18);
-  const verticalGap = 0;
+  // Use template's stored values with sensible defaults (Avery 5160 defaults)
+  const marginTop = mmToPoints(
+    template.margin_top_mm ?? template.top_margin_mm ?? 12.7
+  );
+  const marginLeft = mmToPoints(
+    template.margin_left_mm ?? template.left_margin_mm ?? 4.76
+  );
+  const horizontalGap = mmToPoints(
+    template.horizontal_gap_mm ?? template.column_gap_mm ?? template.gap_x_mm ?? 3.18
+  );
+  const verticalGap = mmToPoints(
+    template.vertical_gap_mm ?? template.row_gap_mm ?? template.gap_y_mm ?? 0
+  );
   
-  const columns = Math.floor((pageWidth - marginLeft) / (labelWidth + horizontalGap));
-  const rows = Math.floor((pageHeight - marginTop) / (labelHeight + verticalGap));
+  // Use template's columns/rows if stored, otherwise calculate from dimensions
+  const columns = template.columns || Math.floor((pageWidth - marginLeft) / (labelWidth + horizontalGap));
+  const rows = template.rows || Math.floor((pageHeight - marginTop) / (labelHeight + verticalGap));
+  
+  console.log(`📐 Label layout: ${columns}x${rows}, margins: top=${marginTop.toFixed(1)}pt left=${marginLeft.toFixed(1)}pt, gaps: h=${horizontalGap.toFixed(1)}pt v=${verticalGap.toFixed(1)}pt`);
   
   return {
     labelWidth,

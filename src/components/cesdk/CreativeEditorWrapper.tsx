@@ -365,11 +365,16 @@ export function CreativeEditorWrapper({
     engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
     engine.block.setFill(block, fill);
     
-    // Set size and position
-    engine.block.setWidth(block, 150);
-    engine.block.setHeight(block, 75);
-    engine.block.setPositionX(block, 50);
-    engine.block.setPositionY(block, 50);
+    // Set size and position in mm (CE.SDK is in Millimeter mode)
+    // Use label dimensions to calculate appropriate sizing
+    const labelWidthMm = labelWidth || 66.68;  // Default to common label width
+    const labelHeightMm = labelHeight || 25.4; // Default to common label height
+    const barcodeWidthMm = Math.min(labelWidthMm * 0.5, 50);  // ~50% of label width, max 50mm
+    const barcodeHeightMm = Math.min(labelHeightMm * 0.3, 25); // ~30% of label height, max 25mm
+    engine.block.setWidth(block, barcodeWidthMm);
+    engine.block.setHeight(block, barcodeHeightMm);
+    engine.block.setPositionX(block, (labelWidthMm - barcodeWidthMm) / 2);  // Centered horizontally
+    engine.block.setPositionY(block, labelHeightMm * 0.6); // Lower half of label
     
     // Store metadata in block name for VDP resolution
     if (variableField) {
@@ -405,11 +410,15 @@ export function CreativeEditorWrapper({
     engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
     engine.block.setFill(block, fill);
     
-    // Set size and position (square)
-    engine.block.setWidth(block, 100);
-    engine.block.setHeight(block, 100);
-    engine.block.setPositionX(block, 50);
-    engine.block.setPositionY(block, 50);
+    // Set size and position in mm (CE.SDK is in Millimeter mode)
+    // QR codes should be square, sized relative to label dimensions
+    const labelWidthMm = labelWidth || 66.68;
+    const labelHeightMm = labelHeight || 25.4;
+    const qrSizeMm = Math.min(labelWidthMm * 0.25, labelHeightMm * 0.6, 30); // Max 30mm
+    engine.block.setWidth(block, qrSizeMm);
+    engine.block.setHeight(block, qrSizeMm);
+    engine.block.setPositionX(block, labelWidthMm - qrSizeMm - labelWidthMm * 0.05); // Right side with 5% margin
+    engine.block.setPositionY(block, (labelHeightMm - qrSizeMm) / 2); // Vertically centered
     
     // Store metadata in block name for VDP resolution
     if (variableField) {
@@ -835,13 +844,16 @@ export function CreativeEditorWrapper({
     // Store sequence config in block name
     engine.block.setName(textBlock, createSequenceBlockName(seqConfig));
     
-    // Set reasonable default size and position (center of page)
-    const pageWidth = engine.block.getWidth(page);
-    const pageHeight = engine.block.getHeight(page);
-    engine.block.setWidth(textBlock, Math.min(150, pageWidth * 0.6));
-    engine.block.setHeight(textBlock, 30);
-    engine.block.setPositionX(textBlock, (pageWidth - 150) / 2);
-    engine.block.setPositionY(textBlock, (pageHeight - 30) / 2);
+    // Set size and position in mm (CE.SDK is in Millimeter mode)
+    // Size relative to label/page dimensions
+    const pageWidthMm = engine.block.getWidth(page);
+    const pageHeightMm = engine.block.getHeight(page);
+    const seqWidthMm = Math.min(pageWidthMm * 0.3, 40);  // 30% of width, max 40mm
+    const seqHeightMm = Math.min(pageHeightMm * 0.15, 10); // 15% of height, max 10mm
+    engine.block.setWidth(textBlock, seqWidthMm);
+    engine.block.setHeight(textBlock, seqHeightMm);
+    engine.block.setPositionX(textBlock, pageWidthMm * 0.05); // 5% margin from left
+    engine.block.setPositionY(textBlock, pageHeightMm - seqHeightMm - pageHeightMm * 0.05); // Bottom with 5% margin
     
     // Add to page
     engine.block.appendChild(page, textBlock);

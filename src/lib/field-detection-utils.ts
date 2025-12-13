@@ -2,7 +2,7 @@ import { FieldType } from './canvas-utils';
 
 export interface FieldSuggestion {
   fieldName: string;
-  suggestedType: 'barcode' | 'qrcode' | 'sequence';
+  suggestedType: 'barcode' | 'qrcode' | 'sequence' | 'image';
   confidence: 'high' | 'medium' | 'low';
   reason: string;
   recommendedFormat?: string; // For barcodes
@@ -72,10 +72,36 @@ const DETECTION_PATTERNS = {
       /[-_\s]no$/i,
     ],
   },
+  image: {
+    high: [
+      /^image$/i,
+      /^photo$/i,
+      /^picture$/i,
+      /^headshot$/i,
+      /^avatar$/i,
+      /^logo$/i,
+      /^thumbnail$/i,
+      /^img$/i,
+    ],
+    medium: [
+      /image/i,
+      /photo/i,
+      /picture/i,
+      /^portrait$/i,
+      /^profile[-_\s]?pic$/i,
+      /^product[-_\s]?image$/i,
+      /^item[-_\s]?image$/i,
+      /[-_\s]image$/i,
+      /[-_\s]photo$/i,
+      /[-_\s]pic$/i,
+      /^icon$/i,
+      /^badge[-_\s]?image$/i,
+    ],
+  },
 };
 
 /**
- * Detect potential barcode/QR/sequence fields from column names
+ * Detect potential barcode/QR/sequence/image fields from column names
  */
 export function detectSpecialFields(columnNames: string[]): FieldSuggestion[] {
   const suggestions: FieldSuggestion[] = [];
@@ -109,6 +135,18 @@ export function detectSpecialFields(columnNames: string[]): FieldSuggestion[] {
       continue;
     }
 
+    // Check image patterns
+    const imageMatch = matchPattern(trimmedName, DETECTION_PATTERNS.image);
+    if (imageMatch) {
+      suggestions.push({
+        fieldName: trimmedName,
+        suggestedType: 'image',
+        confidence: imageMatch.confidence,
+        reason: getImageReason(trimmedName),
+      });
+      continue;
+    }
+
     // Check sequence patterns
     const sequenceMatch = matchPattern(trimmedName, DETECTION_PATTERNS.sequence);
     if (sequenceMatch) {
@@ -127,8 +165,8 @@ export function detectSpecialFields(columnNames: string[]): FieldSuggestion[] {
     const confDiff = confidenceOrder[a.confidence] - confidenceOrder[b.confidence];
     if (confDiff !== 0) return confDiff;
 
-    // If same confidence, prioritize barcode > qrcode > sequence
-    const typeOrder = { barcode: 0, qrcode: 1, sequence: 2 };
+    // If same confidence, prioritize barcode > qrcode > image > sequence
+    const typeOrder = { barcode: 0, qrcode: 1, image: 2, sequence: 3 };
     return typeOrder[a.suggestedType] - typeOrder[b.suggestedType];
   });
 }
@@ -197,6 +235,20 @@ function getSequenceReason(fieldName: string): string {
 }
 
 /**
+ * Get human-readable reason for image suggestion
+ */
+function getImageReason(fieldName: string): string {
+  const lower = fieldName.toLowerCase();
+  if (lower.includes('photo')) return 'Photo fields can display variable images per record';
+  if (lower.includes('headshot') || lower.includes('portrait')) return 'Portrait images work well for ID badges and name tags';
+  if (lower.includes('logo')) return 'Logo fields can display different company logos per record';
+  if (lower.includes('avatar') || lower.includes('profile')) return 'Profile images for personalized output';
+  if (lower.includes('product')) return 'Product images for catalogs and labels';
+  if (lower.includes('thumbnail')) return 'Thumbnail images for compact previews';
+  return 'This field appears to reference images that can vary per record';
+}
+
+/**
  * Recommend barcode format based on field name
  */
 function getRecommendedBarcodeFormat(fieldName: string): string {
@@ -218,7 +270,7 @@ export function shouldShowSuggestions(suggestions: FieldSuggestion[]): boolean {
 /**
  * Get icon name for suggestion type
  */
-export function getSuggestionIcon(type: 'barcode' | 'qrcode' | 'sequence'): string {
+export function getSuggestionIcon(type: 'barcode' | 'qrcode' | 'sequence' | 'image'): string {
   switch (type) {
     case 'barcode':
       return 'BarChart3';
@@ -226,13 +278,15 @@ export function getSuggestionIcon(type: 'barcode' | 'qrcode' | 'sequence'): stri
       return 'QrCode';
     case 'sequence':
       return 'Hash';
+    case 'image':
+      return 'Image';
   }
 }
 
 /**
  * Get display name for suggestion type
  */
-export function getSuggestionDisplayName(type: 'barcode' | 'qrcode' | 'sequence'): string {
+export function getSuggestionDisplayName(type: 'barcode' | 'qrcode' | 'sequence' | 'image'): string {
   switch (type) {
     case 'barcode':
       return 'Barcode';
@@ -240,5 +294,7 @@ export function getSuggestionDisplayName(type: 'barcode' | 'qrcode' | 'sequence'
       return 'QR Code';
     case 'sequence':
       return 'Sequential Number';
+    case 'image':
+      return 'Variable Image';
   }
 }

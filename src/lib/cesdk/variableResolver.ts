@@ -52,6 +52,48 @@ export async function resolveVariables(
   
   // Update barcode/QR graphic blocks with resolved values
   await updateBarcodeBlocks(engine, data);
+  
+  // Update VDP image blocks with resolved image URLs
+  await updateImageBlocks(engine, data);
+}
+
+/**
+ * Update all VDP image blocks with resolved image URLs
+ */
+async function updateImageBlocks(
+  engine: CreativeEditorSDK['engine'],
+  data: VariableData,
+  imageUrlResolver?: (fieldValue: string) => Promise<string | null>
+): Promise<void> {
+  try {
+    const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
+    
+    for (const blockId of graphicBlocks) {
+      const blockName = engine.block.getName(blockId);
+      
+      if (!blockName?.startsWith('vdp:image:')) continue;
+      
+      const fieldName = blockName.replace('vdp:image:', '');
+      if (!fieldName || data[fieldName] === undefined) continue;
+      
+      const fieldValue = String(data[fieldName]);
+      
+      // If we have a URL resolver, use it; otherwise assume the field value is a URL
+      let imageUrl: string | null = null;
+      if (imageUrlResolver) {
+        imageUrl = await imageUrlResolver(fieldValue);
+      } else {
+        // For preview, we might have a direct URL in the data
+        imageUrl = fieldValue.startsWith('http') ? fieldValue : null;
+      }
+      
+      if (imageUrl) {
+        await updateBlockImage(engine, blockId, imageUrl);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to update VDP image blocks:', e);
+  }
 }
 
 /**

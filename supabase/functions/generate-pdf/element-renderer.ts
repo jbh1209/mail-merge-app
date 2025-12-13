@@ -3,9 +3,11 @@
 // ============================================================================
 // Renders design elements to PDF with proper font handling and styling.
 // Uses the new type system from the editor foundation.
+// Supports VDP images with caching for batch operations.
 // ============================================================================
 
-import { PDFPage, PDFDocument, PDFFont, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFPage, PDFDocument, PDFFont, PDFImage, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import bwipjs from "https://esm.sh/bwip-js@4.8.0";
 // @ts-ignore - QRCode types
 import QRCode from "https://esm.sh/qrcode-svg@1.1.0";
@@ -516,4 +518,235 @@ export function renderShapeField(
       opacity: opacity,
     });
   }
+}
+
+// ============================================================================
+// IMAGE RENDERING WITH CACHING
+// ============================================================================
+
+// Global image cache for batch operations - stores embedded PDFImages
+const imageCache = new Map<string, PDFImage>();
+const imageBytesCache = new Map<string, Uint8Array>();
+
+/**
+ * Clear image caches (call at start of new job)
+ */
+export function clearImageCache(): void {
+  imageCache.clear();
+  imageBytesCache.clear();
+}
+
+/**
+ * Fetch image bytes from URL with caching
+ */
+async function fetchImageBytes(url: string): Promise<Uint8Array | null> {
+  // Check cache first
+  if (imageBytesCache.has(url)) {
+    return imageBytesCache.get(url)!;
+  }
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn(`⚠️ Failed to fetch image: ${url} - ${response.status}`);
+      return null;
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    
+    // Cache the bytes
+    imageBytesCache.set(url, bytes);
+    return bytes;
+  } catch (error) {
+    console.error(`❌ Error fetching image ${url}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Detect image format from bytes
+ */
+function detectImageFormat(bytes: Uint8Array): 'jpeg' | 'png' | 'unknown' {
+  // JPEG magic bytes: FF D8 FF
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+    return 'jpeg';
+  }
+  // PNG magic bytes: 89 50 4E 47
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+    return 'png';
+  }
+  return 'unknown';
+}
+
+/**
+ * Embed image in PDF with caching
+ */
+async function embedImage(
+  pdfDoc: PDFDocument,
+  imageUrl: string
+): Promise<PDFImage | null> {
+  // Check cache for already embedded image
+  const cacheKey = `${pdfDoc.toString()}_${imageUrl}`;
+  if (imageCache.has(cacheKey)) {
+    return imageCache.get(cacheKey)!;
+  }
+  
+  try {
+    const bytes = await fetchImageBytes(imageUrl);
+    if (!bytes) return null;
+    
+    const format = detectImageFormat(bytes);
+    let image: PDFImage;
+    
+    if (format === 'jpeg') {
+      image = await pdfDoc.embedJpg(bytes);
+    } else if (format === 'png') {
+      image = await pdfDoc.embedPng(bytes);
+    } else {
+      console.warn(`⚠️ Unsupported image format for ${imageUrl}`);
+      return null;
+    }
+    
+    // Cache the embedded image
+    imageCache.set(cacheKey, image);
+    return image;
+  } catch (error) {
+    console.error(`❌ Error embedding image ${imageUrl}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Resolve image URL from project assets
+ */
+export async function resolveImageUrl(
+  workspaceId: string,
+  projectId: string,
+  filename: string
+): Promise<string | null> {
+  if (!filename) return null;
+  
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  
+  // Build the storage path
+  const storagePath = `${workspaceId}/${projectId}/images/${filename}`;
+  
+  // Generate signed URL (valid for 1 hour)
+  const { data, error } = await supabase.storage
+    .from('project-assets')
+    .createSignedUrl(storagePath, 3600);
+  
+  if (error) {
+    console.warn(`⚠️ Could not get signed URL for ${storagePath}:`, error.message);
+    return null;
+  }
+  
+  return data.signedUrl;
+}
+
+/**
+ * Render an image field to PDF
+ */
+export async function renderImageField(
+  page: PDFPage,
+  pdfDoc: PDFDocument,
+  field: any,
+  imageUrl: string | null,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): Promise<void> {
+  // If no image URL, draw placeholder
+  if (!imageUrl) {
+    const placeholderColor = parseColor('#f0f0f0');
+    const borderColor = parseColor('#cccccc');
+    
+    page.drawRectangle({
+      x, y, width, height,
+      color: rgb(placeholderColor.r, placeholderColor.g, placeholderColor.b),
+      borderColor: rgb(borderColor.r, borderColor.g, borderColor.b),
+      borderWidth: 0.5,
+    });
+    
+    // Draw X pattern for missing image
+    page.drawLine({
+      start: { x, y },
+      end: { x: x + width, y: y + height },
+      thickness: 0.5,
+      color: rgb(borderColor.r, borderColor.g, borderColor.b),
+    });
+    page.drawLine({
+      start: { x, y: y + height },
+      end: { x: x + width, y },
+      thickness: 0.5,
+      color: rgb(borderColor.r, borderColor.g, borderColor.b),
+    });
+    
+    return;
+  }
+  
+  // Embed and draw the image
+  const image = await embedImage(pdfDoc, imageUrl);
+  if (!image) {
+    // Draw error placeholder
+    const errorColor = parseColor('#ffeeee');
+    const errorBorder = parseColor('#cc0000');
+    
+    page.drawRectangle({
+      x, y, width, height,
+      color: rgb(errorColor.r, errorColor.g, errorColor.b),
+      borderColor: rgb(errorBorder.r, errorBorder.g, errorBorder.b),
+      borderWidth: 1,
+    });
+    
+    return;
+  }
+  
+  // Calculate scaling based on fit mode
+  const fitMode = field.config?.fitMode || field.typeConfig?.fitMode || 'contain';
+  const imageWidth = image.width;
+  const imageHeight = image.height;
+  
+  let drawX = x;
+  let drawY = y;
+  let drawWidth = width;
+  let drawHeight = height;
+  
+  if (fitMode === 'contain') {
+    // Scale to fit within bounds while maintaining aspect ratio
+    const scaleX = width / imageWidth;
+    const scaleY = height / imageHeight;
+    const scale = Math.min(scaleX, scaleY);
+    
+    drawWidth = imageWidth * scale;
+    drawHeight = imageHeight * scale;
+    
+    // Center the image
+    drawX = x + (width - drawWidth) / 2;
+    drawY = y + (height - drawHeight) / 2;
+  } else if (fitMode === 'cover') {
+    // Scale to cover entire area while maintaining aspect ratio
+    const scaleX = width / imageWidth;
+    const scaleY = height / imageHeight;
+    const scale = Math.max(scaleX, scaleY);
+    
+    drawWidth = imageWidth * scale;
+    drawHeight = imageHeight * scale;
+    
+    // Center (overflow is clipped)
+    drawX = x + (width - drawWidth) / 2;
+    drawY = y + (height - drawHeight) / 2;
+  }
+  // 'fill' mode uses the target width/height directly (stretches)
+  
+  page.drawImage(image, {
+    x: drawX,
+    y: drawY,
+    width: drawWidth,
+    height: drawHeight,
+  });
 }

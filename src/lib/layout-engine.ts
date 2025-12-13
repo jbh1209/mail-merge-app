@@ -468,5 +468,5 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   margins: { top: 1.5, right: 1.5, bottom: 1.5, left: 1.5 }, // Reduced from 2mm
   padding: 0.5, // Reduced from 1mm
   minFontSize: 8, // Increased from 7
-  maxFontSize: 24 // Increased from 16
+  maxFontSize: 72 // Increased to allow larger fonts for bigger labels
 };

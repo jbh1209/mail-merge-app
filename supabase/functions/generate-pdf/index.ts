@@ -33,7 +33,10 @@ import {
   renderQRCodeField,
   renderSequenceField,
   renderAddressBlock,
-  renderShapeField
+  renderShapeField,
+  renderImageField,
+  resolveImageUrl,
+  clearImageCache
 } from "./element-renderer.ts";
 
 const corsHeaders = {
@@ -157,7 +160,9 @@ async function renderLabel(
   offsetX: number,
   offsetY: number,
   labelHeight: number,
-  recordIndex: number
+  recordIndex: number,
+  workspaceId: string,
+  projectId: string
 ): Promise<void> {
   console.log(`📝 Rendering label with ${fields.length} fields`);
   
@@ -215,6 +220,14 @@ async function renderLabel(
         
       case 'shape':
         renderShapeField(page, field, fieldX, fieldY, fieldWidth, fieldHeight);
+        break;
+        
+      case 'image':
+      case 'vdp_image':
+        // Resolve image URL from project assets
+        const imageFilename = value; // The mapped field value should be the filename
+        const imageUrl = await resolveImageUrl(workspaceId, projectId, imageFilename);
+        await renderImageField(page, pdfDoc, field, imageUrl, fieldX, fieldY, fieldWidth, fieldHeight);
         break;
         
       default:
@@ -308,6 +321,9 @@ serve(async (req) => {
     // ========================================================================
     // CREATE PDF DOCUMENT
     // ========================================================================
+    
+    // Clear image cache from any previous job
+    clearImageCache();
     
     const pdfDoc = await PDFDocument.create();
     
@@ -423,7 +439,9 @@ serve(async (req) => {
           position.x,
           position.y,
           labelHeight,
-          i
+          i,
+          job.workspace_id,
+          job.template.project_id || ''
         );
       }
       

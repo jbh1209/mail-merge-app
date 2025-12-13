@@ -220,7 +220,7 @@ async function generateInitialLayout(
           
           engine.block.setName(textBlock, blockName);
           
-          // --- SCALE UP TO FILL LABEL (only if text is smaller than target) ---
+          // --- SCALE TO FILL LABEL (both up and down as needed) ---
           // Read the auto-sized frame dimensions (returned in current design unit = mm)
           const actualHeightMm = engine.block.getFrameHeight(textBlock);
           const actualWidthMm = engine.block.getFrameWidth(textBlock);
@@ -233,9 +233,9 @@ async function generateInitialLayout(
             // Use the smaller ratio to ensure text fits both dimensions
             const scaleFactor = Math.min(heightRatio, widthRatio);
             
-            // Only scale UP if text is smaller than target (scaleFactor > 1)
-            if (scaleFactor > 1.0) {
-              const newFontSize = Math.min(baseFontSize * scaleFactor, 72);
+            // Scale if there's a meaningful difference (more than 5%)
+            if (Math.abs(scaleFactor - 1.0) > 0.05) {
+              const newFontSize = Math.max(8, Math.min(baseFontSize * scaleFactor, 72));
               engine.block.setTextFontSize(textBlock, newFontSize);
               console.log(`📐 Scaled address block: ${baseFontSize}pt → ${newFontSize.toFixed(1)}pt (factor: ${scaleFactor.toFixed(2)})`);
             }

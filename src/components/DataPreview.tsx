@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, Loader2, AlertCircle, Sparkles, TrendingUp, Lock } from "lucide-react";
+import { Check, Loader2, AlertCircle, Sparkles, TrendingUp, Lock, Scissors } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,14 @@ interface ColumnMapping {
   suggested: string;
   dataType: string;
   confidence: number;
+}
+
+interface SplitSuggestion {
+  column: string;
+  delimiter: string;
+  splitInto: string[];
+  confidence: number;
+  reason: string;
 }
 
 interface DataPreviewProps {
@@ -48,7 +56,11 @@ export function DataPreview({
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([]);
   const [qualityIssues, setQualityIssues] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [splitSuggestions, setSplitSuggestions] = useState<SplitSuggestion[]>([]);
   const [editedColumns, setEditedColumns] = useState<Record<string, string>>({});
+  const [isSplittingColumn, setIsSplittingColumn] = useState(false);
+  const [currentColumns, setCurrentColumns] = useState<string[]>(columns);
+  const [currentRows, setCurrentRows] = useState<Record<string, any>[]>(rows);
 
   const canUseAI = subscriptionFeatures?.canUseAICleaning ?? false;
 
@@ -86,6 +98,7 @@ export function DataPreview({
       setColumnMappings(data.columnMappings || []);
       setQualityIssues(data.qualityIssues || []);
       setSuggestions(data.suggestions || []);
+      setSplitSuggestions(data.splitSuggestions || []);
 
       // Initialize edited columns with AI suggestions
       const initialEdits: Record<string, string> = {};
@@ -144,6 +157,73 @@ export function DataPreview({
     setEditedColumns(prev => ({ ...prev, [original]: newValue }));
   };
 
+  const handleSplitColumn = async (suggestion: SplitSuggestion) => {
+    setIsSplittingColumn(true);
+    try {
+      console.log('Splitting column:', {
+        column: suggestion.column,
+        delimiter: suggestion.delimiter,
+        splitInto: suggestion.splitInto,
+        rowCount: currentRows.length
+      });
+
+      const { data, error } = await supabase.functions.invoke('split-column-with-ai', {
+        body: {
+          column: suggestion.column,
+          delimiter: suggestion.delimiter,
+          splitInto: suggestion.splitInto,
+          rows: currentRows,
+          columns: currentColumns,
+          workspaceId
+        }
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'Failed to split column');
+
+      console.log('Successfully split column:', {
+        originalColumn: suggestion.column,
+        newColumns: data.newColumns,
+        confidence: data.confidence
+      });
+
+      // Update state with split results
+      setCurrentColumns(data.columns);
+      setCurrentRows(data.rows);
+
+      // Update column mappings
+      const newMappings = data.columns.map((col: string) => ({
+        original: col,
+        suggested: col,
+        dataType: 'text',
+        confidence: 100
+      }));
+      setColumnMappings(newMappings);
+
+      // Update edited columns
+      const newEdits: Record<string, string> = {};
+      data.columns.forEach((col: string) => {
+        newEdits[col] = col;
+      });
+      setEditedColumns(newEdits);
+
+      // Remove the applied split suggestion
+      setSplitSuggestions(prev => prev.filter(s => s.column !== suggestion.column));
+
+      toast.success(`Split "${suggestion.column}" into ${suggestion.splitInto.length} columns`, {
+        description: `Confidence: ${data.confidence}%`
+      });
+
+    } catch (error: any) {
+      console.error('Error splitting column:', error);
+      toast.error('Failed to split column', {
+        description: error.message || 'Please try again'
+      });
+    } finally {
+      setIsSplittingColumn(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -151,10 +231,10 @@ export function DataPreview({
       if (!user) throw new Error('Not authenticated');
 
       // Prepare cleaned columns
-      const cleanedColumns = columnMappings.map(mapping => ({
-        original: mapping.original,
-        cleaned: editedColumns[mapping.original] || mapping.suggested,
-        dataType: mapping.dataType,
+      const cleanedColumns = currentColumns.map(col => ({
+        original: col,
+        cleaned: editedColumns[col] || col,
+        dataType: columnMappings.find(m => m.original === col)?.dataType || 'text',
       }));
 
       // Insert into data_sources table
@@ -165,10 +245,11 @@ export function DataPreview({
           workspace_id: workspaceId,
           source_type: 'csv' as const,
           file_url: filePath,
-          row_count: rowCount,
+          row_count: currentRows.length,
           parsed_fields: {
             columns: cleanedColumns,
             originalColumns: columns,
+            rows: currentRows,
           } as any,
           ai_field_analysis: {
             qualityIssues,
@@ -251,6 +332,49 @@ export function DataPreview({
         </Alert>
       )}
 
+      {/* Split Suggestions */}
+      {splitSuggestions.length > 0 && (
+        <Alert className="border-blue-500 bg-blue-50 dark:bg-blue-950">
+          <Scissors className="h-4 w-4 text-blue-500" />
+          <AlertTitle>Multi-Value Column Detected</AlertTitle>
+          <AlertDescription className="space-y-4">
+            {splitSuggestions.map((suggestion, idx) => (
+              <div key={idx} className="space-y-2">
+                <p className="text-sm">
+                  <span className="font-semibold">"{suggestion.column}"</span> appears to contain multiple values:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestion.splitInto.map((col, colIdx) => (
+                    <Badge key={colIdx} variant="secondary" className="text-xs">
+                      {col}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">{suggestion.reason}</p>
+                <Button
+                  onClick={() => handleSplitColumn(suggestion)}
+                  disabled={isSplittingColumn}
+                  size="sm"
+                  className="mt-2"
+                >
+                  {isSplittingColumn ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Splitting...
+                    </>
+                  ) : (
+                    <>
+                      <Scissors className="mr-2 h-4 w-4" />
+                      Split into {suggestion.splitInto.length} columns
+                    </>
+                  )}
+                </Button>
+              </div>
+            ))}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Column Mappings */}
       <div>
         <h3 className="font-medium mb-3">Column Names (editable)</h3>
@@ -283,7 +407,7 @@ export function DataPreview({
             <Table>
               <TableHeader>
                 <TableRow>
-                  {columns.map((col) => (
+                  {currentColumns.map((col) => (
                     <TableHead key={col} className="whitespace-nowrap">
                       {editedColumns[col] || col}
                     </TableHead>
@@ -291,9 +415,9 @@ export function DataPreview({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {preview.map((row, idx) => (
+                {currentRows.slice(0, 10).map((row, idx) => (
                   <TableRow key={idx}>
-                    {columns.map((col) => (
+                    {currentColumns.map((col) => (
                       <TableCell key={col} className="whitespace-nowrap">
                         {row[col]?.toString() || '-'}
                       </TableCell>

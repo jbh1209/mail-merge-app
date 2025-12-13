@@ -400,8 +400,8 @@ function layoutStackedInline(
 
 /**
  * Calculate optimal font size that fills the allocated space
- * Uses actual text measurement for precision
- * Importance affects starting guess but NOT the maximum size
+ * Uses mm-aware calculation for CE.SDK Millimeter design unit mode
+ * Font sizes are always in points (pt)
  */
 function calculateOptimalFontSize(
   sampleText: string,
@@ -410,54 +410,51 @@ function calculateOptimalFontSize(
   config: LayoutConfig,
   importance: 'highest' | 'high' | 'medium' | 'low'
 ): number {
-  // Convert mm to pixels for Canvas API measurement using centralized constant
-  const widthPx = widthMm * PX_PER_MM;
-  const heightPx = heightMm * PX_PER_MM;
+  // For mm mode labels, use a direct approach based on available dimensions
+  // This avoids pixel-based Canvas measurement which doesn't translate well to mm mode
   
-  // Check if text contains commas or newlines (multi-line)
   const isMultiLine = sampleText.includes(',') || sampleText.includes('\n');
-  const lineCount = (sampleText.match(/\n/g) || []).length + 1;
+  const lines = sampleText.split('\n').filter(Boolean);
+  const lineCount = Math.max(1, isMultiLine ? lines.length : 1);
+  const longestLine = Math.max(...lines.map(l => l.length), 1);
   
-  // Higher minimum for address blocks (4+ lines)
+  // Constants for mm to pt conversion
+  // 1 inch = 25.4mm, 1 inch = 72pt, so 1mm ≈ 2.83pt
+  const PT_PER_MM = 2.83465;
+  
+  // Line height and fill factors for comfortable reading
+  const lineHeightFactor = 1.35; // Standard line spacing
+  const fillFactor = 0.75; // Don't fill 100% - leave breathing room
+  
+  // Height-based calculation: available height per line in mm → pt
+  const heightPerLineMm = (heightMm * fillFactor) / (lineCount * lineHeightFactor);
+  const heightBasedSize = heightPerLineMm * PT_PER_MM;
+  
+  // Width-based calculation: estimate based on character count
+  // Average character width is ~0.5-0.6 of em (font size) for most fonts
+  const charWidthFactor = 0.55;
+  const widthBasedSize = (widthMm * PT_PER_MM * fillFactor) / (longestLine * charWidthFactor);
+  
+  // Use smaller of height and width constraints
+  let targetFontPt = Math.min(heightBasedSize, widthBasedSize);
+  
+  // Apply importance-based adjustments (subtle - don't dominate the calculation)
+  const importanceMultiplier = {
+    highest: 1.0,
+    high: 0.95,
+    medium: 0.9,
+    low: 0.85
+  }[importance];
+  
+  targetFontPt *= importanceMultiplier;
+  
+  // Clamp to config limits
   const minFont = lineCount >= 4 ? 10 : config.minFontSize;
-
-  // Binary search for LARGEST font size that fits
-  // Importance does NOT cap the maximum - it only affects starting guess for efficiency
-  let low = minFont;
-  let high = config.maxFontSize;
-  let bestFit = low;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const fontSizePx = pointsToPixels(mid);
-    
-    const measurement = measureText(
-      sampleText,
-      'Arial',
-      fontSizePx,
-      'normal',
-      isMultiLine ? widthPx : undefined
-    );
-
-    // Use 1.3 line height for multi-line, matching Fabric
-    const adjustedHeight = isMultiLine 
-      ? measurement.lineCount * fontSizePx * 1.3 
-      : measurement.height;
-
-    // Check if fits with some padding
-    const paddingPx = config.padding * PX_PER_MM;
-    const fits = measurement.width <= (widthPx - paddingPx) && 
-                 adjustedHeight <= (heightPx - paddingPx);
-
-    if (fits) {
-      bestFit = mid;
-      low = mid + 1; // Try larger to fill more space
-    } else {
-      high = mid - 1; // Try smaller
-    }
-  }
-
-  return Math.max(bestFit, minFont);
+  const result = Math.max(minFont, Math.min(Math.round(targetFontPt), config.maxFontSize));
+  
+  console.log(`📐 Font size calc: ${widthMm.toFixed(1)}×${heightMm.toFixed(1)}mm, ${lineCount} lines → ${result}pt`);
+  
+  return result;
 }
 
 /**

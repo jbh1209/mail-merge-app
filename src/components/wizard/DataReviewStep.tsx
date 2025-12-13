@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2 } from "lucide-react";
+import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2, Scissors } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopedAIChat } from "@/components/ScopedAIChat";
 
@@ -41,10 +41,19 @@ interface ColumnMapping {
   confidence: number;
 }
 
+interface SplitSuggestion {
+  column: string;
+  delimiter: string;
+  splitInto: string[];
+  confidence: number;
+  reason: string;
+}
+
 interface AnalysisResult {
   columnMappings: ColumnMapping[];
   qualityIssues: string[];
   suggestions: string[];
+  splitSuggestions?: SplitSuggestion[];
 }
 
 export function DataReviewStep({
@@ -64,6 +73,7 @@ export function DataReviewStep({
   const [needsStructuring, setNeedsStructuring] = useState(false);
   const [isStructuring, setIsStructuring] = useState(false);
   const [structuredData, setStructuredData] = useState<{ columns: string[], rows: any[] } | null>(null);
+  const [isSplittingColumn, setIsSplittingColumn] = useState(false);
 
   const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
   const { columns, preview, rowCount, fileName } = parsedData;
@@ -244,6 +254,67 @@ export function DataReviewStep({
     }
   };
 
+  const handleSplitColumn = async (suggestion: SplitSuggestion) => {
+    setIsSplittingColumn(true);
+    try {
+      const currentRows = structuredData ? structuredData.rows : ((parsedData as any).rows || preview);
+      const currentCols = structuredData ? structuredData.columns : columns;
+
+      console.log('Splitting column:', {
+        column: suggestion.column,
+        delimiter: suggestion.delimiter,
+        splitInto: suggestion.splitInto,
+        rowCount: currentRows.length
+      });
+
+      const { data, error } = await supabase.functions.invoke('split-column-with-ai', {
+        body: {
+          column: suggestion.column,
+          delimiter: suggestion.delimiter,
+          splitInto: suggestion.splitInto,
+          rows: currentRows,
+          columns: currentCols,
+          workspaceId
+        }
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || 'Failed to split column');
+
+      console.log('Successfully split column:', {
+        originalColumn: suggestion.column,
+        newColumns: data.newColumns,
+        confidence: data.confidence
+      });
+
+      // Update structured data with split results
+      setStructuredData({
+        columns: data.columns,
+        rows: data.rows
+      });
+
+      // Remove the applied split suggestion from analysis
+      if (analysis?.splitSuggestions) {
+        setAnalysis({
+          ...analysis,
+          splitSuggestions: analysis.splitSuggestions.filter(s => s.column !== suggestion.column)
+        });
+      }
+
+      toast.success(`Split "${suggestion.column}" into ${suggestion.splitInto.length} columns`, {
+        description: `Confidence: ${data.confidence}%`
+      });
+
+    } catch (error: any) {
+      console.error('Error splitting column:', error);
+      toast.error('Failed to split column', {
+        description: error.message || 'Please try again'
+      });
+    } finally {
+      setIsSplittingColumn(false);
+    }
+  };
+
   const handleAcceptAndContinue = async () => {
     if (!dataValidated) {
       toast.error("Please review the data quality checks before proceeding.");
@@ -376,6 +447,51 @@ export function DataReviewStep({
           <AlertTitle>Data Structured Successfully</AlertTitle>
           <AlertDescription>
             Parsed {columns.length} column into {structuredData.columns.length} structured fields
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Split Column Suggestions */}
+      {analysis?.splitSuggestions && analysis.splitSuggestions.length > 0 && (
+        <Alert className="border-blue-500 bg-blue-50 dark:bg-blue-950">
+          <Scissors className="h-4 w-4 text-blue-500" />
+          <AlertTitle>Multi-Value Column Detected</AlertTitle>
+          <AlertDescription className="space-y-4">
+            {analysis.splitSuggestions.map((suggestion, idx) => (
+              <div key={idx} className="space-y-2">
+                <p className="text-sm">
+                  <span className="font-semibold">"{suggestion.column}"</span> appears to contain multiple values that should be separate columns:
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {suggestion.splitInto.map((col, colIdx) => (
+                    <Badge key={colIdx} variant="secondary" className="text-xs">
+                      {col}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">{suggestion.reason}</p>
+                <div className="flex gap-2 mt-2">
+                  <Button
+                    onClick={() => handleSplitColumn(suggestion)}
+                    disabled={isSplittingColumn}
+                    size="sm"
+                    className="bg-blue-500 hover:bg-blue-600"
+                  >
+                    {isSplittingColumn ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Splitting...
+                      </>
+                    ) : (
+                      <>
+                        <Scissors className="mr-2 h-4 w-4" />
+                        Split into {suggestion.splitInto.length} columns
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ))}
           </AlertDescription>
         </Alert>
       )}

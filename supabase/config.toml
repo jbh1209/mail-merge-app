@@ -47,3 +47,6 @@ verify_jwt = true
 
 [functions.create-billing-portal]
 verify_jwt = true
+
+[functions.split-column-with-ai]
+verify_jwt = true

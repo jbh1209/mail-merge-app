@@ -152,6 +152,10 @@ Look for:
 3. Missing critical values in key fields
 4. Inconsistent formatting (mixed date formats, inconsistent capitalization)
 5. Duplicate or very similar column names
+6. **IMPORTANT**: Columns containing MULTIPLE VALUES separated by commas, newlines, or other delimiters that should be SPLIT into separate columns
+   - Examples: "John Smith, Manager, Acme Corp" contains Name, Job Title, and Company
+   - Look for patterns where each cell contains the same NUMBER of delimited values
+   - This is common in name badge data, contact lists, etc.
 
 For EACH column, suggest:
 - A clearer name if needed (use clear, readable names - not necessarily snake_case)
@@ -162,6 +166,9 @@ For quality issues, prefix each with severity:
 - "CRITICAL: " for issues that will break the merge
 - "WARNING: " for issues that should be reviewed
 - "INFO: " for minor observations
+
+**CRITICAL: Detect multi-value columns!**
+If a column contains multiple values separated by commas or other delimiters (e.g., "Name, Job Title, Company"), add it to the "splitSuggestions" array. Analyze the PATTERN of values across multiple rows to determine what each value represents.
 
 Respond in this EXACT JSON format:
 {
@@ -180,6 +187,15 @@ Respond in this EXACT JSON format:
   ],
   "suggestions": [
     "Clear, actionable suggestion for the user"
+  ],
+  "splitSuggestions": [
+    {
+      "column": "original column name that needs splitting",
+      "delimiter": ",",
+      "splitInto": ["First Name", "Last Name", "Job Title", "Company"],
+      "confidence": 90,
+      "reason": "Each row contains 4 comma-separated values representing person and role data"
+    }
   ]
 }`;
 

@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Upload, FileText, Play, Plus, Home, Edit } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Play, Plus, Home, Edit, Image } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +16,7 @@ import { TemplateWizard } from "@/components/TemplateWizard";
 import { FieldMappingWizard } from "@/components/FieldMappingWizard";
 import { MergeJobRunner } from "@/components/MergeJobRunner";
 import { MergeJobsList } from "@/components/MergeJobsList";
+import { ImageAssetUpload } from "@/components/ImageAssetUpload";
 
 import { useSubscription } from "@/hooks/useSubscription";
 import { toast } from "sonner";
@@ -254,6 +255,7 @@ export default function ProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
           <TabsTrigger value="data-sources">Data Sources</TabsTrigger>
+          <TabsTrigger value="assets">Assets</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="mappings">Field Mappings</TabsTrigger>
           <TabsTrigger value="jobs">Merge Jobs</TabsTrigger>
@@ -277,6 +279,30 @@ export default function ProjectDetail() {
                 onDelete={handleDeleteDataSource}
                 onMapFields={handleStartMapping}
               />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="assets" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Image className="h-5 w-5 text-primary" />
+                <div>
+                  <CardTitle>Image Assets</CardTitle>
+                  <CardDescription>
+                    Upload images for variable data printing. Image filenames should match values in your data.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {workspace && (
+                <ImageAssetUpload
+                  projectId={id!}
+                  workspaceId={workspace}
+                />
+              )}
             </CardContent>
           </Card>
         </TabsContent>

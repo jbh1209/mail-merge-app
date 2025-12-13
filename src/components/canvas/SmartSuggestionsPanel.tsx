@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { BarChart3, QrCode, Hash, Sparkles, X, CheckCircle2 } from 'lucide-react';
+import { BarChart3, QrCode, Hash, Sparkles, X, CheckCircle2, Image } from 'lucide-react';
 import { FieldSuggestion, getSuggestionDisplayName } from '@/lib/field-detection-utils';
 import { FieldConfig } from '@/lib/canvas-utils';
 
@@ -28,7 +28,7 @@ export function SmartSuggestionsPanel({
     setAcceptedSuggestions(prev => new Set(prev).add(suggestion.fieldName));
   };
 
-  const getIcon = (type: 'barcode' | 'qrcode' | 'sequence') => {
+  const getIcon = (type: 'barcode' | 'qrcode' | 'sequence' | 'image') => {
     switch (type) {
       case 'barcode':
         return <BarChart3 className="h-5 w-5" />;
@@ -36,6 +36,8 @@ export function SmartSuggestionsPanel({
         return <QrCode className="h-5 w-5" />;
       case 'sequence':
         return <Hash className="h-5 w-5" />;
+      case 'image':
+        return <Image className="h-5 w-5" />;
     }
   };
 

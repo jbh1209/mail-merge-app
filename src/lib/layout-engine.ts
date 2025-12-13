@@ -177,7 +177,7 @@ function layoutSingleDominant(
       y: bounds.y,
       width: bounds.width,
       height: bounds.height,
-      fontSize: 24, // Max - Fabric auto-fits
+      fontSize, // Use calculated optimal font size
       autoFit: true,
       fontWeight: typo.weight,
       textAlign: 'center',
@@ -390,7 +390,7 @@ function layoutStackedInline(
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    fontSize: 24, // Max - Fabric auto-fits
+    fontSize, // Use calculated optimal font size
     autoFit: true,
     fontWeight: typo.weight,
     textAlign: 'center',

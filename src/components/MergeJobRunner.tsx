@@ -10,6 +10,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast as sonnerToast } from "sonner";
+import { ImageValidationWarning } from "@/components/ImageValidationWarning";
+import { validateImageReferences, ImageValidationResult, UploadedImage } from "@/lib/image-validation-utils";
+import { detectSpecialFields } from "@/lib/field-detection-utils";
 
 interface MergeJobRunnerProps {
   projectId: string;
@@ -19,6 +22,8 @@ interface MergeJobRunnerProps {
   fieldMappings: any[];
   onJobCreated: () => void;
   autoSelectLatest?: boolean;
+  uploadedImages?: UploadedImage[];
+  onNavigateToAssets?: () => void;
 }
 
 export function MergeJobRunner({
@@ -28,11 +33,15 @@ export function MergeJobRunner({
   templates,
   fieldMappings,
   onJobCreated,
-  autoSelectLatest = false
+  autoSelectLatest = false,
+  uploadedImages = [],
+  onNavigateToAssets
 }: MergeJobRunnerProps) {
   const [selectedDataSource, setSelectedDataSource] = useState<string>("");
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [generating, setGenerating] = useState(false);
+  const [imageValidation, setImageValidation] = useState<ImageValidationResult | null>(null);
+  const [imageColumn, setImageColumn] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -68,6 +77,44 @@ export function MergeJobRunner({
       });
     }
   }, [autoSelectLatest, dataSources, templates]);
+
+  // Validate image references when data source changes
+  useEffect(() => {
+    if (!selectedDataSource) {
+      setImageValidation(null);
+      setImageColumn(null);
+      return;
+    }
+
+    const dataSource = dataSources.find(ds => ds.id === selectedDataSource);
+    if (!dataSource?.parsed_fields) {
+      setImageValidation(null);
+      setImageColumn(null);
+      return;
+    }
+
+    // Check if there are image columns in the data
+    const parsedFields = dataSource.parsed_fields as { headers?: string[]; rows?: Record<string, any>[] };
+    const headers = parsedFields.headers || [];
+    const rows = parsedFields.rows || [];
+
+    // Detect image fields
+    const specialFields = detectSpecialFields(headers);
+    const imageFields = specialFields.filter(f => f.suggestedType === 'image');
+
+    if (imageFields.length === 0) {
+      setImageValidation(null);
+      setImageColumn(null);
+      return;
+    }
+
+    // Validate the first detected image column
+    const firstImageField = imageFields[0].fieldName;
+    setImageColumn(firstImageField);
+
+    const validation = validateImageReferences(rows, firstImageField, uploadedImages);
+    setImageValidation(validation);
+  }, [selectedDataSource, dataSources, uploadedImages]);
 
   const dataSource = dataSources.find(ds => ds.id === selectedDataSource);
   const totalPages = dataSource?.row_count || 0;
@@ -235,6 +282,15 @@ export function MergeJobRunner({
             </Select>
           </div>
         </div>
+
+        {/* Image Validation Warning */}
+        {imageValidation && imageColumn && (
+          <ImageValidationWarning 
+            validation={imageValidation}
+            imageColumn={imageColumn}
+            onUploadClick={onNavigateToAssets}
+          />
+        )}
 
         {selectedDataSource && selectedTemplate && !hasMapping && (
           <Alert variant="destructive">

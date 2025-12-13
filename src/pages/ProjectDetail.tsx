@@ -36,6 +36,7 @@ export default function ProjectDetail() {
   const [selectedDataSource, setSelectedDataSource] = useState<any>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("data-sources");
+  const [uploadedImages, setUploadedImages] = useState<{ name: string; url: string; path: string; size: number }[]>([]);
 
   // Handle URL params for auto-navigation to merge jobs tab
   useEffect(() => {
@@ -301,6 +302,7 @@ export default function ProjectDetail() {
                 <ImageAssetUpload
                   projectId={id!}
                   workspaceId={workspace}
+                  onImagesChange={setUploadedImages}
                 />
               )}
             </CardContent>
@@ -464,6 +466,8 @@ export default function ProjectDetail() {
                   templates={templates || []}
                   fieldMappings={fieldMappings || []}
                   autoSelectLatest={searchParams.get('autoSelect') === 'true'}
+                  uploadedImages={uploadedImages}
+                  onNavigateToAssets={() => setActiveTab('assets')}
                   onJobCreated={() => {
                     queryClient.invalidateQueries({ queryKey: ["merge-jobs", id] });
                   }}

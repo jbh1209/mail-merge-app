@@ -365,23 +365,30 @@ export function CreativeEditorWrapper({
     engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
     engine.block.setFill(block, fill);
     
-    // Set size and position in mm (CE.SDK is in Millimeter mode)
-    // Use label dimensions to calculate appropriate sizing
-    const labelWidthMm = labelWidth || 66.68;  // Default to common label width
-    const labelHeightMm = labelHeight || 25.4; // Default to common label height
-    const barcodeWidthMm = Math.min(labelWidthMm * 0.5, 50);  // ~50% of label width, max 50mm
-    const barcodeHeightMm = Math.min(labelHeightMm * 0.3, 25); // ~30% of label height, max 25mm
+    // CRITICAL: Append to page FIRST before setting position
+    // CE.SDK position is relative to parent - must be parented first
+    engine.block.appendChild(page, block);
+    
+    // Get actual page dimensions in mm
+    const pageWidthMm = engine.block.getWidth(page);
+    const pageHeightMm = engine.block.getHeight(page);
+    
+    // Set size relative to page dimensions
+    const barcodeWidthMm = Math.min(pageWidthMm * 0.5, 50);  // ~50% of page width, max 50mm
+    const barcodeHeightMm = Math.min(pageHeightMm * 0.3, 25); // ~30% of page height, max 25mm
     engine.block.setWidth(block, barcodeWidthMm);
     engine.block.setHeight(block, barcodeHeightMm);
-    engine.block.setPositionX(block, (labelWidthMm - barcodeWidthMm) / 2);  // Centered horizontally
-    engine.block.setPositionY(block, labelHeightMm * 0.6); // Lower half of label
+    
+    // Position: centered horizontally, lower half of label
+    engine.block.setPositionX(block, (pageWidthMm - barcodeWidthMm) / 2);
+    engine.block.setPositionY(block, pageHeightMm * 0.55);
     
     // Store metadata in block name for VDP resolution
     if (variableField) {
       engine.block.setName(block, `barcode:${format}:${variableField}`);
     }
     
-    engine.block.appendChild(page, block);
+    console.log(`✅ Created barcode: ${barcodeWidthMm.toFixed(1)}mm × ${barcodeHeightMm.toFixed(1)}mm`);
   }, []);
 
   // Add QR code to canvas
@@ -410,22 +417,29 @@ export function CreativeEditorWrapper({
     engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
     engine.block.setFill(block, fill);
     
-    // Set size and position in mm (CE.SDK is in Millimeter mode)
-    // QR codes should be square, sized relative to label dimensions
-    const labelWidthMm = labelWidth || 66.68;
-    const labelHeightMm = labelHeight || 25.4;
-    const qrSizeMm = Math.min(labelWidthMm * 0.25, labelHeightMm * 0.6, 30); // Max 30mm
+    // CRITICAL: Append to page FIRST before setting position
+    // CE.SDK position is relative to parent - must be parented first
+    engine.block.appendChild(page, block);
+    
+    // Get actual page dimensions in mm
+    const pageWidthMm = engine.block.getWidth(page);
+    const pageHeightMm = engine.block.getHeight(page);
+    
+    // QR codes should be square, sized relative to page dimensions
+    const qrSizeMm = Math.min(pageWidthMm * 0.25, pageHeightMm * 0.6, 30); // Max 30mm
     engine.block.setWidth(block, qrSizeMm);
     engine.block.setHeight(block, qrSizeMm);
-    engine.block.setPositionX(block, labelWidthMm - qrSizeMm - labelWidthMm * 0.05); // Right side with 5% margin
-    engine.block.setPositionY(block, (labelHeightMm - qrSizeMm) / 2); // Vertically centered
+    
+    // Position: right side with 5% margin, vertically centered
+    engine.block.setPositionX(block, pageWidthMm - qrSizeMm - pageWidthMm * 0.05);
+    engine.block.setPositionY(block, (pageHeightMm - qrSizeMm) / 2);
     
     // Store metadata in block name for VDP resolution
     if (variableField) {
       engine.block.setName(block, `qrcode::${variableField}`);
     }
     
-    engine.block.appendChild(page, block);
+    console.log(`✅ Created QR code: ${qrSizeMm.toFixed(1)}mm × ${qrSizeMm.toFixed(1)}mm`);
   }, []);
 
   useEffect(() => {
@@ -839,27 +853,40 @@ export function CreativeEditorWrapper({
     
     // Create text block
     const textBlock = engine.block.create('//ly.img.ubq/text');
-    engine.block.setString(textBlock, 'text/text', displayValue);
+    
+    // CRITICAL: Append to page FIRST before setting position
+    // CE.SDK position is relative to parent - must be parented first
+    engine.block.appendChild(page, textBlock);
+    
+    // Now set text content
+    engine.block.replaceText(textBlock, displayValue);
     
     // Store sequence config in block name
     engine.block.setName(textBlock, createSequenceBlockName(seqConfig));
     
-    // Set size and position in mm (CE.SDK is in Millimeter mode)
-    // Size relative to label/page dimensions
+    // Get page dimensions in mm
     const pageWidthMm = engine.block.getWidth(page);
     const pageHeightMm = engine.block.getHeight(page);
-    const seqWidthMm = Math.min(pageWidthMm * 0.3, 40);  // 30% of width, max 40mm
-    const seqHeightMm = Math.min(pageHeightMm * 0.15, 10); // 15% of height, max 10mm
-    engine.block.setWidth(textBlock, seqWidthMm);
-    engine.block.setHeight(textBlock, seqHeightMm);
-    engine.block.setPositionX(textBlock, pageWidthMm * 0.05); // 5% margin from left
-    engine.block.setPositionY(textBlock, pageHeightMm - seqHeightMm - pageHeightMm * 0.05); // Bottom with 5% margin
     
-    // Add to page
-    engine.block.appendChild(page, textBlock);
+    // Set size relative to label dimensions - wider for sequence text
+    const seqWidthMm = Math.min(pageWidthMm * 0.4, 50);  // 40% of width, max 50mm
+    const seqHeightMm = Math.min(pageHeightMm * 0.25, 15); // 25% of height, max 15mm
+    
+    engine.block.setWidthMode(textBlock, 'Absolute');
+    engine.block.setWidth(textBlock, seqWidthMm);
+    engine.block.setHeightMode(textBlock, 'Auto');
+    
+    // Position at bottom-left with proper margins (5% from edges)
+    engine.block.setPositionX(textBlock, pageWidthMm * 0.05);
+    engine.block.setPositionY(textBlock, pageHeightMm * 0.70); // 70% down = bottom area
+    
+    // Set a reasonable font size (14pt is good for sequences)
+    engine.block.setTextFontSize(textBlock, 14);
     
     // Select the new block
     engine.block.setSelected(textBlock, true);
+    
+    console.log(`✅ Created sequence block: ${seqWidthMm.toFixed(1)}mm × auto, at (${(pageWidthMm * 0.05).toFixed(1)}, ${(pageHeightMm * 0.70).toFixed(1)})`);
     
     setSequenceDialogOpen(false);
   }, [currentRecordIndex]);

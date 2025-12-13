@@ -69,8 +69,8 @@ interface CreativeEditorWrapperProps {
   key?: string; // Forces re-init when dimensions change
 }
 
-// Helper: Convert mm to points (72 DPI)
-const mmToPoints = (mm: number) => (mm / 25.4) * 72;
+// Note: Design unit is set to 'Millimeter' so we pass mm values directly to CE.SDK
+// Font sizes are always in points regardless of design unit
 
 // Calculate auto-fit font size based on text content and available box dimensions
 function calculateAutoFitFontSize(
@@ -191,8 +191,6 @@ async function generateInitialLayout(
           const marginPercent = 0.10;
           const boxWidthMm = widthMm * 0.80;
           const boxHeightMm = heightMm * 0.80;
-          const boxWidthPt = mmToPoints(boxWidthMm);
-          const boxHeightPt = mmToPoints(boxHeightMm);
           const startXMm = widthMm * marginPercent;
           const startYMm = heightMm * marginPercent;
 
@@ -200,13 +198,13 @@ async function generateInitialLayout(
           // CE.SDK requires blocks to be part of the scene hierarchy before styling takes effect
           engine.block.appendChild(page, textBlock);
 
-          // Set position first
-          engine.block.setPositionX(textBlock, mmToPoints(startXMm));
-          engine.block.setPositionY(textBlock, mmToPoints(startYMm));
+          // Set position in mm (design unit is Millimeter)
+          engine.block.setPositionX(textBlock, startXMm);
+          engine.block.setPositionY(textBlock, startYMm);
           
-          // Set FIXED width (Absolute mode) for line wrapping constraint
+          // Set FIXED width (Absolute mode) for line wrapping constraint - in mm
           engine.block.setWidthMode(textBlock, 'Absolute');
-          engine.block.setWidth(textBlock, boxWidthPt);
+          engine.block.setWidth(textBlock, boxWidthMm);
           
           // Set height mode to Auto - CE.SDK will auto-size height based on content
           engine.block.setHeightMode(textBlock, 'Auto');
@@ -215,20 +213,20 @@ async function generateInitialLayout(
           // Set text content using replaceText for proper text run initialization
           engine.block.replaceText(textBlock, textContent);
           
-          // Start with a base font size - CE.SDK will auto-size height
+          // Font sizes are always in points, regardless of design unit
           const baseFontSize = 24;
           engine.block.setTextFontSize(textBlock, baseFontSize);
           
           engine.block.setName(textBlock, blockName);
           
           // --- AUTOMATIC SCALING TO FILL ~80% OF LABEL ---
-          // Read the auto-sized frame dimensions
-          const actualHeight = engine.block.getFrameHeight(textBlock);
-          const targetHeight = boxHeightPt; // 80% of page height
+          // Read the auto-sized frame dimensions (returned in current design unit = mm)
+          const actualHeightMm = engine.block.getFrameHeight(textBlock);
+          const targetHeightMm = boxHeightMm; // 80% of page height
           
           // Calculate scale factor (only scale up if text is smaller than target)
-          if (actualHeight > 0 && actualHeight < targetHeight) {
-            const scaleFactor = targetHeight / actualHeight;
+          if (actualHeightMm > 0 && actualHeightMm < targetHeightMm) {
+            const scaleFactor = targetHeightMm / actualHeightMm;
             // Calculate new font size proportionally
             const newFontSize = baseFontSize * scaleFactor;
             // Apply the scaled font size (height will auto-adjust)
@@ -245,13 +243,13 @@ async function generateInitialLayout(
           // CRITICAL: Append to page FIRST before setting text content and font size
           engine.block.appendChild(page, textBlock);
 
-          // Set position (convert mm to points)
-          engine.block.setPositionX(textBlock, mmToPoints(field.x));
-          engine.block.setPositionY(textBlock, mmToPoints(field.y));
+          // Set position in mm (design unit is Millimeter)
+          engine.block.setPositionX(textBlock, field.x);
+          engine.block.setPositionY(textBlock, field.y);
 
-          // Set FIXED width (Absolute mode) for line wrapping constraint
+          // Set FIXED width (Absolute mode) for line wrapping constraint - in mm
           engine.block.setWidthMode(textBlock, 'Absolute');
-          engine.block.setWidth(textBlock, mmToPoints(field.width));
+          engine.block.setWidth(textBlock, field.width);
           
           // Set height mode to Auto - CE.SDK will auto-size height based on content
           engine.block.setHeightMode(textBlock, 'Auto');
@@ -424,10 +422,8 @@ export function CreativeEditorWrapper({
         setIsLoading(true);
         setError(null);
 
-        // Convert mm to design units (CE.SDK uses a base of 72 DPI for points)
-        const mmToPoints = (mm: number) => (mm / 25.4) * 72;
-        const widthPoints = mmToPoints(labelWidth);
-        const heightPoints = mmToPoints(labelHeight);
+        // We'll use Millimeter design unit - pass mm values directly to CE.SDK
+        // No need to convert to points - CE.SDK handles the conversion internally
 
         const config: Configuration = {
           license: licenseKey || '',
@@ -599,6 +595,18 @@ export function CreativeEditorWrapper({
           setSequenceDialogOpen(true);
         }));
 
+        // Helper to set design unit to Millimeter and configure page size
+        const setPageSizeMm = (pages: number[]) => {
+          if (pages.length > 0) {
+            const page = pages[0];
+            // Set design unit to Millimeter - CE.SDK will handle internal conversions
+            cesdk.engine.scene.setDesignUnit('Millimeter');
+            // Now set dimensions in mm directly
+            cesdk.engine.block.setWidth(page, labelWidth);
+            cesdk.engine.block.setHeight(page, labelHeight);
+          }
+        };
+
         // Create a new design or load existing scene
         if (initialScene) {
           try {
@@ -623,33 +631,18 @@ export function CreativeEditorWrapper({
               await cesdk.engine.scene.loadFromString(initialScene);
             }
             // Force page dimensions to match template (in case scene was saved with different size)
-            const pages = cesdk.engine.scene.getPages();
-            if (pages.length > 0) {
-              const page = pages[0];
-              cesdk.engine.block.setWidth(page, widthPoints);
-              cesdk.engine.block.setHeight(page, heightPoints);
-            }
+            setPageSizeMm(cesdk.engine.scene.getPages());
           } catch (e) {
             console.warn('Failed to load scene, creating new design:', e);
             await cesdk.createDesignScene();
-            const pages = cesdk.engine.scene.getPages();
-            if (pages.length > 0) {
-              const page = pages[0];
-              cesdk.engine.block.setWidth(page, widthPoints);
-              cesdk.engine.block.setHeight(page, heightPoints);
-            }
+            setPageSizeMm(cesdk.engine.scene.getPages());
           }
         } else {
           // Create a new design with specified dimensions
           await cesdk.createDesignScene();
           
-          // Set page size
-          const pages = cesdk.engine.scene.getPages();
-          if (pages.length > 0) {
-            const page = pages[0];
-            cesdk.engine.block.setWidth(page, widthPoints);
-            cesdk.engine.block.setHeight(page, heightPoints);
-          }
+          // Set page size in millimeters
+          setPageSizeMm(cesdk.engine.scene.getPages());
 
           // AUTO-LAYOUT: Generate initial layout using AI for new designs
           await generateInitialLayout(

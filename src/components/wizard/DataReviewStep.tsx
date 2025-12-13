@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2, Scissors } from "lucide-react";
+import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2, Scissors, Image } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopedAIChat } from "@/components/ScopedAIChat";
+import { isLikelyImageField, detectFieldType } from "@/lib/avery-labels";
 
 interface DataReviewStepProps {
   projectId: string;
@@ -78,6 +79,20 @@ export function DataReviewStep({
   const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
   const { columns, preview, rowCount, fileName } = parsedData;
   const emptyColumnsRemoved = (parsedData as any).emptyColumnsRemoved || 0;
+
+  // Detect image fields in the data for user guidance
+  const imageFields = useMemo(() => columns.filter(col => isLikelyImageField(col)), [columns]);
+  const hasImageFields = imageFields.length > 0;
+  
+  // Categorize all columns by detected type
+  const columnTypes = useMemo(() => {
+    const types: Record<string, string> = {};
+    for (const col of columns) {
+      const fieldType = detectFieldType(col);
+      if (fieldType) types[col] = fieldType;
+    }
+    return types;
+  }, [columns]);
 
   const categorizedIssues = {
     critical: analysis?.qualityIssues.filter(issue => issue.startsWith('CRITICAL:')) || [],

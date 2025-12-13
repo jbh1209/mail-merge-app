@@ -1,14 +1,16 @@
 import { useState, useEffect } from "react";
-import { Wand2, Check, Loader2, Lock } from "lucide-react";
+import { Wand2, Check, Loader2, Lock, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MappingPreview } from "./MappingPreview";
 import { SubscriptionFeatures } from "@/hooks/useSubscription";
+import { isLikelyImageField, detectFieldType } from "@/lib/avery-labels";
 
 interface FieldMapping {
   templateField: string;
@@ -293,6 +295,10 @@ export function FieldMappingWizard({
   const mappedCount = mappings.filter(m => m.dataColumn).length;
   const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
   const usableColumns = sourceColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
+  
+  // Detect image fields for user guidance
+  const imageFields = usableColumns.filter(col => isLikelyImageField(col));
+  const hasImageFields = imageFields.length > 0;
 
   return (
     <Card className="w-full max-w-5xl mx-auto">
@@ -301,6 +307,22 @@ export function FieldMappingWizard({
         <CardDescription>Auto-mapped {mappedCount} of {templateFields.length} fields</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Image fields guidance */}
+        {hasImageFields && (
+          <Alert className="border-primary/50 bg-primary/5">
+            <Image className="h-4 w-4" />
+            <AlertDescription className="ml-2">
+              <span className="font-medium">Image fields detected:</span>{' '}
+              {imageFields.map((f, i) => (
+                <Badge key={f} variant="outline" className="mx-1">{f}</Badge>
+              ))}
+              <p className="text-sm text-muted-foreground mt-1">
+                Make sure to upload matching images in the project assets before generating PDFs.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">Need help with mapping?</p>
           <div className="flex items-center gap-2">
@@ -315,30 +337,50 @@ export function FieldMappingWizard({
           </div>
         </div>
         <div className="space-y-4">
-          {mappings.map((mapping) => (
-            <div key={mapping.templateField} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
-              <div className="space-y-1">
-                <Badge variant="outline">Template Field</Badge>
-                <p className="font-semibold">{mapping.templateField}</p>
+          {mappings.map((mapping) => {
+            const isImageMapping = isLikelyImageField(mapping.templateField) || 
+                                   (mapping.dataColumn && isLikelyImageField(mapping.dataColumn));
+            const detectedType = detectFieldType(mapping.templateField);
+            
+            return (
+              <div key={mapping.templateField} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">Template Field</Badge>
+                    {isImageMapping && <Badge variant="secondary" className="gap-1"><Image className="h-3 w-3" /> Image</Badge>}
+                    {detectedType && !isImageMapping && (
+                      <Badge variant="secondary" className="text-xs">{detectedType}</Badge>
+                    )}
+                  </div>
+                  <p className="font-semibold">{mapping.templateField}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Maps to:</Label>
+                  <Select
+                    value={mapping.dataColumn || ""}
+                    onValueChange={(value) => handleMappingChange(mapping.templateField, value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {usableColumns.map((col) => {
+                        const colIsImage = isLikelyImageField(col);
+                        return (
+                          <SelectItem key={col} value={col}>
+                            <span className="flex items-center gap-2">
+                              {col}
+                              {colIsImage && <Image className="h-3 w-3 text-muted-foreground" />}
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Maps to:</Label>
-                <Select
-                  value={mapping.dataColumn || ""}
-                  onValueChange={(value) => handleMappingChange(mapping.templateField, value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select column..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {usableColumns.map((col) => (
-                      <SelectItem key={col} value={col}>{col}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="flex justify-between pt-4 border-t">

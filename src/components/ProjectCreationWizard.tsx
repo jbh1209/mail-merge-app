@@ -17,7 +17,7 @@ import { TemplateLibrary } from "./TemplateLibrary";
 import { TemplateUpload } from "./TemplateUpload";
 import { FieldMappingWizard } from "./FieldMappingWizard";
 // TemplateDesignCanvas removed - now using CE.SDK editor page
-import { LabelSize } from "@/lib/avery-labels";
+import { LabelSize, isLikelyImageField, detectFieldType, COMMON_FIELD_PATTERNS } from "@/lib/avery-labels";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const projectTypes = [
@@ -77,32 +77,59 @@ const WIZARD_STEPS = [
 ];
 
 // Helper function to extract template fields from a LabelSize template
-const extractTemplateFields = (template: LabelSize): string[] => {
-  const commonFields: Record<string, string[]> = {
-    'address': ['name', 'address_line_1', 'address_line_2', 'city', 'state', 'zip'],
-    'shipping': ['recipient_name', 'company', 'address', 'city', 'state', 'zip', 'country'],
-    'mailing': ['first_name', 'last_name', 'address', 'city', 'state', 'zip'],
-    'product': ['product_name', 'sku', 'price', 'barcode'],
-    'file-folder': ['name', 'category', 'date'],
-    'name-badge': ['name', 'title', 'company'],
-    'default': ['field_1', 'field_2', 'field_3', 'field_4']
+// Uses enhanced field detection from avery-labels
+const extractTemplateFields = (template: LabelSize, projectType?: string): string[] => {
+  // Use project type to determine appropriate fields
+  const fieldsByProjectType: Record<string, string[]> = {
+    'label': ['name', 'address', 'city', 'state', 'zip'],
+    'badge': ['name', 'title', 'company', 'photo'],
+    'certificate': ['recipient_name', 'award_title', 'date', 'signature'],
+    'card': ['name', 'title', 'company', 'email', 'phone'],
+    'shelf_strip': ['product', 'price', 'barcode', 'sku'],
+    'custom': ['field_1', 'field_2', 'field_3', 'field_4'],
   };
+
+  // Check explicit project type first
+  if (projectType && fieldsByProjectType[projectType]) {
+    return fieldsByProjectType[projectType];
+  }
+
+  // Fallback to template useCase detection
+  const useCase = (template.useCase || '').toLowerCase();
   
-  const category = template.category?.toLowerCase() || 'default';
-  
-  if (template.useCase?.toLowerCase().includes('address')) {
-    return commonFields['address'];
-  } else if (template.useCase?.toLowerCase().includes('shipping')) {
-    return commonFields['shipping'];
-  } else if (template.useCase?.toLowerCase().includes('product')) {
-    return commonFields['product'];
-  } else if (category.includes('file') || category.includes('folder')) {
-    return commonFields['file-folder'];
-  } else if (category.includes('badge') || category.includes('name')) {
-    return commonFields['name-badge'];
+  if (useCase.includes('address') || useCase.includes('mailing')) {
+    return fieldsByProjectType['label'];
+  } else if (useCase.includes('badge') || useCase.includes('event') || useCase.includes('conference')) {
+    return fieldsByProjectType['badge'];
+  } else if (useCase.includes('certificate') || useCase.includes('award')) {
+    return fieldsByProjectType['certificate'];
+  } else if (useCase.includes('card') || useCase.includes('business')) {
+    return fieldsByProjectType['card'];
+  } else if (useCase.includes('product') || useCase.includes('retail') || useCase.includes('shelf')) {
+    return fieldsByProjectType['shelf_strip'];
   }
   
-  return commonFields['default'];
+  return fieldsByProjectType['custom'];
+};
+
+// Helper to detect if uploaded data likely contains image fields
+const detectImageFields = (columns: string[]): string[] => {
+  return columns.filter(col => isLikelyImageField(col));
+};
+
+// Helper to categorize columns by detected type
+const categorizeColumns = (columns: string[]): Record<string, string[]> => {
+  const categorized: Record<string, string[]> = {};
+  
+  for (const col of columns) {
+    const fieldType = detectFieldType(col);
+    if (fieldType) {
+      if (!categorized[fieldType]) categorized[fieldType] = [];
+      categorized[fieldType].push(col);
+    }
+  }
+  
+  return categorized;
 };
 
 export default function ProjectCreationWizard({ open, onOpenChange, userId, workspaceId }: ProjectCreationWizardProps) {
@@ -456,6 +483,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               <TabsContent value="library" className="space-y-4 mt-4">
                 <TemplateLibrary
                   selectedId={wizardState.templateId}
+                  projectType={wizardState.projectType || undefined}
                   onSelect={async (template: LabelSize) => {
                     try {
                       const dataColumns = wizardState.dataColumns || [];

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, CheckCircle2, Package, FileText, Tag, ExternalLink, PlusCircle, Loader2 } from "lucide-react";
+import { Search, CheckCircle2, Package, FileText, Tag, ExternalLink, PlusCircle, Loader2, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,17 +9,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { supabase } from "@/integrations/supabase/client";
 import { useRegionPreference } from "@/hooks/useRegionPreference";
 import { CustomLabelSizeDialog } from "@/components/CustomLabelSizeDialog";
-import { STANDARD_SIZES, LabelSize } from "@/lib/avery-labels";
+import { STANDARD_SIZES, LabelSize, PROJECT_TYPE_KEYWORDS, getSuggestedTemplates } from "@/lib/avery-labels";
 
 interface TemplateLibraryProps {
   onSelect: (template: LabelSize) => void;
   selectedId?: string;
+  /** Optional project type to filter/prioritize templates */
+  projectType?: string;
 }
 
-export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) {
+export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateLibraryProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showCustomSize, setShowCustomSize] = useState(false);
   const { formatDimensions } = useRegionPreference();
+
+  // Get keywords for current project type to highlight relevant templates
+  const projectKeywords = projectType ? PROJECT_TYPE_KEYWORDS[projectType] || [] : [];
 
   const { data: dbTemplates, isLoading } = useQuery({
     queryKey: ['label-templates'],
@@ -36,29 +41,55 @@ export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) 
 
   const filterDbTemplates = () => {
     if (!dbTemplates) return [];
-    if (!searchQuery) return dbTemplates;
-    const query = searchQuery.toLowerCase();
-    return dbTemplates.filter(
-      t =>
-        t.part_number.toLowerCase().includes(query) ||
-        t.brand.toLowerCase().includes(query) ||
-        t.description?.toLowerCase().includes(query) ||
-        t.categories?.some(c => c.toLowerCase().includes(query))
-    );
+    
+    let filtered = dbTemplates;
+    
+    // Apply project type filtering first (prioritize, don't exclude)
+    if (projectType && projectKeywords.length > 0) {
+      filtered = filtered.sort((a, b) => {
+        const aMatch = projectKeywords.some(kw => 
+          a.description?.toLowerCase().includes(kw) || 
+          a.categories?.some(c => c.toLowerCase().includes(kw))
+        ) ? 1 : 0;
+        const bMatch = projectKeywords.some(kw => 
+          b.description?.toLowerCase().includes(kw) || 
+          b.categories?.some(c => c.toLowerCase().includes(kw))
+        ) ? 1 : 0;
+        return bMatch - aMatch;
+      });
+    }
+    
+    // Apply search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        t =>
+          t.part_number.toLowerCase().includes(query) ||
+          t.brand.toLowerCase().includes(query) ||
+          t.description?.toLowerCase().includes(query) ||
+          t.categories?.some(c => c.toLowerCase().includes(query))
+      );
+    }
+    
+    return filtered;
   };
 
   const filterStandardSizes = () => {
-    if (!searchQuery) return STANDARD_SIZES;
-    const query = searchQuery.toLowerCase();
-    return STANDARD_SIZES.filter(
-      t =>
-        t.name.toLowerCase().includes(query) ||
-        t.description?.toLowerCase().includes(query)
-    );
+    // Get suggested templates for project type, or all if no type
+    let templates = projectType ? getSuggestedTemplates(projectType) : STANDARD_SIZES;
+    
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      templates = templates.filter(
+        t =>
+          t.name.toLowerCase().includes(query) ||
+          t.description?.toLowerCase().includes(query) ||
+          t.useCase?.toLowerCase().includes(query)
+      );
+    }
+    
+    return templates;
   };
-
-  const filteredDbTemplates = filterDbTemplates();
-  const filteredStandardSizes = filterStandardSizes();
 
   const handleDbTemplateSelect = (template: typeof dbTemplates[0]) => {
     onSelect({
@@ -206,8 +237,27 @@ export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) 
     </div>
   );
 
+  const filteredDbTemplates = filterDbTemplates();
+  const filteredStandardSizes = filterStandardSizes();
+
   return (
     <div className="space-y-4">
+      {/* Prominent Custom Size Button */}
+      <Card 
+        className="cursor-pointer border-dashed border-2 hover:border-primary hover:bg-primary/5 transition-colors"
+        onClick={() => setShowCustomSize(true)}
+      >
+        <CardContent className="flex items-center justify-center gap-3 py-4">
+          <div className="p-2 rounded-full bg-primary/10">
+            <PlusCircle className="h-5 w-5 text-primary" />
+          </div>
+          <div className="text-left">
+            <p className="font-medium">Create Custom Size</p>
+            <p className="text-sm text-muted-foreground">Enter your own dimensions</p>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
@@ -217,6 +267,14 @@ export function TemplateLibrary({ onSelect, selectedId }: TemplateLibraryProps) 
           className="pl-9"
         />
       </div>
+
+      {/* Project type hint */}
+      {projectType && projectKeywords.length > 0 && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span>Showing templates recommended for <strong className="text-foreground">{projectType.replace('_', ' ')}</strong> projects</span>
+        </div>
+      )}
 
       <Tabs defaultValue="avery" className="w-full">
         <TabsList className="grid w-full grid-cols-2">

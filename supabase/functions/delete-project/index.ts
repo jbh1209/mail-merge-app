@@ -63,7 +63,94 @@ Deno.serve(async (req) => {
 
     const mergeJobIds = mergeJobs?.map(job => job.id) || [];
 
-    // 2. Delete generated_outputs
+    // ========== STORAGE CLEANUP ==========
+    
+    // 2a. Delete project images from project-assets bucket
+    const imagesFolderPath = `${project.workspace_id}/${projectId}/images`;
+    console.log(`Checking for images in: ${imagesFolderPath}`);
+    
+    const { data: imageFiles, error: listImagesError } = await supabase.storage
+      .from('project-assets')
+      .list(imagesFolderPath);
+    
+    if (listImagesError) {
+      console.error('Error listing project images:', listImagesError);
+    } else if (imageFiles && imageFiles.length > 0) {
+      const imagePaths = imageFiles.map(f => `${imagesFolderPath}/${f.name}`);
+      const { error: deleteImagesError } = await supabase.storage
+        .from('project-assets')
+        .remove(imagePaths);
+      
+      if (deleteImagesError) {
+        console.error('Error deleting project images:', deleteImagesError);
+      } else {
+        console.log(`Deleted ${imagePaths.length} images from project-assets`);
+      }
+    }
+
+    // 2b. Delete generated PDFs from generated-pdfs bucket
+    if (mergeJobIds.length > 0) {
+      const { data: outputs } = await supabase
+        .from('generated_outputs')
+        .select('file_url')
+        .in('merge_job_id', mergeJobIds);
+      
+      if (outputs && outputs.length > 0) {
+        const pdfPaths = outputs
+          .filter(o => o.file_url)
+          .map(o => {
+            // Extract path from URL - format: .../generated-pdfs/path/to/file.pdf
+            const pathMatch = o.file_url.match(/generated-pdfs\/(.+)/);
+            return pathMatch ? pathMatch[1] : null;
+          })
+          .filter((p): p is string => p !== null);
+        
+        if (pdfPaths.length > 0) {
+          const { error: deletePdfsError } = await supabase.storage
+            .from('generated-pdfs')
+            .remove(pdfPaths);
+          
+          if (deletePdfsError) {
+            console.error('Error deleting generated PDFs:', deletePdfsError);
+          } else {
+            console.log(`Deleted ${pdfPaths.length} PDFs from generated-pdfs`);
+          }
+        }
+      }
+    }
+
+    // 2c. Delete data source files from user-uploads bucket
+    const { data: dataSources } = await supabase
+      .from('data_sources')
+      .select('file_url')
+      .eq('project_id', projectId);
+    
+    if (dataSources && dataSources.length > 0) {
+      const filePaths = dataSources
+        .filter(ds => ds.file_url)
+        .map(ds => {
+          // Extract path from URL - format: .../user-uploads/path/to/file.csv
+          const pathMatch = ds.file_url?.match(/user-uploads\/(.+)/);
+          return pathMatch ? pathMatch[1] : null;
+        })
+        .filter((p): p is string => p !== null);
+      
+      if (filePaths.length > 0) {
+        const { error: deleteFilesError } = await supabase.storage
+          .from('user-uploads')
+          .remove(filePaths);
+        
+        if (deleteFilesError) {
+          console.error('Error deleting data source files:', deleteFilesError);
+        } else {
+          console.log(`Deleted ${filePaths.length} files from user-uploads`);
+        }
+      }
+    }
+
+    // ========== DATABASE CLEANUP ==========
+
+    // 3. Delete generated_outputs records
     if (mergeJobIds.length > 0) {
       const { error: generatedError } = await supabase
         .from('generated_outputs')

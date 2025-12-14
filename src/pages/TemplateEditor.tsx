@@ -106,20 +106,25 @@ export default function TemplateEditor() {
         return [];
       }
       
-      // Generate public URLs for each image
-      const images = (files || [])
-        .filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f.name))
-        .map(f => {
-          const { data: { publicUrl } } = supabase.storage
-            .from('project-assets')
-            .getPublicUrl(`${folderPath}/${f.name}`);
-          return {
-            name: f.name,
-            url: publicUrl,
-          };
-        });
+      // Filter to image files only
+      const imageFiles = (files || []).filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f.name));
+      if (imageFiles.length === 0) return [];
       
-      return images;
+      // Generate signed URLs for each image (bucket is private)
+      const paths = imageFiles.map(f => `${folderPath}/${f.name}`);
+      const { data: signedUrls, error: urlError } = await supabase.storage
+        .from('project-assets')
+        .createSignedUrls(paths, 3600); // 1 hour expiry
+      
+      if (urlError || !signedUrls) {
+        console.warn('Could not create signed URLs:', urlError);
+        return [];
+      }
+      
+      return imageFiles.map((f, index) => ({
+        name: f.name,
+        url: signedUrls[index]?.signedUrl || '',
+      }));
     },
     enabled: !!projectId && !!userProfile?.workspace_id,
   });

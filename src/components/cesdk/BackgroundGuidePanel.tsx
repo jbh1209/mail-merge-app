@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Upload, Image, X } from 'lucide-react';
+import { Upload, Image } from 'lucide-react';
 
 interface BackgroundGuidePanelProps {
   open: boolean;
@@ -174,15 +173,6 @@ export function BackgroundGuidePanel({ open, onClose, onAddBackground, templateT
             </ul>
           </div>
 
-          {/* Skip button */}
-          <Button 
-            variant="ghost" 
-            className="w-full" 
-            onClick={onClose}
-          >
-            <X className="h-4 w-4 mr-2" />
-            Skip for now
-          </Button>
         </div>
       </SheetContent>
     </Sheet>

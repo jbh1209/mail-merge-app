@@ -7,6 +7,70 @@ export interface VariableData {
 }
 
 /**
+ * Auto-fit text to container using binary search for optimal font size
+ * Returns the optimal font size that fits within the container
+ */
+async function fitTextToContainer(
+  engine: CreativeEditorSDK['engine'],
+  blockId: number,
+  containerWidth: number,
+  containerHeight: number,
+  maxFontSize: number,
+  minFontSize: number = 6
+): Promise<number> {
+  let low = minFontSize;
+  let high = maxFontSize;
+  let bestFit = minFontSize;
+  
+  // Binary search for optimal font size
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    
+    // Set the font size
+    engine.block.setFloat(blockId, 'text/fontSize', mid);
+    
+    // Get the actual frame dimensions after layout recalculation
+    const actualHeight = engine.block.getFrameHeight(blockId);
+    const actualWidth = engine.block.getFrameWidth(blockId);
+    
+    if (actualHeight <= containerHeight && actualWidth <= containerWidth) {
+      bestFit = mid;
+      low = mid + 1; // Try larger
+    } else {
+      high = mid - 1; // Try smaller
+    }
+  }
+  
+  // Apply the best fit font size
+  engine.block.setFloat(blockId, 'text/fontSize', bestFit);
+  return bestFit;
+}
+
+/**
+ * Check if a text block has auto-fit enabled via metadata
+ */
+function hasAutoFitEnabled(engine: CreativeEditorSDK['engine'], blockId: number): boolean {
+  try {
+    const autoFit = engine.block.getMetadata(blockId, 'autoFit');
+    return autoFit === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get original font size from metadata (used as max for auto-fit)
+ */
+function getOriginalFontSize(engine: CreativeEditorSDK['engine'], blockId: number): number | null {
+  try {
+    const fontSize = engine.block.getMetadata(blockId, 'originalFontSize');
+    return fontSize ? parseFloat(fontSize) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve all variables in a CE.SDK scene with actual data values
  * Uses direct text replacement (replaceText) to match canvas preview behavior
  */
@@ -24,12 +88,15 @@ export async function resolveVariables(
       
       if (!blockName) continue;
       
+      let textUpdated = false;
+      
       if (blockName.startsWith('vdp:sequence:')) {
         // Sequential number - calculate based on record index
         const seqConfig = parseSequenceMetadata(blockName);
         if (seqConfig) {
           const value = formatSequenceNumber(seqConfig, recordIndex);
           engine.block.replaceText(blockId, value);
+          textUpdated = true;
         }
       } else if (blockName.startsWith('vdp:address_block:')) {
         // Combined address block - multiple fields joined with newlines
@@ -39,11 +106,36 @@ export async function resolveVariables(
           .filter(Boolean)
           .join('\n');
         engine.block.replaceText(blockId, content || ' ');
+        textUpdated = true;
       } else if (blockName.startsWith('vdp:text:')) {
         // Individual field
         const fieldName = blockName.replace('vdp:text:', '');
         const value = data[fieldName];
         engine.block.replaceText(blockId, value !== undefined ? String(value) : ' ');
+        textUpdated = true;
+      }
+      
+      // Apply auto-fit if text was updated and auto-fit is enabled
+      if (textUpdated && hasAutoFitEnabled(engine, blockId)) {
+        const widthMode = engine.block.getWidthMode(blockId);
+        const heightMode = engine.block.getHeightMode(blockId);
+        
+        // Only auto-fit when both dimensions are fixed (Absolute)
+        if (widthMode === 'Absolute' && heightMode === 'Absolute') {
+          const containerWidth = engine.block.getWidth(blockId);
+          const containerHeight = engine.block.getHeight(blockId);
+          const originalFontSize = getOriginalFontSize(engine, blockId);
+          const currentFontSize = engine.block.getFloat(blockId, 'text/fontSize');
+          const maxFontSize = originalFontSize || currentFontSize;
+          
+          await fitTextToContainer(
+            engine,
+            blockId,
+            containerWidth,
+            containerHeight,
+            maxFontSize
+          );
+        }
       }
     } catch (e) {
       console.warn(`Failed to update text block ${blockId}:`, e);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ImageAssetUpload, UploadedImage } from '@/components/ImageAssetUpload';
 import { validateImageReferences, ImageValidationResult } from '@/lib/image-validation-utils';
-import { ArrowLeft, ArrowRight, CheckCircle, AlertTriangle, Image, ChevronDown, SkipForward } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle, AlertTriangle, Image, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ImageUploadStepProps {
@@ -17,7 +17,6 @@ interface ImageUploadStepProps {
   dataRows: Record<string, any>[];
   onComplete: (uploadedImages: UploadedImage[]) => void;
   onBack: () => void;
-  onSkip?: () => void;
 }
 
 export function ImageUploadStep({
@@ -27,11 +26,9 @@ export function ImageUploadStep({
   dataRows,
   onComplete,
   onBack,
-  onSkip,
 }: ImageUploadStepProps) {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [showMissing, setShowMissing] = useState(false);
-  const [hasConfirmedSkip, setHasConfirmedSkip] = useState(false);
 
   // Get sample image references from data for each image column
   const sampleReferences = useMemo(() => {
@@ -93,23 +90,14 @@ export function ImageUploadStep({
     };
   }, [imageColumns, dataRows, uploadedImages]);
 
-  const canContinue = validation.valid || hasConfirmedSkip;
+  const canContinue = validation.valid;
 
   const handleImagesChange = (images: UploadedImage[]) => {
     setUploadedImages(images);
-    setHasConfirmedSkip(false); // Reset skip confirmation when images change
   };
 
   const handleContinue = () => {
     onComplete(uploadedImages);
-  };
-
-  const handleSkipWithWarning = () => {
-    if (validation.missing.length > 0) {
-      setHasConfirmedSkip(true);
-    } else {
-      onComplete(uploadedImages);
-    }
   };
 
   return (
@@ -250,19 +238,6 @@ export function ImageUploadStep({
         </CardContent>
       </Card>
 
-      {/* Skip Confirmation */}
-      {hasConfirmedSkip && validation.missing.length > 0 && (
-        <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          <AlertTitle>Continuing with missing images</AlertTitle>
-          <AlertDescription>
-            <p className="text-sm">
-              {validation.missing.length} image{validation.missing.length !== 1 ? 's' : ''} will not appear 
-              in your output. You can add them later from the project assets page.
-            </p>
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Navigation */}
       <div className="flex justify-between pt-4 border-t">
@@ -271,22 +246,13 @@ export function ImageUploadStep({
           Back
         </Button>
         
-        <div className="flex gap-2">
-          {!validation.valid && !hasConfirmedSkip && (
-            <Button variant="ghost" onClick={handleSkipWithWarning}>
-              <SkipForward className="mr-2 h-4 w-4" />
-              Skip for now
-            </Button>
-          )}
-          
-          <Button 
-            onClick={handleContinue}
-            disabled={!canContinue && !hasConfirmedSkip}
-          >
-            {validation.valid ? 'Continue' : hasConfirmedSkip ? 'Continue Anyway' : 'Continue'}
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
+        <Button 
+          onClick={handleContinue}
+          disabled={!canContinue}
+        >
+          Continue
+          <ArrowRight className="ml-2 h-4 w-4" />
+        </Button>
       </div>
     </div>
   );

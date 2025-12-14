@@ -2,10 +2,30 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.1";
 import { corsHeaders } from "../_shared/cors.ts";
 
+// Common image file extensions for detection
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'];
+
 // Field type detection for semantic analysis
 function detectFieldType(fieldName: string, sampleValues: string[]): string {
   const name = fieldName.toLowerCase();
   const samples = sampleValues.map(v => String(v).toLowerCase());
+  
+  // IMAGE detection - check for file paths/extensions in values FIRST
+  // This handles columns like "Unnamed_Column_2" that contain image paths
+  const imageMatches = samples.filter(v => 
+    IMAGE_EXTENSIONS.some(ext => v.endsWith(ext)) ||
+    (v.includes('\\') && IMAGE_EXTENSIONS.some(ext => v.endsWith(ext))) || // Windows paths
+    (v.startsWith('http') && IMAGE_EXTENSIONS.some(ext => v.includes(ext))) // URLs
+  );
+  if (imageMatches.length >= samples.length / 2 && imageMatches.length > 0) {
+    return 'IMAGE';
+  }
+  // Also check by column name
+  if (name.includes('image') || name.includes('photo') || name.includes('picture') || 
+      name.includes('logo') || name.includes('avatar') || name.includes('headshot') ||
+      name.includes('thumbnail') || name.includes('img')) {
+    return 'IMAGE';
+  }
   
   // ADDRESS detection
   if (name.includes('address') || name.includes('location') || name.includes('street')) {

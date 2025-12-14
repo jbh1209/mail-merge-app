@@ -1,8 +1,10 @@
 import { AssetSource, AssetResult, AssetsQueryResult, CreativeEngine } from '@cesdk/cesdk-js';
+import { detectImageColumnsFromValues } from '@/lib/avery-labels';
 
 export interface ImageAssetConfig {
   availableFields?: string[];
   sampleData?: Record<string, string>;
+  allSampleData?: Record<string, string>[]; // All rows for better image detection
   projectId?: string;
   workspaceId?: string;
   projectImages?: { name: string; url: string }[];
@@ -28,21 +30,11 @@ export function createImageAssetSource(
   config: ImageAssetConfig = {},
   engine: CreativeEngine
 ): AssetSource {
-  const { availableFields = [], sampleData = {}, projectImages = [] } = config;
+  const { availableFields = [], sampleData = {}, allSampleData = [], projectImages = [] } = config;
 
-  // Detect image-related fields from available fields
-  const imageFields = availableFields.filter(field => {
-    const lower = field.toLowerCase();
-    return lower.includes('image') || 
-           lower.includes('photo') || 
-           lower.includes('picture') || 
-           lower.includes('logo') || 
-           lower.includes('avatar') || 
-           lower.includes('headshot') ||
-           lower.includes('thumbnail') ||
-           lower.includes('icon') ||
-           lower.includes('img');
-  });
+  // Detect image fields using value-based detection (handles "Unnamed_Column_2" etc.)
+  const sampleRows = allSampleData.length > 0 ? allSampleData : (Object.keys(sampleData).length > 0 ? [sampleData] : []);
+  const imageFields = detectImageColumnsFromValues(availableFields, sampleRows);
 
   return {
     id: 'vdp-images',
@@ -52,16 +44,25 @@ export function createImageAssetSource(
       
       const assets: AssetResult[] = [];
       
+      // Helper to normalize image names for matching
+      const normalizeForMatch = (name: string): string => {
+        let baseName = name;
+        if (name.includes('\\')) baseName = name.split('\\').pop() || name;
+        else if (name.includes('/')) baseName = name.split('/').pop() || name;
+        if (baseName.includes('?')) baseName = baseName.split('?')[0];
+        return baseName.replace(/\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$/i, '').toLowerCase().trim();
+      };
+      
       // Add variable image placeholders for detected fields
       imageFields.forEach((field) => {
         if (!query || field.toLowerCase().includes(query) || 'image'.includes(query)) {
           // Check if we have a sample image for this field
           const sampleValue = sampleData[field];
-          const matchingImage = sampleValue 
-            ? projectImages.find(img => 
-                img.name.toLowerCase().includes(sampleValue.toString().toLowerCase()) ||
-                sampleValue.toString().toLowerCase().includes(img.name.toLowerCase().replace(/\.(png|jpg|jpeg|gif|webp)$/i, ''))
-              )
+          const normalizedSample = sampleValue ? normalizeForMatch(String(sampleValue)) : '';
+          
+          // Find matching image using normalized comparison
+          const matchingImage = normalizedSample 
+            ? projectImages.find(img => normalizeForMatch(img.name) === normalizedSample)
             : null;
           
           const thumbnailUrl = matchingImage?.url || PLACEHOLDER_IMAGE;

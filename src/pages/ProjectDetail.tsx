@@ -1,14 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Upload, FileText, Play, Plus, Home, Edit, Image } from "lucide-react";
+import { ArrowLeft, Upload, FileText, Play, Plus, Home, Edit, Image, AlertCircle } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { DataUpload } from "@/components/DataUpload";
 import { DataPreview } from "@/components/DataPreview";
 import { DataSourcesList } from "@/components/DataSourcesList";
@@ -17,6 +18,7 @@ import { FieldMappingWizard } from "@/components/FieldMappingWizard";
 import { MergeJobRunner } from "@/components/MergeJobRunner";
 import { MergeJobsList } from "@/components/MergeJobsList";
 import { ImageAssetUpload } from "@/components/ImageAssetUpload";
+import { detectImageColumnsFromValues } from "@/lib/avery-labels";
 
 import { useSubscription } from "@/hooks/useSubscription";
 import { toast } from "sonner";
@@ -168,6 +170,28 @@ export default function ProjectDetail() {
 
   const { data: subscription } = useSubscription(workspace);
 
+  // Detect if any data source has image columns
+  const detectedImageColumns = useMemo(() => {
+    if (!dataSources || dataSources.length === 0) return [];
+    
+    for (const ds of dataSources) {
+      const parsedFields = ds.parsed_fields as { columns?: string[]; rows?: any[]; preview?: any[] } | null;
+      if (!parsedFields) continue;
+      
+      const columns = parsedFields.columns || [];
+      const rows = parsedFields.rows || parsedFields.preview || [];
+      const imageColumns = detectImageColumnsFromValues(columns, rows);
+      
+      if (imageColumns.length > 0) {
+        return imageColumns;
+      }
+    }
+    return [];
+  }, [dataSources]);
+
+  const hasDetectedImageColumns = detectedImageColumns.length > 0;
+  const needsImageUpload = hasDetectedImageColumns && uploadedImages.length === 0;
+
   const handleTemplateComplete = () => {
     queryClient.invalidateQueries({ queryKey: ["templates", id] });
   };
@@ -256,13 +280,40 @@ export default function ProjectDetail() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
           <TabsTrigger value="data-sources">Data Sources</TabsTrigger>
-          <TabsTrigger value="assets">Assets</TabsTrigger>
+          <TabsTrigger value="assets" className="relative">
+            Assets
+            {needsImageUpload && (
+              <span className="ml-1.5 inline-flex h-2 w-2 rounded-full bg-amber-500" title="Images needed" />
+            )}
+          </TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="mappings">Field Mappings</TabsTrigger>
           <TabsTrigger value="jobs">Merge Jobs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="data-sources" className="space-y-4">
+          {/* Image Upload Alert */}
+          {needsImageUpload && (
+            <Alert className="border-amber-500/50 bg-amber-500/10">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertTitle>Image References Detected</AlertTitle>
+              <AlertDescription className="flex items-center justify-between">
+                <span className="text-sm">
+                  Your data contains image references ({detectedImageColumns.join(', ')}). Upload images in the Assets tab to use them.
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-4 shrink-0"
+                  onClick={() => setActiveTab('assets')}
+                >
+                  <Upload className="h-4 w-4 mr-1" />
+                  Go to Assets
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+          
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>

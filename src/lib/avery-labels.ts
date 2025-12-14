@@ -66,6 +66,65 @@ export function isLikelyImageField(columnName: string): boolean {
   );
 }
 
+/** Common image file extensions */
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'];
+
+/** Detect if a cell value looks like an image path or filename */
+export function isLikelyImageValue(value: string | null | undefined): boolean {
+  if (!value || typeof value !== 'string') return false;
+  
+  const lower = value.toLowerCase().trim();
+  
+  // Check for image file extensions
+  if (IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext))) return true;
+  
+  // Check for file paths (Windows or Unix)
+  if (lower.includes('\\') || lower.startsWith('/')) {
+    // Contains path separators - check if ends with image extension
+    return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext));
+  }
+  
+  // Check for URLs pointing to images
+  if (lower.startsWith('http://') || lower.startsWith('https://')) {
+    return IMAGE_EXTENSIONS.some(ext => lower.includes(ext));
+  }
+  
+  return false;
+}
+
+/** Detect which columns contain image values by scanning sample data */
+export function detectImageColumnsFromValues(
+  columns: string[],
+  sampleRows: Record<string, any>[]
+): string[] {
+  const imageColumns: string[] = [];
+  
+  for (const col of columns) {
+    // First check by column name
+    if (isLikelyImageField(col)) {
+      imageColumns.push(col);
+      continue;
+    }
+    
+    // Then check by scanning values
+    let imageValueCount = 0;
+    const rowsToCheck = sampleRows.slice(0, 5); // Check first 5 rows
+    
+    for (const row of rowsToCheck) {
+      if (isLikelyImageValue(row[col])) {
+        imageValueCount++;
+      }
+    }
+    
+    // If more than half the sample rows have image-like values, it's an image column
+    if (imageValueCount > 0 && imageValueCount >= rowsToCheck.length / 2) {
+      imageColumns.push(col);
+    }
+  }
+  
+  return imageColumns;
+}
+
 /** Get suggested field type based on column name */
 export function detectFieldType(columnName: string): string | null {
   const lower = columnName.toLowerCase().replace(/[^a-z0-9]/g, '');

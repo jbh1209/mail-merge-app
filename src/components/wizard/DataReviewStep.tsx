@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2, Scissors, Image } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopedAIChat } from "@/components/ScopedAIChat";
-import { isLikelyImageField, detectFieldType } from "@/lib/avery-labels";
+import { isLikelyImageField, detectFieldType, detectImageColumnsFromValues, isLikelyImageValue } from "@/lib/avery-labels";
 
 interface DataReviewStepProps {
   projectId: string;
@@ -80,8 +80,13 @@ export function DataReviewStep({
   const { columns, preview, rowCount, fileName } = parsedData;
   const emptyColumnsRemoved = (parsedData as any).emptyColumnsRemoved || 0;
 
-  // Detect image fields in the data for user guidance
-  const imageFields = useMemo(() => columns.filter(col => isLikelyImageField(col)), [columns]);
+  // Detect image fields in the data for user guidance - check both names AND values
+  const currentPreviewData = structuredData ? structuredData.rows.slice(0, 10) : preview;
+  const currentCols = structuredData ? structuredData.columns : columns;
+  const imageFields = useMemo(() => 
+    detectImageColumnsFromValues(currentCols, currentPreviewData), 
+    [currentCols, currentPreviewData]
+  );
   const hasImageFields = imageFields.length > 0;
   
   // Categorize all columns by detected type
@@ -507,6 +512,25 @@ export function DataReviewStep({
                 </div>
               </div>
             ))}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Image Fields Detected Alert */}
+      {hasImageFields && (
+        <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950">
+          <Image className="h-4 w-4 text-amber-500" />
+          <AlertTitle>Image References Detected</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p className="text-sm">
+              {imageFields.length === 1 
+                ? `Column "${imageFields[0]}" contains image file references.`
+                : `${imageFields.length} columns contain image file references: ${imageFields.join(', ')}`
+              }
+            </p>
+            <p className="text-sm text-muted-foreground">
+              After proceeding, upload your images in the <strong>Assets</strong> tab to use them in your design.
+            </p>
           </AlertDescription>
         </Alert>
       )}

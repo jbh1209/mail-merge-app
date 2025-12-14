@@ -9,6 +9,7 @@ import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/c
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
 import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
+import { BackgroundGuidePanel } from './BackgroundGuidePanel';
 
 // Get the correct assets URL - must match the installed package version
 const CESDK_VERSION = '1.65.0';
@@ -447,6 +448,9 @@ export function CreativeEditorWrapper({
   
   // State for sequence config dialog
   const [sequenceDialogOpen, setSequenceDialogOpen] = useState(false);
+  
+  // State for background guidance panel
+  const [showBackgroundGuide, setShowBackgroundGuide] = useState(false);
 
   // Export function exposed to parent components
   const handleExport = useCallback(async (options?: Partial<ExportOptions>) => {
@@ -460,7 +464,60 @@ export function CreativeEditorWrapper({
     return exportDesign(editorRef.current, exportOptions);
   }, [whiteUnderlayer, bleedMm]);
 
-  // Add barcode to canvas
+  // Handle adding background image from guide panel
+  const handleAddBackgroundImage = useCallback(async (file: File) => {
+    if (!editorRef.current) return;
+    const engine = editorRef.current.engine;
+    
+    // Convert file to data URL
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target?.result as string;
+      if (!dataUrl) return;
+      
+      try {
+        // Get page and its dimensions
+        const pages = engine.scene.getPages();
+        if (pages.length === 0) return;
+        
+        const page = pages[0];
+        const pageWidth = engine.block.getWidth(page);
+        const pageHeight = engine.block.getHeight(page);
+        
+        // Create graphic block at full page size
+        const graphic = engine.block.create('//ly.img.ubq/graphic');
+        const rect = engine.block.createShape('//ly.img.ubq/shape/rect');
+        engine.block.setShape(graphic, rect);
+        
+        // Create image fill
+        const fill = engine.block.createFill('//ly.img.ubq/fill/image');
+        engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
+        engine.block.setFill(graphic, fill);
+        
+        // Set size to fill page
+        engine.block.setWidth(graphic, pageWidth);
+        engine.block.setHeight(graphic, pageHeight);
+        engine.block.setPositionX(graphic, 0);
+        engine.block.setPositionY(graphic, 0);
+        
+        // Add to page and SEND TO BACK
+        engine.block.appendChild(page, graphic);
+        engine.block.sendToBack(graphic);
+        
+        // Name it for identification
+        engine.block.setName(graphic, 'background');
+        
+        // Select it so user can adjust crop
+        engine.block.setSelected(graphic, true);
+        
+        console.log('✅ Added background image at full page size, sent to back');
+      } catch (err) {
+        console.error('Failed to add background image:', err);
+      }
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
   const addBarcodeToCanvas = useCallback(async (
     value: string,
     format: string,
@@ -843,6 +900,14 @@ export function CreativeEditorWrapper({
             setLayoutStatus,
             projectImages
           );
+          
+          // Clear all selections for a clean initial view
+          const allSelected = cesdk.engine.block.findAllSelected();
+          allSelected.forEach(blockId => cesdk.engine.block.setSelected(blockId, false));
+          console.log('🧹 Cleared selection after layout generation');
+          
+          // Show background guidance panel for new designs
+          setShowBackgroundGuide(true);
         }
 
         // Add selection listener to detect barcode/QR blocks
@@ -1270,6 +1335,13 @@ export function CreativeEditorWrapper({
         onOpenChange={setSequenceDialogOpen}
         onConfirm={handleSequenceConfirm}
         templateSize={{ width: labelWidth, height: labelHeight }}
+      />
+      
+      {/* Background Image Guidance Panel */}
+      <BackgroundGuidePanel
+        open={showBackgroundGuide}
+        onClose={() => setShowBackgroundGuide(false)}
+        onAddBackground={handleAddBackgroundImage}
       />
     </div>
   );

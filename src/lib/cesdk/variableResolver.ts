@@ -126,7 +126,10 @@ export async function resolveVariables(
           const containerHeight = engine.block.getHeight(blockId);
           const originalFontSize = getOriginalFontSize(engine, blockId);
           const currentFontSize = engine.block.getFloat(blockId, 'text/fontSize');
-          const maxFontSize = originalFontSize || currentFontSize;
+          const maxFontSize = originalFontSize || currentFontSize || 12;
+          
+          // Reset to original font size before fitting to allow growing back for shorter text
+          engine.block.setFloat(blockId, 'text/fontSize', maxFontSize);
           
           await fitTextToContainer(
             engine,

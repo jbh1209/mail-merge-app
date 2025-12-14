@@ -40,11 +40,17 @@ export default function ProjectDetail() {
   const [activeTab, setActiveTab] = useState("data-sources");
   const [uploadedImages, setUploadedImages] = useState<{ name: string; url: string; path: string; size: number }[]>([]);
 
-  // Handle URL params for auto-navigation to merge jobs tab
+  // Handle URL params for auto-navigation to specific tabs
   useEffect(() => {
     const tab = searchParams.get('tab');
     if (tab === 'merge-jobs') {
       setActiveTab('jobs');
+    } else if (tab === 'assets') {
+      setActiveTab('assets');
+    } else if (tab === 'templates') {
+      setActiveTab('templates');
+    } else if (tab === 'mappings') {
+      setActiveTab('mappings');
     }
   }, [searchParams]);
 

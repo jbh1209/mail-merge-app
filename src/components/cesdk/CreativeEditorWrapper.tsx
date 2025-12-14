@@ -784,7 +784,11 @@ export function CreativeEditorWrapper({
 
     return () => {
       if (editorRef.current) {
-        editorRef.current.dispose();
+        try {
+          editorRef.current.dispose();
+        } catch (err) {
+          console.warn('CE.SDK disposal error (safe to ignore):', err);
+        }
         editorRef.current = null;
       }
     };

@@ -70,10 +70,23 @@ export function validateImageReferences(
  * - Lowercases for case-insensitive matching
  */
 function normalizeImageName(name: string): string {
-  // Remove path if present
-  const baseName = name.split('/').pop() || name;
+  // Remove Windows or Unix path prefixes
+  let baseName = name;
+  if (name.includes('\\')) {
+    // Windows path: C:\Users\jimmy\OneDrive\Pictures\test\raya and rolo.jpg
+    baseName = name.split('\\').pop() || name;
+  } else if (name.includes('/')) {
+    // Unix path or URL
+    baseName = name.split('/').pop() || name;
+  }
+  
+  // Remove URL query parameters if present
+  if (baseName.includes('?')) {
+    baseName = baseName.split('?')[0];
+  }
+  
   // Remove extension for flexible matching
-  const withoutExt = baseName.replace(/\.(png|jpg|jpeg|gif|webp)$/i, '');
+  const withoutExt = baseName.replace(/\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$/i, '');
   return withoutExt.toLowerCase().trim();
 }
 

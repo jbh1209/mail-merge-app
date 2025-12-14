@@ -13,11 +13,13 @@ import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { DataUpload } from "./DataUpload";
 import { DataReviewStep } from "./wizard/DataReviewStep";
+import { ImageUploadStep } from "./wizard/ImageUploadStep";
 import { TemplateLibrary } from "./TemplateLibrary";
 import { TemplateUpload } from "./TemplateUpload";
 import { FieldMappingWizard } from "./FieldMappingWizard";
 // TemplateDesignCanvas removed - now using CE.SDK editor page
 import { LabelSize, isLikelyImageField, detectFieldType, COMMON_FIELD_PATTERNS } from "@/lib/avery-labels";
+import { UploadedImage } from "./ImageAssetUpload";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const projectTypes = [
@@ -55,6 +57,8 @@ interface WizardState {
   fieldSuggestions: any[];
   dataReviewComplete: boolean;
   aiAnalysisResult: any;
+  imageColumns: string[];  // NEW: Detected image columns
+  uploadedImages: UploadedImage[];  // NEW: Uploaded images
   templateId: string | null;
   templateFields: string[];
   templateSize: { width: number; height: number } | null;
@@ -70,6 +74,7 @@ const WIZARD_STEPS = [
   { id: 3, title: "Review", description: "Confirm details" },
   { id: 4, title: "Upload Data", description: "Add your spreadsheet" },
   { id: 4.5, title: "Review Data", description: "Validate & clean" },
+  { id: 4.75, title: "Upload Images", description: "Add your photos" },  // NEW STEP
   { id: 5, title: "Choose Template", description: "Select your design" },
   { id: 6, title: "Map Fields", description: "Connect your data" },
   { id: 6.5, title: "Design Layout", description: "Position your fields" },
@@ -151,6 +156,8 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
     fieldSuggestions: [],
     dataReviewComplete: false,
     aiAnalysisResult: null,
+    imageColumns: [],  // NEW
+    uploadedImages: [],  // NEW
     templateId: null,
     templateFields: [],
     templateSize: null,
@@ -174,6 +181,8 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
       fieldSuggestions: [],
       dataReviewComplete: false,
       aiAnalysisResult: null,
+      imageColumns: [],  // NEW
+      uploadedImages: [],  // NEW
       templateId: null, 
       templateFields: [],
       templateSize: null,
@@ -460,16 +469,36 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
               hasAdvancedAI: subscriptionFeatures?.hasAdvancedAI || false,
             }}
             onComplete={(updatedData) => {
+              const hasImageColumns = updatedData.imageColumns?.length > 0;
               setWizardState(prev => ({
                 ...prev,
-                step: 5,
+                step: hasImageColumns ? 4.75 : 5,  // Route to image upload if images detected
                 dataReviewComplete: true,
                 dataColumns: updatedData.columns || prev.dataColumns,
-                parsedData: updatedData.parsedData || prev.parsedData, // Use transformed data with corrected column names
+                parsedData: updatedData.parsedData || prev.parsedData,
                 aiAnalysisResult: updatedData.analysis,
+                imageColumns: updatedData.imageColumns || [],
               }));
             }}
             onBack={() => setWizardState(prev => ({ ...prev, step: 4 }))}
+          />
+        )}
+
+        {/* Step 4.75: Image Upload (conditional) */}
+        {wizardState.step === 4.75 && wizardState.projectId && wizardState.imageColumns.length > 0 && (
+          <ImageUploadStep
+            projectId={wizardState.projectId}
+            workspaceId={workspaceId!}
+            imageColumns={wizardState.imageColumns}
+            dataRows={wizardState.parsedData?.rows || wizardState.parsedData?.preview || []}
+            onComplete={(images) => {
+              setWizardState(prev => ({
+                ...prev,
+                step: 5,
+                uploadedImages: images,
+              }));
+            }}
+            onBack={() => setWizardState(prev => ({ ...prev, step: 4.5 }))}
           />
         )}
 

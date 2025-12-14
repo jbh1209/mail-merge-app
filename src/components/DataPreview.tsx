@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Check, Loader2, AlertCircle, Sparkles, TrendingUp, Lock, Scissors } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Check, Loader2, AlertCircle, Sparkles, TrendingUp, Lock, Scissors, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SubscriptionFeatures } from "@/hooks/useSubscription";
 import { useNavigate } from "react-router-dom";
+import { detectImageColumnsFromValues } from "@/lib/avery-labels";
 
 interface ColumnMapping {
   original: string;
@@ -63,6 +64,13 @@ export function DataPreview({
   const [currentRows, setCurrentRows] = useState<Record<string, any>[]>(rows);
 
   const canUseAI = subscriptionFeatures?.canUseAICleaning ?? false;
+
+  // Detect image columns from values
+  const imageColumns = useMemo(() => 
+    detectImageColumnsFromValues(currentColumns, currentRows), 
+    [currentColumns, currentRows]
+  );
+  const hasImageColumns = imageColumns.length > 0;
 
   useEffect(() => {
     if (canUseAI) {
@@ -371,6 +379,25 @@ export function DataPreview({
                 </Button>
               </div>
             ))}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Image Columns Detected Alert */}
+      {hasImageColumns && (
+        <Alert className="border-amber-500 bg-amber-50 dark:bg-amber-950">
+          <ImageIcon className="h-4 w-4 text-amber-500" />
+          <AlertTitle>Image References Detected</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p className="text-sm">
+              {imageColumns.length === 1 
+                ? `Column "${imageColumns[0]}" contains image file references.`
+                : `${imageColumns.length} columns contain image references: ${imageColumns.join(', ')}`
+              }
+            </p>
+            <p className="text-sm text-muted-foreground">
+              After saving, upload your images in the <strong>Assets</strong> tab to use them in your design.
+            </p>
           </AlertDescription>
         </Alert>
       )}

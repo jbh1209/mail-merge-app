@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
 import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { isLikelyImageField } from '@/lib/avery-labels';
+import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
 export default function TemplateEditor() {
   const { projectId, templateId } = useParams<{ projectId: string; templateId: string }>();
   const navigate = useNavigate();
@@ -316,8 +316,8 @@ export default function TemplateEditor() {
     (fieldMapping?.mappings ? Object.keys(fieldMapping.mappings as object) : []) ||
     [];
 
-  // Detect image fields in data
-  const imageFields = availableFields.filter(f => isLikelyImageField(f));
+  // Detect image fields in data - check both column names AND values
+  const imageFields = detectImageColumnsFromValues(availableFields, allSampleData);
   const hasImageFields = imageFields.length > 0;
   const hasUploadedImages = projectImages.length > 0;
   const showImageUploadPrompt = hasImageFields && !hasUploadedImages;

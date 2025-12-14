@@ -224,8 +224,9 @@ async function generateInitialLayout(
           engine.block.setWidthMode(textBlock, 'Absolute');
           engine.block.setWidth(textBlock, boxWidthMm);
           
-          // Set height mode to Auto - CE.SDK will auto-size height based on content
-          engine.block.setHeightMode(textBlock, 'Auto');
+          // Set FIXED height for auto-fit functionality
+          engine.block.setHeightMode(textBlock, 'Absolute');
+          engine.block.setHeight(textBlock, boxHeightMm);
           // Do NOT call setHeight() - that would override Auto mode!
           
           // Set text content using replaceText for proper text run initialization
@@ -237,6 +238,10 @@ async function generateInitialLayout(
           engine.block.setTextFontSize(textBlock, baseFontSize);
           
           engine.block.setName(textBlock, blockName);
+          
+          // Store auto-fit metadata for variable resolution
+          engine.block.setMetadata(textBlock, 'autoFit', 'true');
+          engine.block.setMetadata(textBlock, 'originalFontSize', String(baseFontSize));
           
           // --- SCALE TO FILL LABEL (both up and down as needed) ---
           // Read the auto-sized frame dimensions (returned in current design unit = mm)
@@ -276,22 +281,26 @@ async function generateInitialLayout(
           engine.block.setWidthMode(textBlock, 'Absolute');
           engine.block.setWidth(textBlock, field.width);
           
-          // Set height mode to Auto - CE.SDK will auto-size height based on content
-          engine.block.setHeightMode(textBlock, 'Auto');
-          // Do NOT call setHeight() - that would override Auto mode!
+          // Set FIXED height for auto-fit functionality
+          const fieldHeight = field.height || Math.max(heightMm * 0.15, 8); // Use layout height or 15% of label
+          engine.block.setHeightMode(textBlock, 'Absolute');
+          engine.block.setHeight(textBlock, fieldHeight);
 
           // Set text content using replaceText
           engine.block.replaceText(textBlock, textContent);
           
-          // Apply font size - height will auto-adjust to fit content
-          if (field.fontSize) {
-            engine.block.setTextFontSize(textBlock, field.fontSize);
-          }
+          // Apply font size
+          const baseFontSize = field.fontSize || 12;
+          engine.block.setTextFontSize(textBlock, baseFontSize);
 
           // Store field name for VDP resolution
           engine.block.setName(textBlock, blockName);
+          
+          // Store auto-fit metadata for variable resolution
+          engine.block.setMetadata(textBlock, 'autoFit', 'true');
+          engine.block.setMetadata(textBlock, 'originalFontSize', String(baseFontSize));
 
-          console.log(`✅ Created text block: ${blockName} - Fixed width (${field.width}mm) + Auto height`);
+          console.log(`✅ Created text block: ${blockName} - Fixed size (${field.width}mm × ${fieldHeight}mm)`);
         }
       } catch (blockError) {
         console.error(`❌ Failed to create block for ${field.templateField}:`, blockError);
@@ -1242,7 +1251,12 @@ export function CreativeEditorWrapper({
     
     engine.block.setWidthMode(textBlock, 'Absolute');
     engine.block.setWidth(textBlock, seqWidthMm);
-    engine.block.setHeightMode(textBlock, 'Auto');
+    engine.block.setHeightMode(textBlock, 'Absolute');
+    engine.block.setHeight(textBlock, seqHeightMm);
+    
+    // Store auto-fit metadata for variable resolution
+    engine.block.setMetadata(textBlock, 'autoFit', 'true');
+    engine.block.setMetadata(textBlock, 'originalFontSize', '14');
     
     // Position at bottom-left with proper margins (5% from edges)
     engine.block.setPositionX(textBlock, pageWidthMm * 0.05);

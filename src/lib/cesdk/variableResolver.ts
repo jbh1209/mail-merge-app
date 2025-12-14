@@ -77,7 +77,8 @@ function getOriginalFontSize(engine: CreativeEditorSDK['engine'], blockId: numbe
 export async function resolveVariables(
   engine: CreativeEditorSDK['engine'],
   data: VariableData,
-  recordIndex: number = 0
+  recordIndex: number = 0,
+  projectImages?: { name: string; url: string }[]
 ): Promise<void> {
   // Find all text blocks and update content based on VDP naming convention
   const textBlocks = engine.block.findByType('//ly.img.ubq/text');
@@ -149,7 +150,18 @@ export async function resolveVariables(
   await updateBarcodeBlocks(engine, data);
   
   // Update VDP image blocks with resolved image URLs
-  await updateImageBlocks(engine, data);
+  await updateImageBlocks(engine, data, projectImages);
+}
+
+/**
+ * Normalize image name for matching (handles paths, extensions, etc.)
+ */
+function normalizeForMatch(name: string): string {
+  let baseName = name;
+  if (name.includes('\\')) baseName = name.split('\\').pop() || name;
+  else if (name.includes('/')) baseName = name.split('/').pop() || name;
+  if (baseName.includes('?')) baseName = baseName.split('?')[0];
+  return baseName.replace(/\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$/i, '').toLowerCase().trim();
 }
 
 /**
@@ -158,7 +170,7 @@ export async function resolveVariables(
 async function updateImageBlocks(
   engine: CreativeEditorSDK['engine'],
   data: VariableData,
-  imageUrlResolver?: (fieldValue: string) => Promise<string | null>
+  projectImages?: { name: string; url: string }[]
 ): Promise<void> {
   try {
     const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
@@ -173,13 +185,24 @@ async function updateImageBlocks(
       
       const fieldValue = String(data[fieldName]);
       
-      // If we have a URL resolver, use it; otherwise assume the field value is a URL
+      // Resolve image URL from projectImages using normalized matching
       let imageUrl: string | null = null;
-      if (imageUrlResolver) {
-        imageUrl = await imageUrlResolver(fieldValue);
-      } else {
-        // For preview, we might have a direct URL in the data
-        imageUrl = fieldValue.startsWith('http') ? fieldValue : null;
+      
+      if (projectImages && projectImages.length > 0) {
+        const normalizedValue = normalizeForMatch(fieldValue);
+        const matchingImage = projectImages.find(img => 
+          normalizeForMatch(img.name) === normalizedValue
+        );
+        
+        if (matchingImage?.url) {
+          imageUrl = matchingImage.url;
+          console.log(`✅ VDP image resolved: ${fieldName} = "${fieldValue}" -> ${matchingImage.name}`);
+        } else {
+          console.warn(`❌ VDP image not found: ${fieldName} = "${fieldValue}" (normalized: "${normalizedValue}")`);
+        }
+      } else if (fieldValue.startsWith('http')) {
+        // Fallback: if the field value is already a URL, use it directly
+        imageUrl = fieldValue;
       }
       
       if (imageUrl) {

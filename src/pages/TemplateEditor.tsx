@@ -517,6 +517,7 @@ export default function TemplateEditor() {
               mergeJobId={currentMergeJobId}
               dataRecords={allSampleData}
               projectType={project?.project_type || 'label'}
+              projectImages={projectImages}
               templateConfig={{
                 widthMm: template.width_mm || 100,
                 heightMm: template.height_mm || 50,

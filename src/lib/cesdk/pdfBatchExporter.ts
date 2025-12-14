@@ -173,7 +173,8 @@ async function exportLabelPdfs(
   cesdk: CreativeEditorSDK,
   dataRecords: VariableData[],
   onProgress: (progress: BatchExportProgress) => void,
-  docType: string = 'document'
+  docType: string = 'document',
+  projectImages?: { name: string; url: string }[]
 ): Promise<ArrayBuffer[]> {
   const engine = cesdk.engine;
   const pdfBuffers: ArrayBuffer[] = [];
@@ -214,8 +215,8 @@ async function exportLabelPdfs(
         estimatedSecondsRemaining,
       });
       
-      // Resolve variables with current data record (pass recordIndex for sequences)
-      await resolveVariables(engine, data, i);
+      // Resolve variables with current data record (pass recordIndex for sequences, projectImages for VDP images)
+      await resolveVariables(engine, data, i, projectImages);
       
       // Force engine to process variable changes (replaces unnecessary delay)
       engine.editor.addUndoStep();
@@ -383,7 +384,8 @@ export async function batchExportWithCesdk(
     heightMm: number;
     labelsPerSheet?: number;
     isFullPage?: boolean;
-    averyPartNumber?: string; // NEW: Avery/label part number for exact layout
+    averyPartNumber?: string;
+    projectImages?: { name: string; url: string }[];
   },
   mergeJobId: string,
   onProgress: (progress: BatchExportProgress) => void
@@ -393,8 +395,8 @@ export async function batchExportWithCesdk(
     const isFullPage = templateConfig.isFullPage;
     const docType = isFullPage ? 'page' : 'label';
     
-    // Step 1: Export individual PDFs
-    const pdfBuffers = await exportLabelPdfs(cesdk, dataRecords, onProgress, docType);
+    // Step 1: Export individual PDFs (pass projectImages for VDP image resolution)
+    const pdfBuffers = await exportLabelPdfs(cesdk, dataRecords, onProgress, docType, templateConfig.projectImages);
     
     if (pdfBuffers.length === 0) {
       throw new Error('No PDFs were exported');

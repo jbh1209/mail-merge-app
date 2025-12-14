@@ -389,6 +389,9 @@ export function DataReviewStep({
       return;
     }
 
+    // Detect image columns to pass to next step
+    const finalImageFields = detectImageColumnsFromValues(updatedColumns, finalRows.slice(0, 10));
+
     onComplete({
       columns: updatedColumns,
       parsedData: {
@@ -397,7 +400,8 @@ export function DataReviewStep({
         rows: finalRows,  // ✅ CRITICAL: Pass rows!
         preview: updatedPreview
       },
-      analysis
+      analysis,
+      imageColumns: finalImageFields,  // ← NEW: Pass detected image columns
     });
   };
 

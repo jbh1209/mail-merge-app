@@ -2,13 +2,15 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Save, Loader2, FileDown } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, FileDown, ImageIcon, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import CreativeEditorWrapper, { CesdkEditorHandle } from '@/components/cesdk/CreativeEditorWrapper';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
 import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { isLikelyImageField } from '@/lib/avery-labels';
 export default function TemplateEditor() {
   const { projectId, templateId } = useParams<{ projectId: string; templateId: string }>();
   const navigate = useNavigate();
@@ -64,6 +66,41 @@ export default function TemplateEditor() {
         .limit(1)
         .maybeSingle();
       return data;
+    },
+    enabled: !!projectId,
+  });
+
+  // Fetch project images from storage
+  const { data: projectImages = [] } = useQuery({
+    queryKey: ['project-images', projectId],
+    queryFn: async () => {
+      // List files in the project-assets bucket for this project
+      const { data: files, error } = await supabase.storage
+        .from('project-assets')
+        .list(`${projectId}/images`, {
+          limit: 100,
+          sortBy: { column: 'name', order: 'asc' },
+        });
+      
+      if (error) {
+        console.warn('Could not fetch project images:', error);
+        return [];
+      }
+      
+      // Generate public URLs for each image
+      const images = (files || [])
+        .filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f.name))
+        .map(f => {
+          const { data: { publicUrl } } = supabase.storage
+            .from('project-assets')
+            .getPublicUrl(`${projectId}/images/${f.name}`);
+          return {
+            name: f.name,
+            url: publicUrl,
+          };
+        });
+      
+      return images;
     },
     enabled: !!projectId,
   });
@@ -279,6 +316,12 @@ export default function TemplateEditor() {
     (fieldMapping?.mappings ? Object.keys(fieldMapping.mappings as object) : []) ||
     [];
 
+  // Detect image fields in data
+  const imageFields = availableFields.filter(f => isLikelyImageField(f));
+  const hasImageFields = imageFields.length > 0;
+  const hasUploadedImages = projectImages.length > 0;
+  const showImageUploadPrompt = hasImageFields && !hasUploadedImages;
+
   // Get initial scene from design_config if it exists
   const initialScene = (template?.design_config as { cesdkScene?: string } | null)?.cesdkScene;
 
@@ -397,10 +440,31 @@ export default function TemplateEditor() {
         </div>
       </header>
 
+      {/* Image Upload Prompt Banner */}
+      {showImageUploadPrompt && (
+        <Alert className="mx-4 mt-2 border-amber-500/50 bg-amber-500/10">
+          <ImageIcon className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-sm">
+              Your data contains image fields ({imageFields.join(', ')}). Upload images to use them in your design.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-4"
+              onClick={() => navigate(`/projects/${projectId}?tab=assets`)}
+            >
+              <Upload className="h-4 w-4 mr-1" />
+              Upload Images
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
         <CreativeEditorWrapper
-          key={`${templateId}-${availableFields.length}-${template.width_mm}-${template.height_mm}`}
+          key={`${templateId}-${availableFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
           availableFields={availableFields}
           sampleData={sampleData}
           allSampleData={allSampleData}
@@ -413,6 +477,7 @@ export default function TemplateEditor() {
           bleedMm={template.bleed_mm || 0}
           whiteUnderlayer={(template.design_config as { whiteUnderlayer?: boolean } | null)?.whiteUnderlayer ?? false}
           templateType={template.template_type || 'address_label'}
+          projectImages={projectImages}
         />
       </main>
 

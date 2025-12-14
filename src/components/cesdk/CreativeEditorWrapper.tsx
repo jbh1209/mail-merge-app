@@ -3,10 +3,12 @@ import CreativeEditorSDK, { Configuration, AssetSource, AssetResult, AssetsQuery
 import { Loader2 } from 'lucide-react';
 import { createBarcodeAssetSource } from './barcodeAssetSource';
 import { createSequenceAssetSource, SequenceConfig, parseSequenceMetadata, formatSequenceNumber, createSequenceBlockName } from './sequenceAssetSource';
+import { createImageAssetSource } from './imageAssetSource';
 import { SequenceConfigDialog } from '@/components/canvas/SequenceConfigDialog';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
+import { isLikelyImageField } from '@/lib/avery-labels';
 
 // Get the correct assets URL - must match the installed package version
 const CESDK_VERSION = '1.65.0';
@@ -65,6 +67,7 @@ interface CreativeEditorWrapperProps {
   bleedMm?: number;
   whiteUnderlayer?: boolean;
   templateType?: string;
+  projectImages?: { name: string; url: string }[]; // Uploaded images for VDP
   // Page size can be updated externally (for non-label projects)
   key?: string; // Forces re-init when dimensions change
 }
@@ -302,7 +305,10 @@ export function CreativeEditorWrapper({
   bleedMm = 0,
   whiteUnderlayer = false,
   templateType = 'address_label',
+  projectImages = [],
 }: CreativeEditorWrapperProps) {
+  // Detect image fields from available fields
+  const imageFields = availableFields.filter(f => isLikelyImageField(f));
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<CreativeEditorSDK | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -539,8 +545,29 @@ export function CreativeEditorWrapper({
                       icon: () => 'https://img.icons8.com/ios/50/123.png',
                       title: () => 'Sequential Numbers',
                     };
+
+                    // Add a custom "VDP Images" section for variable images
+                    const imagesEntry = {
+                      id: 'vdp-images',
+                      sourceIds: ['vdp-images'],
+                      previewLength: 3,
+                      gridColumns: 2,
+                      gridItemHeight: 'auto' as const,
+                      cardLabel: (asset: AssetResult) => asset.label || asset.id,
+                      cardLabelStyle: () => ({
+                        height: '24px',
+                        width: '100%',
+                        fontSize: '11px',
+                        textAlign: 'center' as const,
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap' as const,
+                        textOverflow: 'ellipsis',
+                      }),
+                      icon: () => 'https://img.icons8.com/ios/50/image.png',
+                      title: () => 'Variable Images',
+                    };
                     
-                    return [dataFieldsEntry, barcodesEntry, sequencesEntry, ...defaultEntries];
+                    return [dataFieldsEntry, barcodesEntry, sequencesEntry, imagesEntry, ...defaultEntries];
                   },
                 },
               },
@@ -624,6 +651,15 @@ export function CreativeEditorWrapper({
         cesdk.engine.asset.addSource(createSequenceAssetSource(() => {
           setSequenceDialogOpen(true);
         }));
+
+        // Register VDP image asset source
+        if (imageFields.length > 0 || projectImages.length > 0) {
+          cesdk.engine.asset.addSource(createImageAssetSource({
+            availableFields,
+            sampleData,
+            projectImages,
+          }, cesdk.engine));
+        }
 
         // Helper to set design unit to Millimeter and configure page size
         const setPageSizeMm = (pages: number[]) => {

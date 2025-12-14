@@ -1025,6 +1025,79 @@ export function CreativeEditorWrapper({
     }
   }, [currentRecordIndex, currentSampleData, projectImages]);
 
+  // DEDICATED EFFECT: Resolve VDP images when projectImages becomes available
+  // This handles the race condition where projectImages loads AFTER the scene is already rendered
+  useEffect(() => {
+    if (!editorRef.current || isLoading) return;
+    
+    console.log('🖼️ [VDP Image Resolution] Effect triggered');
+    console.log('📦 projectImages count:', projectImages.length);
+    
+    if (projectImages.length === 0) {
+      console.log('⏳ Waiting for projectImages to load...');
+      return;
+    }
+    
+    console.log('📦 Available projectImages:', projectImages.map(img => ({
+      name: img.name,
+      normalized: normalizeForImageMatch(img.name),
+      urlExists: !!img.url
+    })));
+    
+    const engine = editorRef.current.engine;
+    const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
+    
+    console.log('🔍 Scanning', graphicBlocks.length, 'graphic blocks for VDP image blocks...');
+    
+    let resolvedCount = 0;
+    let notFoundCount = 0;
+    
+    graphicBlocks.forEach((blockId) => {
+      const blockName = engine.block.getName(blockId);
+      
+      if (blockName?.startsWith('vdp:image:')) {
+        const fieldName = blockName.replace('vdp:image:', '');
+        const fieldValue = currentSampleData[fieldName];
+        
+        console.log('🔍 Found VDP image block:', { blockName, fieldName, fieldValue });
+        
+        if (fieldValue) {
+          const normalizedValue = normalizeForImageMatch(String(fieldValue));
+          
+          console.log('🔍 Attempting to match:', {
+            originalValue: fieldValue,
+            normalizedValue,
+            against: projectImages.map(img => normalizeForImageMatch(img.name))
+          });
+          
+          const matchingImage = projectImages.find(img => 
+            normalizeForImageMatch(img.name) === normalizedValue
+          );
+          
+          if (matchingImage?.url) {
+            try {
+              const fill = engine.block.getFill(blockId);
+              if (fill && engine.block.isValid(fill)) {
+                engine.block.setString(fill, 'fill/image/imageFileURI', matchingImage.url);
+                console.log('✅ [VDP Image Resolution] Resolved:', fieldName, '->', matchingImage.name);
+                resolvedCount++;
+              }
+            } catch (e) {
+              console.warn('❌ Failed to set image fill:', e);
+            }
+          } else {
+            console.warn('❌ [VDP Image Resolution] No match found for:', { fieldName, fieldValue, normalizedValue });
+            notFoundCount++;
+          }
+        } else {
+          console.warn('⚠️ [VDP Image Resolution] No field value for:', fieldName);
+        }
+      }
+    });
+    
+    console.log('📊 [VDP Image Resolution] Summary:', { resolved: resolvedCount, notFound: notFoundCount, totalBlocks: graphicBlocks.length });
+  }, [projectImages, isLoading, currentSampleData]);
+
   // Handle barcode/QR config changes
   const handleBarcodeConfigConfirm = useCallback((config: BarcodeConfig) => {
     if (!editorRef.current || selectedBlockId === null) return;

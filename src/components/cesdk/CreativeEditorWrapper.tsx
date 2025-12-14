@@ -1342,6 +1342,7 @@ export function CreativeEditorWrapper({
         open={showBackgroundGuide}
         onClose={() => setShowBackgroundGuide(false)}
         onAddBackground={handleAddBackgroundImage}
+        templateType={templateType}
       />
     </div>
   );

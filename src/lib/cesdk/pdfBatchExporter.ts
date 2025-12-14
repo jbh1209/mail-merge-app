@@ -220,14 +220,14 @@ async function exportLabelPdfs(
       // Force engine to process variable changes (replaces unnecessary delay)
       engine.editor.addUndoStep();
       
-      // Get the first page and export as PDF with FAST mode (6-15x faster)
+      // Get the first page and export as PDF with HIGH COMPATIBILITY for proper font embedding
       const pages = engine.scene.getPages();
       if (pages.length > 0) {
         const blob = await engine.block.export(pages[0], { 
           mimeType: 'application/pdf',
-          // Disable high compatibility for 6-15x faster exports
-          // Only causes minor rendering differences in Safari/macOS Preview with transparent gradients
-          exportPdfWithHighCompatibility: false,
+          // Enable high compatibility for proper font embedding
+          // This prevents text bunching/overlapping issues in the generated PDFs
+          exportPdfWithHighCompatibility: true,
         });
         const buffer = await blob.arrayBuffer();
         pdfBuffers.push(buffer);

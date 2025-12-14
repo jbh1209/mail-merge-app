@@ -315,10 +315,11 @@ async function generateInitialLayout(
         normalized: normalizeForMatch(img.name)
       })));
       
-      // Calculate image block position - place in top-left corner with room for text on the right
-      const imageSize = Math.min(widthMm * 0.3, heightMm * 0.5, 25); // Max 25mm
-      let imageX = 3; // 3mm margin
-      let imageY = 3;
+      // Calculate image block position - place at BOTTOM CENTER for clean separation from text
+      const imageSize = Math.min(widthMm * 0.3, heightMm * 0.35, 25); // Max 25mm, reduced height ratio
+      // Center horizontally, position at bottom with margin
+      let imageX = (widthMm - imageSize) / 2;
+      let imageY = heightMm - imageSize - 3; // 3mm margin from bottom
       
       for (const imageField of imageFieldsDetected) {
         try {
@@ -388,11 +389,12 @@ async function generateInitialLayout(
           
           console.log(`✅ Created VDP image block: vdp:image:${imageField} at (${imageX}, ${imageY})`, resolvedImage ? 'with resolved image' : 'with placeholder');
           
-          // Stack images vertically to leave right side for text
-          imageY += imageSize + 2;
-          if (imageY + imageSize > heightMm - 3) {
-            imageY = 3;
-            imageX += imageSize + 2;
+          // Stack multiple images horizontally at the bottom
+          imageX += imageSize + 2;
+          // If we run out of horizontal space, move up a row
+          if (imageX + imageSize > widthMm - 3) {
+            imageX = (widthMm - imageSize) / 2;
+            imageY -= imageSize + 2;
           }
         } catch (imgError) {
           console.error(`❌ Failed to create image block for ${imageField}:`, imgError);

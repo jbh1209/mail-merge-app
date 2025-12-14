@@ -70,14 +70,33 @@ export default function TemplateEditor() {
     enabled: !!projectId,
   });
 
-  // Fetch project images from storage
-  const { data: projectImages = [] } = useQuery({
-    queryKey: ['project-images', projectId],
+  // First, get the user's workspace ID for storage paths
+  const { data: userProfile } = useQuery({
+    queryKey: ['user-profile-for-images'],
     queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('workspace_id')
+        .eq('id', user.id)
+        .single();
+      return profile;
+    },
+  });
+
+  // Fetch project images from storage - using correct path with workspaceId
+  const { data: projectImages = [] } = useQuery({
+    queryKey: ['project-images', projectId, userProfile?.workspace_id],
+    queryFn: async () => {
+      if (!userProfile?.workspace_id) return [];
+      
+      const folderPath = `${userProfile.workspace_id}/${projectId}/images`;
+      
       // List files in the project-assets bucket for this project
       const { data: files, error } = await supabase.storage
         .from('project-assets')
-        .list(`${projectId}/images`, {
+        .list(folderPath, {
           limit: 100,
           sortBy: { column: 'name', order: 'asc' },
         });
@@ -93,7 +112,7 @@ export default function TemplateEditor() {
         .map(f => {
           const { data: { publicUrl } } = supabase.storage
             .from('project-assets')
-            .getPublicUrl(`${projectId}/images/${f.name}`);
+            .getPublicUrl(`${folderPath}/${f.name}`);
           return {
             name: f.name,
             url: publicUrl,
@@ -102,7 +121,7 @@ export default function TemplateEditor() {
       
       return images;
     },
-    enabled: !!projectId,
+    enabled: !!projectId && !!userProfile?.workspace_id,
   });
 
   // Fetch field mapping for variable field names

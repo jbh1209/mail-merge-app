@@ -8,7 +8,7 @@ import { SequenceConfigDialog } from '@/components/canvas/SequenceConfigDialog';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
-import { isLikelyImageField } from '@/lib/avery-labels';
+import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
 
 // Get the correct assets URL - must match the installed package version
 const CESDK_VERSION = '1.65.0';
@@ -103,14 +103,17 @@ function calculateAutoFitFontSize(
 
 // Generate initial layout using hybrid AI system (generate-layout → layout-engine)
 // This properly handles combined address blocks as a single text element
+// IMAGE fields are SKIPPED from text layout - they get VDP image blocks instead
 async function generateInitialLayout(
   engine: any,
   fields: string[],
   sampleData: Record<string, string>,
+  allSampleData: Record<string, string>[],
   widthMm: number,
   heightMm: number,
   templateType: string,
-  setLayoutStatus: (status: string | null) => void
+  setLayoutStatus: (status: string | null) => void,
+  projectImages: { name: string; url: string }[] = []
 ): Promise<void> {
   if (fields.length === 0 || Object.keys(sampleData).length === 0) {
     console.log('⏭️ Skipping auto-layout: no fields or sample data');
@@ -120,14 +123,25 @@ async function generateInitialLayout(
   setLayoutStatus('Generating smart layout...');
   console.log('🎨 AUTO-TRIGGERING HYBRID AI LAYOUT FOR NEW DESIGN');
 
+  // Detect image fields using value-based detection (handles "Unnamed_Column_2" with file paths)
+  const sampleRows = allSampleData.length > 0 ? allSampleData : [sampleData];
+  const imageFieldsDetected = detectImageColumnsFromValues(fields, sampleRows);
+  console.log('🖼️ Detected image fields:', imageFieldsDetected);
+  
+  // Filter out image fields from layout generation - they will be handled separately
+  const textFields = fields.filter(f => !imageFieldsDetected.includes(f));
+
+  setLayoutStatus('Generating smart layout...');
+  console.log('🎨 AUTO-TRIGGERING HYBRID AI LAYOUT FOR NEW DESIGN');
+
   try {
     const { supabase } = await import('@/integrations/supabase/client');
     const { executeLayout, DEFAULT_LAYOUT_CONFIG } = await import('@/lib/layout-engine');
 
-    // Step 1: Call hybrid layout generator (analyze-label-complexity → design-with-ai)
+    // Step 1: Call hybrid layout generator - use textFields (excluding images)
     const { data: hybridData, error: hybridError } = await supabase.functions.invoke('generate-layout', {
       body: {
-        fieldNames: fields,
+        fieldNames: textFields.length > 0 ? textFields : fields, // Fall back to all fields if no text fields
         sampleData: [sampleData],
         templateSize: { width: widthMm, height: heightMm },
         templateType: templateType || 'address_label',
@@ -283,7 +297,67 @@ async function generateInitialLayout(
       }
     }
 
-    console.log('✅ Hybrid auto-layout complete:', layoutResult.fields.length, 'text blocks created');
+    // Step 4: Create VDP image blocks for detected image fields
+    if (imageFieldsDetected.length > 0) {
+      console.log('🖼️ Creating VDP image blocks for:', imageFieldsDetected);
+      
+      // Calculate image block position (default to top-left corner)
+      const imageSize = Math.min(widthMm * 0.25, heightMm * 0.4, 20); // Max 20mm
+      let imageX = 3; // 3mm margin
+      let imageY = 3;
+      
+      for (const imageField of imageFieldsDetected) {
+        try {
+          // Create graphic block for image
+          const graphicBlock = engine.block.create('//ly.img.ubq/graphic');
+          const shape = engine.block.createShape('//ly.img.ubq/shape/rect');
+          engine.block.setShape(graphicBlock, shape);
+          
+          // Create image fill with placeholder
+          const imageFill = engine.block.createFill('//ly.img.ubq/fill/image');
+          
+          // Use a placeholder image
+          const placeholderSvg = `data:image/svg+xml;base64,${btoa(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+              <rect width="200" height="200" fill="#f3f4f6"/>
+              <path d="M75 50 L125 50 L125 100 L75 100 Z" fill="none" stroke="#9ca3af" stroke-width="2"/>
+              <circle cx="90" cy="65" r="5" fill="#9ca3af"/>
+              <path d="M75 95 L95 75 L115 90 L125 80" fill="none" stroke="#9ca3af" stroke-width="2"/>
+              <text x="100" y="140" text-anchor="middle" fill="#6b7280" font-size="12">VDP Image</text>
+              <text x="100" y="160" text-anchor="middle" fill="#9ca3af" font-size="10">${imageField}</text>
+            </svg>
+          `)}`;
+          
+          engine.block.setString(imageFill, 'fill/image/imageFileURI', placeholderSvg);
+          engine.block.setFill(graphicBlock, imageFill);
+          
+          // Append to page FIRST
+          engine.block.appendChild(page, graphicBlock);
+          
+          // Set size and position
+          engine.block.setWidth(graphicBlock, imageSize);
+          engine.block.setHeight(graphicBlock, imageSize);
+          engine.block.setPositionX(graphicBlock, imageX);
+          engine.block.setPositionY(graphicBlock, imageY);
+          
+          // Set VDP naming convention for resolution
+          engine.block.setName(graphicBlock, `vdp:image:${imageField}`);
+          
+          console.log(`✅ Created VDP image block: vdp:image:${imageField} at (${imageX}, ${imageY})`);
+          
+          // Stack images horizontally, then wrap to next row
+          imageX += imageSize + 2;
+          if (imageX + imageSize > widthMm - 3) {
+            imageX = 3;
+            imageY += imageSize + 2;
+          }
+        } catch (imgError) {
+          console.error(`❌ Failed to create image block for ${imageField}:`, imgError);
+        }
+      }
+    }
+
+    console.log('✅ Hybrid auto-layout complete:', layoutResult.fields.length, 'text blocks +', imageFieldsDetected.length, 'image blocks created');
     setLayoutStatus(null);
   } catch (err) {
     console.error('❌ Hybrid auto-layout generation failed:', err);
@@ -652,11 +726,13 @@ export function CreativeEditorWrapper({
           setSequenceDialogOpen(true);
         }));
 
-        // Register VDP image asset source
-        if (imageFields.length > 0 || projectImages.length > 0) {
+        // Register VDP image asset source - use value-based detection
+        const detectedImageFields = detectImageColumnsFromValues(availableFields, allSampleData.length > 0 ? allSampleData : [sampleData]);
+        if (detectedImageFields.length > 0 || projectImages.length > 0) {
           cesdk.engine.asset.addSource(createImageAssetSource({
             availableFields,
             sampleData,
+            allSampleData,
             projectImages,
           }, cesdk.engine));
         }
@@ -715,10 +791,12 @@ export function CreativeEditorWrapper({
             cesdk.engine,
             availableFields,
             sampleData,
+            allSampleData,
             labelWidth,
             labelHeight,
             templateType,
-            setLayoutStatus
+            setLayoutStatus,
+            projectImages
           );
         }
 

@@ -60,7 +60,7 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
 
       if (files && files.length > 0) {
         const images: UploadedImage[] = files
-          .filter(file => !file.name.startsWith('.') && file.metadata)
+          .filter(file => !file.name.startsWith('.') && /\.(png|jpg|jpeg|gif|webp)$/i.test(file.name))
           .map(file => {
             const path = `${folderPath}/${file.name}`;
             const { data: urlData } = supabase.storage

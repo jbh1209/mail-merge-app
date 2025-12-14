@@ -301,8 +301,22 @@ async function generateInitialLayout(
     if (imageFieldsDetected.length > 0) {
       console.log('🖼️ Creating VDP image blocks for:', imageFieldsDetected);
       
-      // Calculate image block position (default to top-left corner)
-      const imageSize = Math.min(widthMm * 0.25, heightMm * 0.4, 20); // Max 20mm
+      // Helper to normalize image names for matching
+      const normalizeForMatch = (name: string): string => {
+        let baseName = name;
+        if (name.includes('\\')) baseName = name.split('\\').pop() || name;
+        else if (name.includes('/')) baseName = name.split('/').pop() || name;
+        if (baseName.includes('?')) baseName = baseName.split('?')[0];
+        return baseName.replace(/\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$/i, '').toLowerCase().trim();
+      };
+      
+      console.log('📦 Available project images:', projectImages.map(img => ({
+        name: img.name,
+        normalized: normalizeForMatch(img.name)
+      })));
+      
+      // Calculate image block position - place in top-left corner with room for text on the right
+      const imageSize = Math.min(widthMm * 0.3, heightMm * 0.5, 25); // Max 25mm
       let imageX = 3; // 3mm margin
       let imageY = 3;
       
@@ -313,22 +327,51 @@ async function generateInitialLayout(
           const shape = engine.block.createShape('//ly.img.ubq/shape/rect');
           engine.block.setShape(graphicBlock, shape);
           
-          // Create image fill with placeholder
+          // Create image fill
           const imageFill = engine.block.createFill('//ly.img.ubq/fill/image');
           
-          // Use a placeholder image
-          const placeholderSvg = `data:image/svg+xml;base64,${btoa(`
-            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
-              <rect width="200" height="200" fill="#f3f4f6"/>
-              <path d="M75 50 L125 50 L125 100 L75 100 Z" fill="none" stroke="#9ca3af" stroke-width="2"/>
-              <circle cx="90" cy="65" r="5" fill="#9ca3af"/>
-              <path d="M75 95 L95 75 L115 90 L125 80" fill="none" stroke="#9ca3af" stroke-width="2"/>
-              <text x="100" y="140" text-anchor="middle" fill="#6b7280" font-size="12">VDP Image</text>
-              <text x="100" y="160" text-anchor="middle" fill="#9ca3af" font-size="10">${imageField}</text>
-            </svg>
-          `)}`;
+          // Try to resolve actual image from sample data
+          const sampleValue = sampleData?.[imageField];
+          let imageUri = '';
+          let resolvedImage = false;
           
-          engine.block.setString(imageFill, 'fill/image/imageFileURI', placeholderSvg);
+          if (sampleValue && projectImages.length > 0) {
+            const normalizedSample = normalizeForMatch(String(sampleValue));
+            console.log('🔍 Matching image field:', { 
+              imageField, 
+              sampleValue, 
+              normalizedSample,
+              availableImages: projectImages.map(img => normalizeForMatch(img.name))
+            });
+            
+            const matchingImage = projectImages.find(img => 
+              normalizeForMatch(img.name) === normalizedSample
+            );
+            
+            if (matchingImage && matchingImage.url) {
+              imageUri = matchingImage.url;
+              resolvedImage = true;
+              console.log('✅ Resolved image:', matchingImage.name, '->', matchingImage.url.substring(0, 80) + '...');
+            } else {
+              console.warn('❌ No matching image found for:', normalizedSample);
+            }
+          }
+          
+          // Fall back to placeholder if no image resolved
+          if (!resolvedImage) {
+            imageUri = `data:image/svg+xml;base64,${btoa(`
+              <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+                <rect width="200" height="200" fill="#f3f4f6"/>
+                <path d="M75 50 L125 50 L125 100 L75 100 Z" fill="none" stroke="#9ca3af" stroke-width="2"/>
+                <circle cx="90" cy="65" r="5" fill="#9ca3af"/>
+                <path d="M75 95 L95 75 L115 90 L125 80" fill="none" stroke="#9ca3af" stroke-width="2"/>
+                <text x="100" y="140" text-anchor="middle" fill="#6b7280" font-size="12">VDP Image</text>
+                <text x="100" y="160" text-anchor="middle" fill="#9ca3af" font-size="10">${imageField}</text>
+              </svg>
+            `)}`;
+          }
+          
+          engine.block.setString(imageFill, 'fill/image/imageFileURI', imageUri);
           engine.block.setFill(graphicBlock, imageFill);
           
           // Append to page FIRST
@@ -343,13 +386,13 @@ async function generateInitialLayout(
           // Set VDP naming convention for resolution
           engine.block.setName(graphicBlock, `vdp:image:${imageField}`);
           
-          console.log(`✅ Created VDP image block: vdp:image:${imageField} at (${imageX}, ${imageY})`);
+          console.log(`✅ Created VDP image block: vdp:image:${imageField} at (${imageX}, ${imageY})`, resolvedImage ? 'with resolved image' : 'with placeholder');
           
-          // Stack images horizontally, then wrap to next row
-          imageX += imageSize + 2;
-          if (imageX + imageSize > widthMm - 3) {
-            imageX = 3;
-            imageY += imageSize + 2;
+          // Stack images vertically to leave right side for text
+          imageY += imageSize + 2;
+          if (imageY + imageSize > heightMm - 3) {
+            imageY = 3;
+            imageX += imageSize + 2;
           }
         } catch (imgError) {
           console.error(`❌ Failed to create image block for ${imageField}:`, imgError);
@@ -926,6 +969,13 @@ export function CreativeEditorWrapper({
       
       // Update VDP image blocks with current record's image
       const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
+      console.log('🖼️ Updating VDP image blocks for record', currentRecordIndex);
+      console.log('📦 Project images available:', projectImages.length, projectImages.map(img => ({
+        name: img.name,
+        normalized: normalizeForImageMatch(img.name),
+        urlPreview: img.url?.substring(0, 60) + '...'
+      })));
+      
       graphicBlocks.forEach((blockId) => {
         const blockName = engine.block.getName(blockId);
         
@@ -933,9 +983,18 @@ export function CreativeEditorWrapper({
           const fieldName = blockName.replace('vdp:image:', '');
           const fieldValue = currentSampleData[fieldName];
           
+          console.log('🔍 Processing image block:', { fieldName, fieldValue });
+          
           if (fieldValue && projectImages.length > 0) {
             // Normalize the field value to match uploaded image
             const normalizedValue = normalizeForImageMatch(String(fieldValue));
+            
+            console.log('🔍 Matching:', {
+              fieldName,
+              fieldValue,
+              normalizedValue,
+              availableNormalized: projectImages.map(img => normalizeForImageMatch(img.name))
+            });
             
             // Find matching project image
             const matchingImage = projectImages.find(img => 
@@ -943,15 +1002,21 @@ export function CreativeEditorWrapper({
             );
             
             if (matchingImage) {
+              console.log('✅ Found matching image:', matchingImage.name, '->', matchingImage.url?.substring(0, 80));
               try {
                 const fill = engine.block.getFill(blockId);
                 if (fill && engine.block.isValid(fill)) {
                   engine.block.setString(fill, 'fill/image/imageFileURI', matchingImage.url);
+                  console.log('✅ Updated image block fill');
                 }
               } catch (imgErr) {
                 console.warn(`Failed to update image block ${fieldName}:`, imgErr);
               }
+            } else {
+              console.warn('❌ No matching image found for:', normalizedValue);
             }
+          } else {
+            console.log('⚠️ No fieldValue or no projectImages:', { fieldValue, imageCount: projectImages.length });
           }
         }
       });

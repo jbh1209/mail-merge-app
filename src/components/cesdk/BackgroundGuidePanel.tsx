@@ -7,11 +7,80 @@ interface BackgroundGuidePanelProps {
   open: boolean;
   onClose: () => void;
   onAddBackground: (file: File) => void;
+  templateType?: string;
 }
 
-export function BackgroundGuidePanel({ open, onClose, onAddBackground }: BackgroundGuidePanelProps) {
+const getContextualContent = (templateType?: string) => {
+  const content: Record<string, { title: string; description: string; tips: string[] }> = {
+    badge: {
+      title: "Add Badge Background",
+      description: "Upload your badge design or lanyard graphic to complete your event badges.",
+      tips: [
+        "Use your event branding or logo",
+        "Consider portrait orientation for lanyards",
+        "High contrast helps text readability",
+        "Use high-resolution images for best print quality",
+      ]
+    },
+    certificate: {
+      title: "Add Certificate Background",
+      description: "Upload an ornate border, watermark, or official design for your certificates.",
+      tips: [
+        "Classic borders add a professional touch",
+        "Subtle watermarks work well behind text",
+        "Use your organization's letterhead design",
+        "High-resolution ensures crisp printing",
+      ]
+    },
+    card: {
+      title: "Add Card Background",
+      description: "Upload your business card design or creative background.",
+      tips: [
+        "Consider double-sided designs",
+        "Brand colours improve recognition",
+        "Leave space for contact details",
+        "Use high-resolution for print quality",
+      ]
+    },
+    label: {
+      title: "Add Label Background",
+      description: "Upload product branding, patterns, or label designs.",
+      tips: [
+        "Keep important areas clear for variable data",
+        "Use high-resolution images for product labels",
+        "Consider barcode placement zones",
+        "Match your product's colour scheme",
+      ]
+    },
+    shelf_strip: {
+      title: "Add Shelf Strip Background",
+      description: "Upload store branding or promotional backgrounds.",
+      tips: [
+        "Match your store's colour scheme",
+        "Keep price areas high contrast",
+        "Consider promotional seasonal themes",
+        "Use consistent branding elements",
+      ]
+    },
+    custom: {
+      title: "Add Background Image",
+      description: "Upload a background image to complete your design.",
+      tips: [
+        "The image will fill the entire page",
+        "Double-click to adjust crop",
+        "Use high-resolution for print quality",
+        "It will be placed behind all other elements",
+      ]
+    }
+  };
+  return content[templateType || 'custom'] || content.custom;
+};
+
+export function BackgroundGuidePanel({ open, onClose, onAddBackground, templateType }: BackgroundGuidePanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  
+  const content = getContextualContent(templateType);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -56,10 +125,10 @@ export function BackgroundGuidePanel({ open, onClose, onAddBackground }: Backgro
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <Image className="h-5 w-5 text-primary" />
-            Add Background Image
+            {content.title}
           </SheetTitle>
           <SheetDescription>
-            Your data fields are ready! Add a background image to complete your design.
+            Your data fields are ready! {content.description}
           </SheetDescription>
         </SheetHeader>
 
@@ -99,10 +168,9 @@ export function BackgroundGuidePanel({ open, onClose, onAddBackground }: Backgro
           <div className="bg-muted/50 rounded-lg p-4 space-y-2">
             <p className="text-sm font-medium">Tips:</p>
             <ul className="text-xs text-muted-foreground space-y-1">
-              <li>• The image will be placed at full page size</li>
-              <li>• It will be sent behind all other elements</li>
-              <li>• You can adjust the crop by double-clicking</li>
-              <li>• Use high-resolution images for best print quality</li>
+              {content.tips.map((tip, index) => (
+                <li key={index}>• {tip}</li>
+              ))}
             </ul>
           </div>
 

@@ -59,24 +59,35 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
       }
 
       if (files && files.length > 0) {
-        const images: UploadedImage[] = files
-          .filter(file => !file.name.startsWith('.') && /\.(png|jpg|jpeg|gif|webp)$/i.test(file.name))
-          .map(file => {
-            const path = `${folderPath}/${file.name}`;
-            const { data: urlData } = supabase.storage
-              .from('project-assets')
-              .getPublicUrl(path);
+        const imageFiles = files.filter(
+          file => !file.name.startsWith('.') && /\.(png|jpg|jpeg|gif|webp)$/i.test(file.name)
+        );
+        
+        if (imageFiles.length > 0) {
+          // Build paths for signed URL batch request
+          const paths = imageFiles.map(file => `${folderPath}/${file.name}`);
+          
+          // Use createSignedUrls for secure access to private bucket
+          const { data: signedUrls, error: signError } = await supabase.storage
+            .from('project-assets')
+            .createSignedUrls(paths, 3600); // 1 hour expiry
+          
+          if (signError) {
+            console.error('Failed to get signed URLs:', signError);
+            setLoading(false);
+            return;
+          }
+          
+          const images: UploadedImage[] = imageFiles.map((file, index) => ({
+            name: file.name,
+            url: signedUrls?.[index]?.signedUrl || '',
+            path: paths[index],
+            size: file.metadata?.size || 0,
+          }));
 
-            return {
-              name: file.name,
-              url: urlData.publicUrl,
-              path,
-              size: file.metadata?.size || 0,
-            };
-          });
-
-        setUploadedImages(images);
-        onImagesChange?.(images);
+          setUploadedImages(images);
+          onImagesChange?.(images);
+        }
       }
     } catch (err) {
       console.error('Error loading images:', err);
@@ -105,13 +116,18 @@ export function ImageAssetUpload({ projectId, workspaceId, onImagesChange }: Ima
       throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
     }
 
-    const { data: urlData } = supabase.storage
+    // Use signed URL for secure access to private bucket
+    const { data: signedUrl, error: signError } = await supabase.storage
       .from('project-assets')
-      .getPublicUrl(path);
+      .createSignedUrl(path, 3600); // 1 hour expiry
+
+    if (signError) {
+      console.error('Failed to get signed URL:', signError);
+    }
 
     return {
       name: file.name,
-      url: urlData.publicUrl,
+      url: signedUrl?.signedUrl || '',
       path,
       size: file.size,
     };

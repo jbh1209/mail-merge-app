@@ -872,6 +872,19 @@ export function CreativeEditorWrapper({
     };
   }, [licenseKey, labelWidth, labelHeight]);
 
+  // Helper to normalize image names for matching
+  const normalizeForImageMatch = (name: string): string => {
+    let baseName = name;
+    // Extract filename from Windows path
+    if (name.includes('\\')) baseName = name.split('\\').pop() || name;
+    // Extract filename from Unix path  
+    else if (name.includes('/')) baseName = name.split('/').pop() || name;
+    // Remove query params
+    if (baseName.includes('?')) baseName = baseName.split('?')[0];
+    // Remove extension and normalize
+    return baseName.replace(/\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$/i, '').toLowerCase().trim();
+  };
+
   // Update text content when record changes (including sequences)
   useEffect(() => {
     if (!editorRef.current) return;
@@ -910,10 +923,42 @@ export function CreativeEditorWrapper({
           engine.block.replaceText(blockId, value);
         }
       });
+      
+      // Update VDP image blocks with current record's image
+      const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
+      graphicBlocks.forEach((blockId) => {
+        const blockName = engine.block.getName(blockId);
+        
+        if (blockName?.startsWith('vdp:image:')) {
+          const fieldName = blockName.replace('vdp:image:', '');
+          const fieldValue = currentSampleData[fieldName];
+          
+          if (fieldValue && projectImages.length > 0) {
+            // Normalize the field value to match uploaded image
+            const normalizedValue = normalizeForImageMatch(String(fieldValue));
+            
+            // Find matching project image
+            const matchingImage = projectImages.find(img => 
+              normalizeForImageMatch(img.name) === normalizedValue
+            );
+            
+            if (matchingImage) {
+              try {
+                const fill = engine.block.getFill(blockId);
+                if (fill && engine.block.isValid(fill)) {
+                  engine.block.setString(fill, 'fill/image/imageFileURI', matchingImage.url);
+                }
+              } catch (imgErr) {
+                console.warn(`Failed to update image block ${fieldName}:`, imgErr);
+              }
+            }
+          }
+        }
+      });
     } catch (e) {
       console.warn('Failed to update record preview:', e);
     }
-  }, [currentRecordIndex, currentSampleData]);
+  }, [currentRecordIndex, currentSampleData, projectImages]);
 
   // Handle barcode/QR config changes
   const handleBarcodeConfigConfirm = useCallback((config: BarcodeConfig) => {

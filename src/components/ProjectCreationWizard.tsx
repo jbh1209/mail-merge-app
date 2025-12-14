@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -166,6 +166,15 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
     designConfig: null,
   });
 
+  const dialogContentRef = useRef<HTMLDivElement>(null);
+  
+  // Scroll to top when step changes
+  useEffect(() => {
+    if (dialogContentRef.current) {
+      dialogContentRef.current.scrollTop = 0;
+    }
+  }, [wizardState.step]);
+  
   const handleNext = () => setWizardState(prev => ({ ...prev, step: prev.step + 1 }));
   const handleBack = () => setWizardState(prev => ({ ...prev, step: prev.step - 1 }));
   const handleClose = () => {
@@ -230,6 +239,7 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
+        ref={dialogContentRef}
         className={cn(
           wizardState.step === 6.5 
             ? "w-[95vw] max-w-none h-[95vh] p-2 overflow-auto" 

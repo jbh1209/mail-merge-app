@@ -29,6 +29,7 @@ interface CesdkPdfGeneratorProps {
   mergeJobId: string;
   dataRecords: Record<string, any>[];
   projectType?: string;
+  projectImages?: { name: string; url: string }[];
   templateConfig: {
     widthMm: number;
     heightMm: number;
@@ -45,6 +46,7 @@ export function CesdkPdfGenerator({
   mergeJobId,
   dataRecords,
   projectType = 'label',
+  projectImages = [],
   templateConfig,
   onComplete,
   onError,
@@ -84,7 +86,10 @@ export function CesdkPdfGenerator({
       const result = await batchExportWithCesdk(
         cesdk,
         dataRecords,
-        templateConfig,
+        {
+          ...templateConfig,
+          projectImages, // Pass projectImages for VDP image resolution
+        },
         mergeJobId,
         setProgress
       );

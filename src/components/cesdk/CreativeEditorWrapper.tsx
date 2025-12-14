@@ -76,6 +76,48 @@ interface CreativeEditorWrapperProps {
 // Note: Design unit is set to 'Millimeter' so we pass mm values directly to CE.SDK
 // Font sizes are always in points regardless of design unit
 
+// ============ FONT CONFIGURATION FOR PROPER PDF EMBEDDING ============
+// Using Roboto from CE.SDK CDN for consistent font embedding in PDF exports
+const ROBOTO_TYPEFACE = {
+  name: 'Roboto',
+  fonts: [
+    {
+      uri: 'https://cdn.img.ly/assets/v2/ly.img.typeface/fonts/Roboto/Roboto-Regular.ttf',
+      subFamily: 'Regular',
+    },
+    {
+      uri: 'https://cdn.img.ly/assets/v2/ly.img.typeface/fonts/Roboto/Roboto-Bold.ttf',
+      subFamily: 'Bold',
+      weight: 'bold' as const,
+    },
+    {
+      uri: 'https://cdn.img.ly/assets/v2/ly.img.typeface/fonts/Roboto/Roboto-Italic.ttf',
+      subFamily: 'Italic',
+      style: 'italic' as const,
+    },
+    {
+      uri: 'https://cdn.img.ly/assets/v2/ly.img.typeface/fonts/Roboto/Roboto-BoldItalic.ttf',
+      subFamily: 'Bold Italic',
+      weight: 'bold' as const,
+      style: 'italic' as const,
+    },
+  ],
+};
+
+/**
+ * Set Roboto font on a text block for proper PDF embedding
+ */
+function setRobotoFont(engine: any, textBlock: number): void {
+  try {
+    const regularFont = ROBOTO_TYPEFACE.fonts.find(f => f.subFamily === 'Regular');
+    if (regularFont) {
+      engine.block.setFont(textBlock, regularFont.uri, ROBOTO_TYPEFACE);
+    }
+  } catch (e) {
+    console.warn('Failed to set Roboto font:', e);
+  }
+}
+
 // Calculate auto-fit font size based on text content and available box dimensions
 function calculateAutoFitFontSize(
   textContent: string,
@@ -185,6 +227,9 @@ async function generateInitialLayout(
     for (const field of layoutResult.fields) {
       try {
         const textBlock = engine.block.create('//ly.img.ubq/text');
+        
+        // Set explicit Roboto font for proper PDF embedding
+        setRobotoFont(engine, textBlock);
 
         // Handle combined address blocks (fieldType: 'address_block')
         let textContent: string;
@@ -1230,6 +1275,9 @@ export function CreativeEditorWrapper({
     
     // Create text block
     const textBlock = engine.block.create('//ly.img.ubq/text');
+    
+    // Set explicit Roboto font for proper PDF embedding
+    setRobotoFont(engine, textBlock);
     
     // CRITICAL: Append to page FIRST before setting position
     // CE.SDK position is relative to parent - must be parented first

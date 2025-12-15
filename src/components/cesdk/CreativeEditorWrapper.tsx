@@ -1339,9 +1339,8 @@ export function CreativeEditorWrapper({
     engine.block.setHeightMode(textBlock, 'Absolute');
     engine.block.setHeight(textBlock, seqHeightMm);
     
-    // Store auto-fit metadata for variable resolution
-    engine.block.setMetadata(textBlock, 'autoFit', 'true');
-    engine.block.setMetadata(textBlock, 'originalFontSize', '14');
+    // NOTE: Sequence blocks do NOT use auto-fit - they use fixed font size
+    // Auto-fit causes issues with the setFloat API during export
     
     // Position at bottom-left with proper margins (5% from edges)
     engine.block.setPositionX(textBlock, pageWidthMm * 0.05);

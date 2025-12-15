@@ -26,8 +26,8 @@ async function fitTextToContainer(
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
     
-    // Set the font size
-    engine.block.setFloat(blockId, 'text/fontSize', mid);
+    // Set the font size - use setTextFontSize to update actual styled text content
+    engine.block.setTextFontSize(blockId, mid);
     
     // Get the actual frame dimensions after layout recalculation
     const actualHeight = engine.block.getFrameHeight(blockId);
@@ -41,8 +41,8 @@ async function fitTextToContainer(
     }
   }
   
-  // Apply the best fit font size
-  engine.block.setFloat(blockId, 'text/fontSize', bestFit);
+  // Apply the best fit font size - use setTextFontSize for actual styled text
+  engine.block.setTextFontSize(blockId, bestFit);
   return bestFit;
 }
 
@@ -130,7 +130,7 @@ export async function resolveVariables(
           const maxFontSize = originalFontSize || currentFontSize || 12;
           
           // Reset to original font size before fitting to allow growing back for shorter text
-          engine.block.setFloat(blockId, 'text/fontSize', maxFontSize);
+          engine.block.setTextFontSize(blockId, maxFontSize);
           
           await fitTextToContainer(
             engine,

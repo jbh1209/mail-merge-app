@@ -702,9 +702,9 @@ export function CreativeEditorWrapper({
                 inspector: {
                   show: true,
                 },
-                settings: {
-                  show: true,
-                },
+              settings: {
+                show: false, // Hide "Customize Editor" button
+              },
               },
               dock: {
                 iconSize: 'normal',
@@ -844,7 +844,7 @@ export function CreativeEditorWrapper({
         // Remove preview button from navigation bar - it causes bugs and isn't needed for WYSIWYG
         try {
           cesdk.ui.setNavigationBarOrder([
-            'ly.img.back.navigationBar',
+            // Removed 'ly.img.back.navigationBar' - redundant with our breadcrumbs
             'ly.img.undoRedo.navigationBar',
             'ly.img.spacer',
             'ly.img.title.navigationBar',

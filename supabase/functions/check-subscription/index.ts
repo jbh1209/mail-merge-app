@@ -21,8 +21,12 @@ const logStep = (step: string, details?: any) => {
 
 // Map Stripe price IDs to tiers
 const TIER_CONFIG: Record<string, { tier: string; pagesPerMonth: number }> = {
+  // Current active price IDs
+  'price_1SU3IAQPrjyVLvmxvLo5G5QY': { tier: 'pro', pagesPerMonth: 500 },
+  'price_1SU3NAQPrjyVLvmxA827EA4Y': { tier: 'business', pagesPerMonth: 5000 },
+  // Legacy price IDs (in case any old subscriptions use them)
   'price_1Sd8GJQPrjyVLvmxAW0x0aXN': { tier: 'pro', pagesPerMonth: 500 },
-  'price_1Sd8GqQPrjyVLvmxOplFKFgb': { tier: 'business', pagesPerMonth: 2000 },
+  'price_1Sd8GqQPrjyVLvmxOplFKFgb': { tier: 'business', pagesPerMonth: 5000 },
 };
 
 Deno.serve(async (req) => {

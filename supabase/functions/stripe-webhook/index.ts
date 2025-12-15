@@ -20,6 +20,16 @@ const logStep = (step: string, details?: any) => {
   console.log(`[STRIPE-WEBHOOK] ${step}${detailsStr}`);
 };
 
+// Fallback tier config in case DB lookup fails
+const TIER_CONFIG: Record<string, { tier: string; pagesPerMonth: number }> = {
+  // Current active price IDs
+  'price_1SU3IAQPrjyVLvmxvLo5G5QY': { tier: 'pro', pagesPerMonth: 500 },
+  'price_1SU3NAQPrjyVLvmxA827EA4Y': { tier: 'business', pagesPerMonth: 5000 },
+  // Legacy price IDs
+  'price_1Sd8GJQPrjyVLvmxAW0x0aXN': { tier: 'pro', pagesPerMonth: 500 },
+  'price_1Sd8GqQPrjyVLvmxOplFKFgb': { tier: 'business', pagesPerMonth: 5000 },
+};
+
 // Find workspace by customer ID with fallbacks
 async function findWorkspaceByCustomer(supabase: any, customerId: string, customerEmail?: string): Promise<string | null> {
   logStep('Finding workspace for customer', { customerId, customerEmail });
@@ -123,7 +133,7 @@ Deno.serve(async (req) => {
           break;
         }
 
-        // Determine tier from price ID
+        // Determine tier from price ID (DB lookup with fallback)
         const priceId = subscription.items.data[0].price.id;
         logStep('Looking up tier for price', { priceId });
         
@@ -133,13 +143,18 @@ Deno.serve(async (req) => {
           .eq('stripe_price_id', priceId)
           .single();
 
-        logStep('Tier lookup result', { tier });
+        // Use DB tier or fallback to hardcoded config
+        const fallbackTier = TIER_CONFIG[priceId];
+        const tierName = tier?.tier_name || fallbackTier?.tier || 'starter';
+        const pagesQuota = tier?.pages_per_month || fallbackTier?.pagesPerMonth || 100;
+
+        logStep('Tier lookup result', { tier, fallbackTier, tierName, pagesQuota });
 
         // Update workspace subscription
         const updateData: any = {
-          subscription_tier: tier?.tier_name || 'starter',
+          subscription_tier: tierName,
           subscription_status: subscription.status === 'active' ? 'active' : subscription.status,
-          pages_quota: tier?.pages_per_month || 100,
+          pages_quota: pagesQuota,
         };
         
         // Set trial end date if subscription has a trial period

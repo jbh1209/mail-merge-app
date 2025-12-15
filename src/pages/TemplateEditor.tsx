@@ -70,6 +70,28 @@ export default function TemplateEditor() {
     enabled: !!projectId,
   });
 
+  // Fetch workspace quota for hard stop on PDF generation
+  const { data: workspaceQuota } = useQuery({
+    queryKey: ['workspace-quota'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('workspace_id')
+        .eq('id', user.id)
+        .single();
+      if (!profile?.workspace_id) return null;
+      
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('pages_used_this_month, pages_quota')
+        .eq('id', profile.workspace_id)
+        .single();
+      return workspace;
+    },
+  });
+
   // First, get the user's workspace ID for storage paths
   const { data: userProfile } = useQuery({
     queryKey: ['user-profile-for-images'],
@@ -271,6 +293,34 @@ export default function TemplateEditor() {
 
   // Handle Generate PDFs click - create merge job, auto-save, then open dialog
   const handleGeneratePdfs = useCallback(async () => {
+    // Get sample data count for quota check
+    const parsedFieldsLocal = dataSource?.parsed_fields as { rows?: any[]; preview?: any[]; columns?: string[] } | null;
+    const sampleRowsLocal = parsedFieldsLocal?.rows || parsedFieldsLocal?.preview || [];
+    const recordCount = sampleRowsLocal.length;
+    
+    // Calculate quota status
+    const pagesRemaining = workspaceQuota 
+      ? workspaceQuota.pages_quota - workspaceQuota.pages_used_this_month 
+      : 0;
+    const isOverQuota = workspaceQuota 
+      ? workspaceQuota.pages_used_this_month >= workspaceQuota.pages_quota 
+      : false;
+    const wouldExceedQuota = workspaceQuota 
+      ? (workspaceQuota.pages_used_this_month + recordCount) > workspaceQuota.pages_quota 
+      : false;
+      
+    // HARD STOP: Check quota before generating
+    if (isOverQuota) {
+      toast.error('You have reached your monthly page limit. Please upgrade your plan to continue.');
+      navigate('/settings?tab=billing');
+      return;
+    }
+    
+    if (wouldExceedQuota) {
+      toast.error(`Cannot generate ${recordCount} pages. You only have ${pagesRemaining} pages remaining this month.`);
+      return;
+    }
+
     // Auto-save before generating PDFs
     if (hasUnsavedChanges && editorHandleRef.current) {
       try {
@@ -288,14 +338,14 @@ export default function TemplateEditor() {
 
     // Create merge job before opening dialog
     try {
-      const mergeJobId = await createMergeJobMutation.mutateAsync(allSampleData.length);
+      const mergeJobId = await createMergeJobMutation.mutateAsync(recordCount);
       setCurrentMergeJobId(mergeJobId);
       setPdfDialogOpen(true);
     } catch (error: any) {
       console.error('Failed to create merge job:', error);
       toast.error('Failed to start PDF generation: ' + error.message);
     }
-  }, [hasUnsavedChanges, createMergeJobMutation]);
+  }, [hasUnsavedChanges, createMergeJobMutation, workspaceQuota, dataSource, navigate]);
 
   // Track when scene changes
   const handleSceneChange = useCallback((hasChanges: boolean) => {
@@ -345,6 +395,11 @@ export default function TemplateEditor() {
   const hasImageFields = imageFields.length > 0;
   const hasUploadedImages = projectImages.length > 0;
   const showImageUploadPrompt = hasImageFields && !hasUploadedImages;
+
+  // Calculate quota status for button state
+  const isOverQuota = workspaceQuota 
+    ? workspaceQuota.pages_used_this_month >= workspaceQuota.pages_quota 
+    : false;
 
   // Get initial scene from design_config if it exists
   const initialScene = (template?.design_config as { cesdkScene?: string } | null)?.cesdkScene;
@@ -452,14 +507,16 @@ export default function TemplateEditor() {
           <Button
             size="sm"
             onClick={handleGeneratePdfs}
-            disabled={!isEditorReady || allSampleData.length === 0 || createMergeJobMutation.isPending}
+            disabled={!isEditorReady || allSampleData.length === 0 || createMergeJobMutation.isPending || isOverQuota}
+            variant={isOverQuota ? "destructive" : "default"}
+            title={isOverQuota ? "Quota exceeded - upgrade to continue" : undefined}
           >
             {createMergeJobMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <FileDown className="h-4 w-4" />
             )}
-            <span className="ml-1.5">Generate PDFs</span>
+            <span className="ml-1.5">{isOverQuota ? "Quota Exceeded" : "Generate PDFs"}</span>
           </Button>
         </div>
       </header>

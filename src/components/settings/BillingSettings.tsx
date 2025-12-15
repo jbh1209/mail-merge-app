@@ -1,14 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Loader2, CreditCard, TrendingUp, RefreshCw } from "lucide-react";
+import { Loader2, CreditCard, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 
 export function BillingSettings() {
   const [workspaceId, setWorkspaceId] = useState<string>();
@@ -16,6 +16,7 @@ export function BillingSettings() {
   const [syncing, setSyncing] = useState(false);
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { data: subscription, refetch: refetchSubscription } = useSubscription(workspaceId);
 
   const { data: workspace } = useQuery({
@@ -260,6 +261,12 @@ export function BillingSettings() {
           {tiers?.map((tier) => {
             const isCurrent = tier.tier_name === subscription?.subscription_tier;
             const features = tier.features as any;
+            
+            // Find current tier's price to determine upgrade vs downgrade
+            const currentTier = tiers?.find(t => t.tier_name === subscription?.subscription_tier);
+            const currentPrice = currentTier?.price_cents || 0;
+            const isUpgrade = tier.price_cents > currentPrice;
+            const isDowngrade = tier.price_cents < currentPrice;
 
             return (
               <Card key={tier.id} className={isCurrent ? "border-primary" : ""}>
@@ -289,7 +296,7 @@ export function BillingSettings() {
                     )}
                   </div>
 
-                  {!isCurrent && tier.stripe_price_id && (
+                  {!isCurrent && tier.stripe_price_id && isUpgrade && (
                     <Button
                       onClick={() => handleUpgrade(tier.tier_name, tier.stripe_price_id!)}
                       disabled={loading}
@@ -301,6 +308,22 @@ export function BillingSettings() {
                         <TrendingUp className="mr-2 h-4 w-4" />
                       )}
                       Upgrade
+                    </Button>
+                  )}
+                  
+                  {!isCurrent && isDowngrade && workspace?.stripe_customer_id && (
+                    <Button
+                      variant="outline"
+                      onClick={handleManageBilling}
+                      disabled={loading}
+                      className="w-full"
+                    >
+                      {loading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <TrendingDown className="mr-2 h-4 w-4" />
+                      )}
+                      Downgrade
                     </Button>
                   )}
                 </CardContent>

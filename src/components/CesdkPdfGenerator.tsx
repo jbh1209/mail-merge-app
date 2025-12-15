@@ -88,6 +88,7 @@ export function CesdkPdfGenerator({
         dataRecords,
         {
           ...templateConfig,
+          projectType, // Pass project type for multi-page handling
           projectImages, // Pass projectImages for VDP image resolution
         },
         mergeJobId,

@@ -501,6 +501,7 @@ export default function TemplateEditor() {
           bleedMm={template.bleed_mm || 0}
           whiteUnderlayer={(template.design_config as { whiteUnderlayer?: boolean } | null)?.whiteUnderlayer ?? false}
           templateType={template.template_type || 'address_label'}
+          projectType={project?.project_type || 'label'}
           projectImages={projectImages}
         />
       </main>

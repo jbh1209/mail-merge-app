@@ -54,7 +54,7 @@ export default function ProjectDetail() {
     }
   }, [searchParams]);
 
-  const { data: project, isLoading } = useQuery({
+  const { data: project, isLoading, isError, error } = useQuery({
     queryKey: ["project", id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -67,6 +67,7 @@ export default function ProjectDetail() {
       return data;
     },
     enabled: !!id,
+    retry: 2,
   });
 
   const { data: dataSources } = useQuery({
@@ -224,12 +225,21 @@ export default function ProjectDetail() {
     );
   }
 
-  if (!project) {
+  if (isError || !project) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground">Project not found</p>
-        <Button asChild variant="link" className="mt-4">
-          <Link to="/projects">Back to Projects</Link>
+        <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+        <p className="text-muted-foreground mb-2">
+          {isError ? "Failed to load project" : "Project not found"}
+        </p>
+        {error && (
+          <p className="text-sm text-destructive mb-4">{(error as Error).message}</p>
+        )}
+        <Button asChild variant="outline">
+          <Link to="/projects">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Projects
+          </Link>
         </Button>
       </div>
     );

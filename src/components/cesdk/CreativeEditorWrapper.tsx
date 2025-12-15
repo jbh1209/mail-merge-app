@@ -485,6 +485,7 @@ export function CreativeEditorWrapper({
   const imageFields = availableFields.filter(f => isLikelyImageField(f));
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<CreativeEditorSDK | null>(null);
+  const pageCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [layoutStatus, setLayoutStatus] = useState<string | null>(null);
@@ -893,17 +894,32 @@ export function CreativeEditorWrapper({
           }, cesdk.engine));
         }
 
-        // Helper to set design unit to Millimeter and configure page size
+        // Helper to set design unit to Millimeter and configure page size for ALL pages
         const setPageSizeMm = (pages: number[]) => {
           if (pages.length > 0) {
-            const page = pages[0];
             // Set design unit to Millimeter - CE.SDK will handle internal conversions
             cesdk.engine.scene.setDesignUnit('Millimeter');
-            // Now set dimensions in mm directly
-            cesdk.engine.block.setWidth(page, labelWidth);
-            cesdk.engine.block.setHeight(page, labelHeight);
+            // Apply dimensions to ALL pages (important for multi-page designs like double-sided cards)
+            pages.forEach(page => {
+              cesdk.engine.block.setWidth(page, labelWidth);
+              cesdk.engine.block.setHeight(page, labelHeight);
+            });
           }
         };
+        
+        // Periodically check and fix page dimensions for new pages
+        let lastPageCount = 0;
+        pageCheckIntervalRef.current = setInterval(() => {
+          try {
+            const allPages = cesdk.engine.scene.getPages();
+            if (allPages.length !== lastPageCount) {
+              lastPageCount = allPages.length;
+              setPageSizeMm(allPages);
+            }
+          } catch (e) {
+            // Editor might be disposed, ignore
+          }
+        }, 500);
 
         // Create a new design or load existing scene
         if (initialScene) {
@@ -1025,6 +1041,11 @@ export function CreativeEditorWrapper({
     initEditor();
 
     return () => {
+      // Clean up page check interval
+      if (pageCheckIntervalRef.current) {
+        clearInterval(pageCheckIntervalRef.current);
+        pageCheckIntervalRef.current = null;
+      }
       if (editorRef.current) {
         try {
           editorRef.current.dispose();
@@ -1354,9 +1375,9 @@ export function CreativeEditorWrapper({
         </div>
       )}
       
-      {/* Record Navigation Bar */}
+      {/* Record Navigation Bar - positioned above page timeline */}
       {totalRecords > 1 && !isLoading && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-card border rounded-lg shadow-lg px-3 py-2">
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-card border rounded-lg shadow-lg px-3 py-2">
           <button
             onClick={goToPreviousRecord}
             disabled={currentRecordIndex === 0}

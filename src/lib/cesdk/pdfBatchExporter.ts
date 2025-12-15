@@ -221,24 +221,27 @@ async function exportLabelPdfs(
       // Force engine to process variable changes (replaces unnecessary delay)
       engine.editor.addUndoStep();
       
-      // Get the first page and export as PDF with HIGH COMPATIBILITY for proper font embedding
+      // Export ALL pages (supports multi-page designs like double-sided cards)
       const pages = engine.scene.getPages();
       if (pages.length > 0) {
-        const blob = await engine.block.export(pages[0], { 
-          mimeType: 'application/pdf',
-          // Enable high compatibility for proper font embedding
-          // This prevents text bunching/overlapping issues in the generated PDFs
-          exportPdfWithHighCompatibility: true,
-        });
-        const buffer = await blob.arrayBuffer();
-        pdfBuffers.push(buffer);
+        // Export each page separately for proper multi-page handling
+        for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+          const blob = await engine.block.export(pages[pageIndex], { 
+            mimeType: 'application/pdf',
+            // Enable high compatibility for proper font embedding
+            // This prevents text bunching/overlapping issues in the generated PDFs
+            exportPdfWithHighCompatibility: true,
+          });
+          const buffer = await blob.arrayBuffer();
+          pdfBuffers.push(buffer);
+        }
         
         // Track export time for ETA calculation
         exportTimes.push(Date.now() - itemStartTime);
         // Keep only last 5 times for rolling average
         if (exportTimes.length > 5) exportTimes.shift();
         
-        console.log(`Exported ${docType} ${i + 1}/${dataRecords.length} in ${Date.now() - itemStartTime}ms`);
+        console.log(`Exported ${docType} ${i + 1}/${dataRecords.length} (${pages.length} pages) in ${Date.now() - itemStartTime}ms`);
       }
     }
     
@@ -385,6 +388,7 @@ export async function batchExportWithCesdk(
     labelsPerSheet?: number;
     isFullPage?: boolean;
     averyPartNumber?: string;
+    projectType?: string; // Project type for multi-page handling
     projectImages?: { name: string; url: string }[];
   },
   mergeJobId: string,

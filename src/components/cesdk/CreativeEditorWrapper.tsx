@@ -68,6 +68,7 @@ interface CreativeEditorWrapperProps {
   bleedMm?: number;
   whiteUnderlayer?: boolean;
   templateType?: string;
+  projectType?: string; // Project type: 'label', 'card', 'badge', etc.
   projectImages?: { name: string; url: string }[]; // Uploaded images for VDP
   // Page size can be updated externally (for non-label projects)
   key?: string; // Forces re-init when dimensions change
@@ -479,6 +480,7 @@ export function CreativeEditorWrapper({
   bleedMm = 0,
   whiteUnderlayer = false,
   templateType = 'address_label',
+  projectType = 'label',
   projectImages = [],
 }: CreativeEditorWrapperProps) {
   // Detect image fields from available fields
@@ -856,6 +858,20 @@ export function CreativeEditorWrapper({
           ]);
         } catch (e) {
           console.warn('Could not customize navigation bar:', e);
+        }
+
+        // Disable page management features for label projects (labels are single-sided only)
+        if (projectType === 'label') {
+          try {
+            cesdk.feature.disable('ly.img.page.add');
+            cesdk.feature.disable('ly.img.page.move');
+            cesdk.feature.disable('ly.img.page.duplicate');
+            console.log('[CESDK] Page management disabled for label project (single-sided only)');
+          } catch (e) {
+            console.warn('Could not disable page features:', e);
+          }
+        } else {
+          console.log(`[CESDK] Multi-page enabled for ${projectType} project`);
         }
 
         // Add default asset sources (shapes, stickers, images, etc.)

@@ -277,7 +277,7 @@ export default function ProjectDetail() {
         <div className="flex-1">
           <h1 className="text-3xl font-bold">{project.name}</h1>
           <p className="text-muted-foreground capitalize">
-            {project.project_type.replace("_", " ")} • Created {format(new Date(project.created_at), 'PPP')}
+            {project.project_type.replace("_", " ")} • Created {project.created_at ? format(new Date(project.created_at), 'PPP') : 'Unknown date'}
           </p>
         </div>
         <Badge variant="outline" className="capitalize">

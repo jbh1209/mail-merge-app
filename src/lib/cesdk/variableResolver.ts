@@ -96,7 +96,15 @@ export async function resolveVariables(
         const seqConfig = parseSequenceMetadata(blockName);
         if (seqConfig) {
           const value = formatSequenceNumber(seqConfig, recordIndex);
+          
+          // Get current font size BEFORE replacing text (replaceText resets styling)
+          const currentFontSize = engine.block.getFloat(blockId, 'text/fontSize') || 14;
+          
           engine.block.replaceText(blockId, value);
+          
+          // Re-apply font size to the new text content
+          engine.block.setTextFontSize(blockId, currentFontSize);
+          
           textUpdated = true;
         }
       } else if (blockName.startsWith('vdp:address_block:')) {

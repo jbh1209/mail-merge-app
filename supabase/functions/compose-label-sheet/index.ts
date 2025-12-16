@@ -33,6 +33,11 @@ serve(async (req) => {
   try {
     const { pdfPaths, layout, mergeJobId, fullPageMode } = await req.json();
 
+    // Initialize Supabase client early for error handling
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     if (!pdfPaths || !Array.isArray(pdfPaths) || pdfPaths.length === 0) {
       throw new Error('No PDF paths provided');
     }
@@ -41,12 +46,6 @@ serve(async (req) => {
       throw new Error('No merge job ID provided');
     }
 
-    console.log(`Processing ${pdfPaths.length} PDFs for job ${mergeJobId} (fullPageMode: ${fullPageMode})`);
-
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Process PDFs in small batches to manage memory
     const BATCH_SIZE = 5;
@@ -214,6 +213,40 @@ serve(async (req) => {
     );
   } catch (error: any) {
     console.error('Composition error:', error);
+    
+    // Try to update merge job and project status to error
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const errorSupabase = createClient(supabaseUrl, supabaseKey);
+      
+      // Extract mergeJobId from request body if possible
+      const body = await req.clone().json().catch(() => ({}));
+      if (body.mergeJobId) {
+        // Update merge job status
+        await errorSupabase
+          .from('merge_jobs')
+          .update({ status: 'error', error_message: error.message })
+          .eq('id', body.mergeJobId);
+        
+        // Get project_id and update project status
+        const { data: jobData } = await errorSupabase
+          .from('merge_jobs')
+          .select('project_id')
+          .eq('id', body.mergeJobId)
+          .single();
+        
+        if (jobData?.project_id) {
+          await errorSupabase
+            .from('projects')
+            .update({ status: 'error' })
+            .eq('id', jobData.project_id);
+          console.log(`Updated project ${jobData.project_id} status to error`);
+        }
+      }
+    } catch (updateErr) {
+      console.error('Failed to update error status:', updateErr);
+    }
     
     return new Response(
       JSON.stringify({

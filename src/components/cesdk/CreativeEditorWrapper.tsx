@@ -1110,14 +1110,17 @@ export function CreativeEditorWrapper({
           // Combined address block - extract field names and rebuild content
           const fieldNamesStr = blockName.replace('vdp:address_block:', '');
           const fieldNames = fieldNamesStr.split(',');
-          const newContent = fieldNames
+          // Filter out junk columns like Unnamed_Column_*
+          const validFieldNames = fieldNames.filter(f => 
+            !/^Unnamed_Column_\d+$/i.test(f.trim())
+          );
+          const newContent = validFieldNames
             .map(fieldName => currentSampleData[fieldName] || '')
             .filter(Boolean)
             .join('\n');
           
-          if (newContent) {
-            engine.block.replaceText(blockId, newContent);
-          }
+          // Always update, show placeholder if empty
+          engine.block.replaceText(blockId, newContent || '(No data)');
         } else if (blockName.startsWith('vdp:text:')) {
           // Individual field
           const fieldName = blockName.replace('vdp:text:', '');

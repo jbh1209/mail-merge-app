@@ -366,8 +366,13 @@ function layoutStackedInline(
   typography: DesignIntent['typography'],
   sampleData: Record<string, any>
 ): FieldLayout[] {
+  // Filter out junk columns like Unnamed_Column_*
+  const validFields = region.fields.filter(f => 
+    !/^Unnamed_Column_\d+$/i.test(f)
+  );
+  
   // Combine all field values into a single multi-line text block
-  const combinedText = region.fields
+  const combinedText = validFields
     .map(field => String(sampleData[field] || field))
     .join('\n');
 
@@ -383,8 +388,8 @@ function layoutStackedInline(
   );
 
   return [{
-    templateField: region.fields[0],
-    combinedFields: region.fields,
+    templateField: validFields[0] || region.fields[0],
+    combinedFields: validFields,
     fieldType: 'address_block',
     x: bounds.x,
     y: bounds.y,

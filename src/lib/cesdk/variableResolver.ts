@@ -110,7 +110,11 @@ export async function resolveVariables(
       } else if (blockName.startsWith('vdp:address_block:')) {
         // Combined address block - multiple fields joined with newlines
         const fieldNames = blockName.replace('vdp:address_block:', '').split(',');
-        const content = fieldNames
+        // Filter out junk columns like Unnamed_Column_*
+        const validFieldNames = fieldNames.filter(f => 
+          !/^Unnamed_Column_\d+$/i.test(f.trim())
+        );
+        const content = validFieldNames
           .map(f => String(data[f.trim()] || ''))
           .filter(Boolean)
           .join('\n');

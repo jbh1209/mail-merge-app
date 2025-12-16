@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, CheckCircle2, Package, FileText, Tag, ExternalLink, PlusCircle, Loader2, Sparkles } from "lucide-react";
+import { Search, CheckCircle2, Package, FileText, Tag, ExternalLink, PlusCircle, Loader2, Sparkles, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/integrations/supabase/client";
 import { useRegionPreference } from "@/hooks/useRegionPreference";
 import { CustomLabelSizeDialog } from "@/components/CustomLabelSizeDialog";
@@ -18,9 +20,14 @@ interface TemplateLibraryProps {
   projectType?: string;
 }
 
+// Main brands to show as tabs
+const MAIN_BRANDS = ["Avery", "Herma", "Zweckform", "SheetLabels"];
+
 export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateLibraryProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showCustomSize, setShowCustomSize] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState<string>("all");
+  const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const { formatDimensions } = useRegionPreference();
 
   // Get keywords for current project type to highlight relevant templates
@@ -39,12 +46,55 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
     }
   });
 
+  // Calculate counts for regions and brands
+  const { regionCounts, brandCounts, otherBrands } = useMemo(() => {
+    if (!dbTemplates) return { regionCounts: {}, brandCounts: {}, otherBrands: [] };
+    
+    const regionCounts: Record<string, number> = { all: dbTemplates.length, US: 0, EU: 0 };
+    const brandCounts: Record<string, number> = { all: 0 };
+    
+    // First pass: count regions
+    dbTemplates.forEach(t => {
+      if (t.region === "US") regionCounts.US++;
+      else if (t.region === "EU") regionCounts.EU++;
+    });
+    
+    // Filter by region first for brand counts
+    const regionFiltered = selectedRegion === "all" 
+      ? dbTemplates 
+      : dbTemplates.filter(t => t.region === selectedRegion);
+    
+    brandCounts.all = regionFiltered.length;
+    
+    // Count brands within region filter
+    regionFiltered.forEach(t => {
+      brandCounts[t.brand] = (brandCounts[t.brand] || 0) + 1;
+    });
+    
+    // Find other brands (not in MAIN_BRANDS)
+    const otherBrands = Object.keys(brandCounts)
+      .filter(b => b !== "all" && !MAIN_BRANDS.includes(b))
+      .sort((a, b) => (brandCounts[b] || 0) - (brandCounts[a] || 0));
+    
+    return { regionCounts, brandCounts, otherBrands };
+  }, [dbTemplates, selectedRegion]);
+
   const filterDbTemplates = () => {
     if (!dbTemplates) return [];
     
     let filtered = dbTemplates;
     
-    // Apply project type filtering first (prioritize, don't exclude)
+    // Apply region filter
+    if (selectedRegion !== "all") {
+      filtered = filtered.filter(t => t.region === selectedRegion);
+    }
+    
+    // Apply brand filter
+    if (selectedBrand !== "all") {
+      filtered = filtered.filter(t => t.brand === selectedBrand);
+    }
+    
+    // Apply project type filtering (prioritize, don't exclude)
     if (projectType && projectKeywords.length > 0) {
       filtered = filtered.sort((a, b) => {
         const aMatch = projectKeywords.some(kw => 
@@ -53,7 +103,7 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
         ) ? 1 : 0;
         const bMatch = projectKeywords.some(kw => 
           b.description?.toLowerCase().includes(kw) || 
-          b.categories?.some(c => c.toLowerCase().includes(kw))
+          b.categories?.some(kw => kw.toLowerCase().includes(kw))
         ) ? 1 : 0;
         return bMatch - aMatch;
       });
@@ -240,6 +290,9 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
   const filteredDbTemplates = filterDbTemplates();
   const filteredStandardSizes = filterStandardSizes();
 
+  // Check if selected brand is in "More" dropdown
+  const isOtherBrandSelected = otherBrands.includes(selectedBrand);
+
   return (
     <div className="space-y-4">
       {/* Prominent Custom Size Button */}
@@ -258,6 +311,87 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
         </CardContent>
       </Card>
 
+      {/* Region Filter */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Region:</span>
+        </div>
+        <ToggleGroup 
+          type="single" 
+          value={selectedRegion} 
+          onValueChange={(val) => val && setSelectedRegion(val)}
+          className="justify-start"
+        >
+          <ToggleGroupItem value="all" aria-label="All regions" className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+            All ({regionCounts.all || 0})
+          </ToggleGroupItem>
+          <ToggleGroupItem value="US" aria-label="US region" className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+            US ({regionCounts.US || 0})
+          </ToggleGroupItem>
+          <ToggleGroupItem value="EU" aria-label="EU region" className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+            EU ({regionCounts.EU || 0})
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
+      {/* Brand Filter */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Brand:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ToggleGroup 
+            type="single" 
+            value={isOtherBrandSelected ? "" : selectedBrand} 
+            onValueChange={(val) => val && setSelectedBrand(val)}
+            className="justify-start flex-wrap"
+          >
+            <ToggleGroupItem value="all" aria-label="All brands" className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
+              All ({brandCounts.all || 0})
+            </ToggleGroupItem>
+            {MAIN_BRANDS.map(brand => (
+              <ToggleGroupItem 
+                key={brand} 
+                value={brand} 
+                aria-label={brand}
+                className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                disabled={!brandCounts[brand]}
+              >
+                {brand} ({brandCounts[brand] || 0})
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          
+          {/* More Brands Dropdown */}
+          {otherBrands.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant={isOtherBrandSelected ? "default" : "outline"} 
+                  size="sm"
+                  className="gap-1"
+                >
+                  {isOtherBrandSelected ? selectedBrand : "More"}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-60 overflow-y-auto">
+                {otherBrands.map(brand => (
+                  <DropdownMenuItem 
+                    key={brand}
+                    onClick={() => setSelectedBrand(brand)}
+                    className={selectedBrand === brand ? "bg-accent" : ""}
+                  >
+                    {brand} ({brandCounts[brand] || 0})
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      </div>
+
+      {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
@@ -280,7 +414,7 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="avery" className="flex items-center gap-2">
             <Package className="h-4 w-4" />
-            Label Templates {dbTemplates && `(${dbTemplates.length})`}
+            Label Templates ({filteredDbTemplates.length})
           </TabsTrigger>
           <TabsTrigger value="standard" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -299,7 +433,7 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
                 <DbTemplateCard key={template.id} template={template} />
               ))}
             </div>
-          ) : searchQuery ? (
+          ) : searchQuery || selectedRegion !== "all" || selectedBrand !== "all" ? (
             <NoResultsPanel />
           ) : (
             <div className="text-center py-8 text-muted-foreground">

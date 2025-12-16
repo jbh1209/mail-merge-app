@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useRegionPreference } from "@/hooks/useRegionPreference";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +25,16 @@ import { useSubscription } from "@/hooks/useSubscription";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
+// Helper component for displaying template dimensions with proper formatting
+function TemplateDimensions({ widthMm, heightMm }: { widthMm: number; heightMm: number }) {
+  const { formatDimensions } = useRegionPreference();
+  return (
+    <Badge variant="outline" className="text-xs font-mono">
+      {formatDimensions(widthMm, heightMm)}
+    </Badge>
+  );
+}
+
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -37,7 +48,7 @@ export default function ProjectDetail() {
   const [fieldMappingOpen, setFieldMappingOpen] = useState(false);
   const [selectedDataSource, setSelectedDataSource] = useState<any>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState("data-sources");
+  const [activeTab, setActiveTab] = useState("templates");
   const [uploadedImages, setUploadedImages] = useState<{ name: string; url: string; path: string; size: number }[]>([]);
 
   // Handle URL params for auto-navigation to specific tabs
@@ -295,6 +306,7 @@ export default function ProjectDetail() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="data-sources">Data Sources</TabsTrigger>
           <TabsTrigger value="assets" className="relative">
             Assets
@@ -302,7 +314,6 @@ export default function ProjectDetail() {
               <span className="ml-1.5 inline-flex h-2 w-2 rounded-full bg-amber-500" title="Images needed" />
             )}
           </TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="mappings">Field Mappings</TabsTrigger>
           <TabsTrigger value="jobs">Merge Jobs</TabsTrigger>
         </TabsList>
@@ -401,9 +412,7 @@ export default function ProjectDetail() {
                               {template.template_type.replace("_", " ")}
                             </p>
                             {template.width_mm && template.height_mm && (
-                              <Badge variant="outline" className="text-xs font-mono">
-                                {template.width_mm}×{template.height_mm}mm
-                              </Badge>
+                              <TemplateDimensions widthMm={template.width_mm} heightMm={template.height_mm} />
                             )}
                           </div>
                         </div>
@@ -417,7 +426,7 @@ export default function ProjectDetail() {
                             onClick={() => handleEditTemplate(template)}
                           >
                             <Edit className="h-4 w-4 mr-2" />
-                            {(template.design_config as any)?.fields ? 'Edit Design' : 'Design Layout'}
+                            Edit Design
                           </Button>
                         </div>
                       </div>

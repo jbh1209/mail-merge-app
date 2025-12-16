@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useRegionPreference } from "@/hooks/useRegionPreference";
+import { useRegionPreference, TemplateRegion } from "@/hooks/useRegionPreference";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,8 +26,24 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 // Helper component for displaying template dimensions with proper formatting
-function TemplateDimensions({ widthMm, heightMm }: { widthMm: number; heightMm: number }) {
-  const { formatDimensions } = useRegionPreference();
+function TemplateDimensions({ widthMm, heightMm, averyPartNumber }: { widthMm: number; heightMm: number; averyPartNumber?: string | null }) {
+  // Query label template region if avery_part_number exists
+  const { data: labelTemplate } = useQuery({
+    queryKey: ['label-template-region', averyPartNumber],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('label_templates')
+        .select('region')
+        .eq('part_number', averyPartNumber!)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!averyPartNumber,
+  });
+
+  const templateRegion = labelTemplate?.region as TemplateRegion;
+  const { formatDimensions } = useRegionPreference(templateRegion);
+  
   return (
     <Badge variant="outline" className="text-xs font-mono">
       {formatDimensions(widthMm, heightMm)}
@@ -412,7 +428,7 @@ export default function ProjectDetail() {
                               {template.template_type.replace("_", " ")}
                             </p>
                             {template.width_mm && template.height_mm && (
-                              <TemplateDimensions widthMm={template.width_mm} heightMm={template.height_mm} />
+                              <TemplateDimensions widthMm={template.width_mm} heightMm={template.height_mm} averyPartNumber={template.avery_part_number} />
                             )}
                           </div>
                         </div>

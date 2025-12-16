@@ -11,6 +11,7 @@ import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
 import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
+import { useRegionPreference, TemplateRegion } from '@/hooks/useRegionPreference';
 export default function TemplateEditor() {
   const { projectId, templateId } = useParams<{ projectId: string; templateId: string }>();
   const navigate = useNavigate();
@@ -38,6 +39,24 @@ export default function TemplateEditor() {
     },
     enabled: !!templateId,
   });
+
+  // Fetch label template region based on avery_part_number
+  const { data: labelTemplate } = useQuery({
+    queryKey: ['label-template-region', template?.avery_part_number],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('label_templates')
+        .select('region')
+        .eq('part_number', template!.avery_part_number!)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!template?.avery_part_number,
+  });
+
+  // Get formatted dimensions based on template region
+  const templateRegion = labelTemplate?.region as TemplateRegion;
+  const { formatDimensions } = useRegionPreference(templateRegion);
 
   // Fetch project details for breadcrumb and project type
   const { data: project } = useQuery({
@@ -480,7 +499,7 @@ export default function TemplateEditor() {
             />
           ) : template.width_mm && template.height_mm ? (
             <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
-              {template.width_mm}×{template.height_mm}mm
+              {formatDimensions(template.width_mm, template.height_mm)}
             </span>
           ) : null}
           

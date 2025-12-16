@@ -517,6 +517,12 @@ serve(async (req) => {
       })
       .eq('id', mergeJobId);
 
+    // Update project status to complete
+    await supabase
+      .from('projects')
+      .update({ status: 'complete' })
+      .eq('id', job.project_id);
+
     // Log usage
     const currentDate = new Date();
     const billingCycleMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
@@ -569,6 +575,20 @@ serve(async (req) => {
           error_message: errorMessage
         })
         .eq('id', mergeJobId);
+
+      // Also update project status to error
+      const { data: errorJob } = await supabase
+        .from('merge_jobs')
+        .select('project_id')
+        .eq('id', mergeJobId)
+        .single();
+      
+      if (errorJob?.project_id) {
+        await supabase
+          .from('projects')
+          .update({ status: 'error' })
+          .eq('id', errorJob.project_id);
+      }
     } catch (updateError) {
       console.error('Failed to update job status:', updateError);
     }

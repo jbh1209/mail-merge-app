@@ -77,7 +77,19 @@ export function FieldMappingWizard({
 
   useEffect(() => {
     const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
-    const usableColumns = sourceColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
+    const usableColumns = sourceColumns.filter(c => {
+      if (!c || c.trim() === "") return false;
+      if (/^__EMPTY/i.test(c)) return false;
+      // Filter out Unnamed_Column_* that has no data
+      if (/^Unnamed_Column_\d+$/i.test(c)) {
+        const hasData = sampleData.some(row => {
+          const val = row[c];
+          return val !== null && val !== undefined && String(val).trim() !== '';
+        });
+        if (!hasData) return false;
+      }
+      return true;
+    });
     console.debug('[FieldMappingWizard] Using columns:', usableColumns.slice(0, 5));
     // Normalize with typo handling
     const normalizeHard = (s: string) => {
@@ -294,7 +306,19 @@ export function FieldMappingWizard({
   const canSave = mappings.every(m => m.dataColumn !== null);
   const mappedCount = mappings.filter(m => m.dataColumn).length;
   const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
-  const usableColumns = sourceColumns.filter(c => c && c.trim() !== "" && !/^__EMPTY/i.test(c));
+  const usableColumns = sourceColumns.filter(c => {
+    if (!c || c.trim() === "") return false;
+    if (/^__EMPTY/i.test(c)) return false;
+    // Filter out Unnamed_Column_* that has no data
+    if (/^Unnamed_Column_\d+$/i.test(c)) {
+      const hasData = sampleData.some(row => {
+        const val = row[c];
+        return val !== null && val !== undefined && String(val).trim() !== '';
+      });
+      if (!hasData) return false;
+    }
+    return true;
+  });
   
   // Detect image fields for user guidance
   const imageFields = usableColumns.filter(col => isLikelyImageField(col));

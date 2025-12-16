@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2, Scissors, Image } from "lucide-react";
+import { AlertCircle, Check, HelpCircle, Sparkles, TrendingUp, Loader2, ArrowRight, Wand2, Scissors, Image, X, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScopedAIChat } from "@/components/ScopedAIChat";
 import { isLikelyImageField, detectFieldType, detectImageColumnsFromValues, isLikelyImageValue } from "@/lib/avery-labels";
@@ -75,6 +75,23 @@ export function DataReviewStep({
   const [isStructuring, setIsStructuring] = useState(false);
   const [structuredData, setStructuredData] = useState<{ columns: string[], rows: any[] } | null>(null);
   const [isSplittingColumn, setIsSplittingColumn] = useState(false);
+  const [excludedColumns, setExcludedColumns] = useState<Set<string>>(new Set());
+
+  // Helper: detect "junk" columns (Unnamed_Column_* with no data)
+  const isJunkColumn = useCallback((colName: string, rows: any[]): boolean => {
+    const isUnnamed = /^Unnamed_Column_\d+$/i.test(colName);
+    if (!isUnnamed) return false;
+    const hasAnyData = rows.some(row => {
+      const val = row[colName];
+      return val !== null && val !== undefined && String(val).trim() !== '';
+    });
+    return !hasAnyData;
+  }, []);
+
+  // Filter out junk columns from any column list
+  const filterJunkColumns = useCallback((cols: string[], rows: any[]): string[] => {
+    return cols.filter(col => !isJunkColumn(col, rows));
+  }, [isJunkColumn]);
 
   const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
   const { columns, preview, rowCount, fileName } = parsedData;
@@ -212,18 +229,26 @@ export function DataReviewStep({
         throw new Error(data.error || 'Failed to structure data');
       }
 
+      // Auto-filter junk columns from AI-structured data
+      const cleanedColumns = filterJunkColumns(data.columns, data.rows);
+      const junkRemoved = data.columns.length - cleanedColumns.length;
+
       console.log('Successfully structured data:', {
         originalColumns: columns.length,
-        newColumns: data.columns.length,
+        newColumns: cleanedColumns.length,
+        junkRemoved,
         confidence: data.confidence
       });
 
       setStructuredData({
-        columns: data.columns,
+        columns: cleanedColumns,
         rows: data.rows
       });
 
       setNeedsStructuring(false);
+      if (junkRemoved > 0) {
+        toast.info(`Auto-removed ${junkRemoved} empty column(s)`);
+      }
       toast.success(`Structured ${columns.length} column into ${data.columns.length} fields`, {
         description: `Confidence: ${data.confidence}%`
       });
@@ -335,20 +360,43 @@ export function DataReviewStep({
     }
   };
 
+  const handleExcludeColumn = (col: string) => {
+    setExcludedColumns(prev => new Set([...prev, col]));
+    toast.success(`Excluded column "${col}"`);
+  };
+
+  const handleUndoExclusions = () => {
+    setExcludedColumns(new Set());
+    toast.success('Restored all excluded columns');
+  };
+
   const handleAcceptAndContinue = async () => {
     if (!dataValidated) {
       toast.error("Please review the data quality checks before proceeding.");
       return;
     }
 
-    // Use structured data if available
-    const finalColumns = structuredData ? structuredData.columns : columns;
-    const finalRows = structuredData ? structuredData.rows : ((parsedData as any).rows || []);
-    const finalPreview = structuredData ? structuredData.rows.slice(0, 10) : preview;
+    // Use structured data if available, then filter excluded columns
+    const baseColumns = structuredData ? structuredData.columns : columns;
+    const baseRows = structuredData ? structuredData.rows : ((parsedData as any).rows || []);
+    
+    // Filter out excluded columns and any remaining junk columns
+    const finalColumns = baseColumns
+      .filter(col => !excludedColumns.has(col))
+      .filter(col => !isJunkColumn(col, baseRows));
+    
+    const finalRows = baseRows.map((row: any) => {
+      const newRow: Record<string, any> = {};
+      finalColumns.forEach(col => {
+        newRow[col] = row[col];
+      });
+      return newRow;
+    });
+    const finalPreview = finalRows.slice(0, 10);
 
     const finalRenameMap: Record<string, string> = { ...editedColumns };
     const updatedColumns = finalColumns.map(col => sanitize(finalRenameMap[col] || col));
-    const updatedPreview = finalPreview.map(row => {
+    const updatedPreview = finalPreview.map((row: any) => {
       const newRow: Record<string, any> = {};
       finalColumns.forEach((oldCol) => {
         const newCol = sanitize(finalRenameMap[oldCol] || oldCol);
@@ -359,6 +407,7 @@ export function DataReviewStep({
 
     console.debug('[DataReviewStep] Final corrections:', {
       renamedCount: Object.keys(finalRenameMap).length,
+      excludedCount: excludedColumns.size,
       updatedColumns: updatedColumns.slice(0, 5),
       wasStructured: !!structuredData
     });
@@ -418,8 +467,12 @@ export function DataReviewStep({
 
   const qualityScore = 100;
   const hasIssues = categorizedIssues.critical.length + categorizedIssues.warning.length > 0;
-  const currentColumns = structuredData ? structuredData.columns : columns;
-  const currentPreview = structuredData ? structuredData.rows.slice(0, 10) : preview;
+  
+  // Filter out excluded columns from display
+  const baseColumns = structuredData ? structuredData.columns : columns;
+  const basePreview = structuredData ? structuredData.rows.slice(0, 10) : preview;
+  const currentColumns = baseColumns.filter(col => !excludedColumns.has(col));
+  const currentPreview = basePreview;
   const currentRowCount = structuredData ? structuredData.rows.length : rowCount;
 
   return (
@@ -624,13 +677,39 @@ export function DataReviewStep({
               )}
             </TabsContent>
 
-            <TabsContent value="preview">
+            <TabsContent value="preview" className="space-y-4">
+              {/* Excluded columns banner */}
+              {excludedColumns.size > 0 && (
+                <Alert className="border-muted">
+                  <AlertDescription className="flex items-center justify-between">
+                    <span>{excludedColumns.size} column(s) excluded from export</span>
+                    <Button variant="ghost" size="sm" onClick={handleUndoExclusions}>
+                      <Undo2 className="h-4 w-4 mr-1" />
+                      Undo all
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+              
               <ScrollArea className="h-[500px]">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       {currentColumns.map((col, idx) => (
-                        <TableHead key={idx}>{editedColumns[col] || col}</TableHead>
+                        <TableHead key={idx} className="group">
+                          <div className="flex items-center gap-2">
+                            <span className="flex-1">{editedColumns[col] || col}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleExcludeColumn(col)}
+                              title={`Exclude "${col}"`}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>

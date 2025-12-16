@@ -251,11 +251,11 @@ async function generateInitialLayout(
           blockName = `vdp:address_block:${field.combinedFields.join(',')}`;
           console.log('📦 Creating combined address block with fields:', field.combinedFields, '→', fieldValues.length, 'non-empty values');
 
-          // For address blocks, use 88% height with 5% top margin for more vertical space
+          // For address blocks, use 94% height with 3% top margin for 6+ line addresses
           const horizontalMargin = 0.10;
-          const topMarginPercent = 0.05;
+          const topMarginPercent = 0.03;
           const boxWidthMm = widthMm * 0.80;
-          const boxHeightMm = heightMm * 0.88;
+          const boxHeightMm = heightMm * 0.94;
           const startXMm = widthMm * horizontalMargin;
           const startYMm = heightMm * topMarginPercent;
 

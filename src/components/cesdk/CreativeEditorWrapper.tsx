@@ -251,12 +251,13 @@ async function generateInitialLayout(
           blockName = `vdp:address_block:${field.combinedFields.join(',')}`;
           console.log('📦 Creating combined address block with fields:', field.combinedFields, '→', fieldValues.length, 'non-empty values');
 
-          // For address blocks, use 80% of label with 10% margin on each side
-          const marginPercent = 0.10;
+          // For address blocks, use 88% height with 5% top margin for more vertical space
+          const horizontalMargin = 0.10;
+          const topMarginPercent = 0.05;
           const boxWidthMm = widthMm * 0.80;
-          const boxHeightMm = heightMm * 0.80;
-          const startXMm = widthMm * marginPercent;
-          const startYMm = heightMm * marginPercent;
+          const boxHeightMm = heightMm * 0.88;
+          const startXMm = widthMm * horizontalMargin;
+          const startYMm = heightMm * topMarginPercent;
 
           // CRITICAL: Append to page FIRST before setting text content and font size
           // CE.SDK requires blocks to be part of the scene hierarchy before styling takes effect

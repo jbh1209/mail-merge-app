@@ -427,12 +427,12 @@ export function FieldMappingWizard({
                     </div>
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                      size="sm"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                       onClick={() => handleExcludeTemplateField(mapping.templateField)}
                       title="Skip this field"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-5 w-5" />
                     </Button>
                   </div>
                   <p className="font-semibold">{mapping.templateField}</p>

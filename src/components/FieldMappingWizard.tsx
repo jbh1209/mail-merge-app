@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Wand2, Check, Loader2, Lock, Image } from "lucide-react";
+import { Wand2, Check, Loader2, Lock, Image, X, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -44,7 +44,16 @@ export function FieldMappingWizard({
   const [mappings, setMappings] = useState<FieldMapping[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [excludedTemplateFields, setExcludedTemplateFields] = useState<Set<string>>(new Set());
   const { toast } = useToast();
+
+  // Auto-exclude Unnamed_Column_* template fields on mount
+  useEffect(() => {
+    const junkFields = templateFields.filter(tf => /^Unnamed_Column_\d+$/i.test(tf));
+    if (junkFields.length > 0) {
+      setExcludedTemplateFields(new Set(junkFields));
+    }
+  }, [templateFields]);
   
   const [columnsFromDb, setColumnsFromDb] = useState<string[] | null>(null);
   const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -267,13 +276,24 @@ export function FieldMappingWizard({
     }
   };
 
+  const handleExcludeTemplateField = (field: string) => {
+    setExcludedTemplateFields(prev => new Set([...prev, field]));
+  };
+
+  const handleRestoreAllFields = () => {
+    setExcludedTemplateFields(new Set());
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      const mappingsData = mappings.reduce((acc, m) => {
-        if (m.dataColumn) acc[m.templateField] = m.dataColumn;
-        return acc;
-      }, {} as Record<string, string>);
+      // Filter out excluded fields from mappings
+      const mappingsData = mappings
+        .filter(m => !excludedTemplateFields.has(m.templateField))
+        .reduce((acc, m) => {
+          if (m.dataColumn) acc[m.templateField] = m.dataColumn;
+          return acc;
+        }, {} as Record<string, string>);
 
       // Use upsert to prevent duplicate entries
       const { error } = await supabase
@@ -303,8 +323,10 @@ export function FieldMappingWizard({
     }
   };
 
-  const canSave = mappings.every(m => m.dataColumn !== null);
-  const mappedCount = mappings.filter(m => m.dataColumn).length;
+  // Filter visible mappings (exclude skipped fields)
+  const visibleMappings = mappings.filter(m => !excludedTemplateFields.has(m.templateField));
+  const canSave = visibleMappings.every(m => m.dataColumn !== null);
+  const mappedCount = visibleMappings.filter(m => m.dataColumn).length;
   const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
   const usableColumns = sourceColumns.filter(c => {
     if (!c || c.trim() === "") return false;
@@ -328,7 +350,10 @@ export function FieldMappingWizard({
     <Card className="w-full max-w-5xl mx-auto">
       <CardHeader>
         <CardTitle>Map Your Data Fields</CardTitle>
-        <CardDescription>Auto-mapped {mappedCount} of {templateFields.length} fields</CardDescription>
+        <CardDescription>
+          Auto-mapped {mappedCount} of {visibleMappings.length} fields
+          {excludedTemplateFields.size > 0 && ` (${excludedTemplateFields.size} skipped)`}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Image fields guidance */}
@@ -360,21 +385,55 @@ export function FieldMappingWizard({
             </Button>
           </div>
         </div>
+        {/* Skipped fields alert */}
+        {excludedTemplateFields.size > 0 && (
+          <Alert className="border-muted">
+            <AlertDescription className="flex items-center justify-between">
+              <span className="text-sm">
+                {excludedTemplateFields.size} field{excludedTemplateFields.size === 1 ? '' : 's'} skipped
+                <span className="text-muted-foreground ml-1">
+                  ({[...excludedTemplateFields].join(', ')})
+                </span>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRestoreAllFields}
+                className="gap-1"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Restore all
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="space-y-4">
-          {mappings.map((mapping) => {
+          {visibleMappings.map((mapping) => {
             const isImageMapping = isLikelyImageField(mapping.templateField) || 
                                    (mapping.dataColumn && isLikelyImageField(mapping.dataColumn));
             const detectedType = detectFieldType(mapping.templateField);
             
             return (
-              <div key={mapping.templateField} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg">
+              <div key={mapping.templateField} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg group">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">Template Field</Badge>
-                    {isImageMapping && <Badge variant="secondary" className="gap-1"><Image className="h-3 w-3" /> Image</Badge>}
-                    {detectedType && !isImageMapping && (
-                      <Badge variant="secondary" className="text-xs">{detectedType}</Badge>
-                    )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">Template Field</Badge>
+                      {isImageMapping && <Badge variant="secondary" className="gap-1"><Image className="h-3 w-3" /> Image</Badge>}
+                      {detectedType && !isImageMapping && (
+                        <Badge variant="secondary" className="text-xs">{detectedType}</Badge>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                      onClick={() => handleExcludeTemplateField(mapping.templateField)}
+                      title="Skip this field"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   </div>
                   <p className="font-semibold">{mapping.templateField}</p>
                 </div>

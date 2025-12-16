@@ -65,14 +65,19 @@ Deno.serve(async (req) => {
 
         logStep('Canceling Stripe subscriptions', { customerId: workspace.stripe_customer_id });
 
-        const subscriptions = await stripe.subscriptions.list({
-          customer: workspace.stripe_customer_id,
-          status: 'active',
-        });
+        // Cancel all active, trialing, and past_due subscriptions
+        const statusesToCancel = ['active', 'trialing', 'past_due'] as const;
+        
+        for (const status of statusesToCancel) {
+          const subscriptions = await stripe.subscriptions.list({
+            customer: workspace.stripe_customer_id,
+            status: status,
+          });
 
-        for (const subscription of subscriptions.data) {
-          await stripe.subscriptions.cancel(subscription.id);
-          logStep('Canceled subscription', { subscriptionId: subscription.id });
+          for (const subscription of subscriptions.data) {
+            await stripe.subscriptions.cancel(subscription.id);
+            logStep('Canceled subscription', { subscriptionId: subscription.id, status });
+          }
         }
       } catch (stripeError: any) {
         logStep('Stripe cancellation error (continuing)', { error: stripeError.message });

@@ -165,14 +165,15 @@ serve(async (req) => {
       console.error('Job update error:', updateError);
     }
 
-    // Log usage - update workspace pages used
+    // Get job data for workspace and project updates
     const { data: jobData } = await supabase
       .from('merge_jobs')
-      .select('workspace_id')
+      .select('workspace_id, project_id')
       .eq('id', mergeJobId)
       .single();
 
     if (jobData?.workspace_id) {
+      // Update workspace pages used
       const { data: workspace } = await supabase
         .from('workspaces')
         .select('pages_used_this_month')
@@ -187,6 +188,15 @@ serve(async (req) => {
           })
           .eq('id', jobData.workspace_id);
       }
+    }
+
+    // Update project status to complete
+    if (jobData?.project_id) {
+      await supabase
+        .from('projects')
+        .update({ status: 'complete' })
+        .eq('id', jobData.project_id);
+      console.log(`Updated project ${jobData.project_id} status to complete`);
     }
 
     console.log(`Successfully composed ${processedCount} items into ${pageCount} pages`);

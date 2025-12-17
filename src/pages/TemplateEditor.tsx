@@ -580,7 +580,7 @@ export default function TemplateEditor() {
           key={`${templateId}-${availableFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
           availableFields={availableFields}
           sampleData={sampleData}
-          allSampleData={allSampleData}
+          allSampleData={validRecords}
           initialScene={initialScene}
           onSave={handleSave}
           onSceneChange={handleSceneChange}

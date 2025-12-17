@@ -200,6 +200,24 @@ async function exportLabelPdfs(
   // Store original scene as archive (handles embedded assets like barcodes)
   const originalArchiveBlob = await engine.scene.saveToArchive();
   
+  // Hide trim guide before export (it's a visual aid, not part of the design)
+  const hiddenGuides: number[] = [];
+  try {
+    const allBlocks = engine.block.findByType('//ly.img.ubq/graphic');
+    for (const blockId of allBlocks) {
+      const name = engine.block.getName(blockId);
+      if (name === '__trim_guide__') {
+        engine.block.setVisible(blockId, false);
+        hiddenGuides.push(blockId);
+      }
+    }
+    if (hiddenGuides.length > 0) {
+      console.log(`🔲 Hidden ${hiddenGuides.length} trim guide(s) for export`);
+    }
+  } catch (e) {
+    console.warn('Could not hide trim guides:', e);
+  }
+  
   // Time tracking for ETA estimates
   const exportStartTime = Date.now();
   let exportTimes: number[] = [];

@@ -72,6 +72,8 @@ interface CreativeEditorWrapperProps {
   projectImages?: { name: string; url: string }[]; // Uploaded images for VDP
   // Page size can be updated externally (for non-label projects)
   key?: string; // Forces re-init when dimensions change
+  /** Trim guide for bleed mode - shows where the cut will happen */
+  trimGuideMm?: { width: number; height: number; bleedMm: number };
 }
 
 // Note: Design unit is set to 'Millimeter' so we pass mm values directly to CE.SDK
@@ -483,6 +485,7 @@ export function CreativeEditorWrapper({
   templateType = 'address_label',
   projectType = 'label',
   projectImages = [],
+  trimGuideMm,
 }: CreativeEditorWrapperProps) {
   // Detect image fields from available fields
   const imageFields = availableFields.filter(f => isLikelyImageField(f));
@@ -995,6 +998,53 @@ export function CreativeEditorWrapper({
           
           // Show background guidance panel for new designs
           setShowBackgroundGuide(true);
+        }
+
+        // Create trim guide if bleed mode is enabled
+        if (trimGuideMm) {
+          try {
+            const pages = cesdk.engine.scene.getPages();
+            if (pages.length > 0) {
+              const page = pages[0];
+              const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
+              
+              // Create a graphic block for the trim guide
+              const trimGuide = cesdk.engine.block.create('//ly.img.ubq/graphic');
+              const trimShape = cesdk.engine.block.createShape('//ly.img.ubq/shape/rect');
+              cesdk.engine.block.setShape(trimGuide, trimShape);
+              
+              // Set size to trim dimensions (original page size before bleed)
+              cesdk.engine.block.setWidth(trimGuide, trimWidth);
+              cesdk.engine.block.setHeight(trimGuide, trimHeight);
+              
+              // Position at the bleed offset (centered in the expanded page)
+              cesdk.engine.block.setPositionX(trimGuide, bleed);
+              cesdk.engine.block.setPositionY(trimGuide, bleed);
+              
+              // Style: dashed stroke, no fill
+              cesdk.engine.block.setStrokeEnabled(trimGuide, true);
+              cesdk.engine.block.setStrokeWidth(trimGuide, 0.3); // 0.3mm stroke
+              cesdk.engine.block.setStrokeStyle(trimGuide, 'Dashed');
+              // Set stroke color (cyan/blue for visibility)
+              cesdk.engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.0, g: 0.6, b: 0.9, a: 1.0 });
+              
+              // No fill - transparent interior
+              cesdk.engine.block.setFillEnabled(trimGuide, false);
+              
+              // Name it for identification (and filtering during export)
+              cesdk.engine.block.setName(trimGuide, '__trim_guide__');
+              
+              // Add to page
+              cesdk.engine.block.appendChild(page, trimGuide);
+              
+              // Bring to front so it's always visible
+              cesdk.engine.block.bringToFront(trimGuide);
+              
+              console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
+            }
+          } catch (e) {
+            console.warn('Failed to create trim guide:', e);
+          }
         }
 
         // Add selection listener to detect barcode/QR blocks

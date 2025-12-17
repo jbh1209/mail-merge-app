@@ -88,9 +88,19 @@ export async function getLayoutFromTemplate(
     sheetHeightMm = 210;
   }
   
-  console.log(`📋 Using template ${template.brand} ${template.part_number}: ${template.columns}×${template.rows} layout`);
+  // Calculate the actual gap values
+  // spacing_x_mm/spacing_y_mm are PITCH values (center-to-center), not gaps
+  // Actual gap = pitch - label dimension
+  const gapX = Number(template.gap_x_mm) > 0 
+    ? Number(template.gap_x_mm)
+    : Math.max(0, Number(template.spacing_x_mm) - Number(template.label_width_mm));
+
+  const gapY = Number(template.gap_y_mm) > 0
+    ? Number(template.gap_y_mm)
+    : Math.max(0, Number(template.spacing_y_mm) - Number(template.label_height_mm));
+
+  console.log(`📋 Using template ${template.brand} ${template.part_number}: ${template.columns}×${template.rows} layout, gaps: ${gapX.toFixed(2)}×${gapY.toFixed(2)}mm`);
   
-  // Use spacing_x_mm and spacing_y_mm for the gaps between labels (gap_x_mm/gap_y_mm have incorrect values)
   return {
     sheetWidthMm,
     sheetHeightMm,
@@ -101,8 +111,8 @@ export async function getLayoutFromTemplate(
     rows: template.rows,
     marginTopMm: Number(template.margin_top_mm),
     marginLeftMm: Number(template.margin_left_mm),
-    gapXMm: Number(template.spacing_x_mm),  // Use spacing_x_mm, not gap_x_mm
-    gapYMm: Number(template.spacing_y_mm),  // Use spacing_y_mm, not gap_y_mm
+    gapXMm: gapX,
+    gapYMm: gapY,
   };
 }
 

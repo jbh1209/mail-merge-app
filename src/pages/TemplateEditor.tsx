@@ -521,6 +521,7 @@ export default function TemplateEditor() {
               widthMm={template.width_mm}
               heightMm={template.height_mm}
               onChange={handlePageSizeChange}
+              templateRegion={templateRegion}
             />
           ) : template.width_mm && template.height_mm ? (
             <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
@@ -589,8 +590,8 @@ export default function TemplateEditor() {
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
         <CreativeEditorWrapper
-          key={`${templateId}-${availableFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
-          availableFields={availableFields}
+          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
+          availableFields={validFields}
           sampleData={sampleData}
           allSampleData={validRecords}
           initialScene={initialScene}

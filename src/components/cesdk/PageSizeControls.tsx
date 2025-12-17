@@ -16,11 +16,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LayoutGrid, RotateCw, Check } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { useRegionPreference, TemplateRegion } from '@/hooks/useRegionPreference';
 
 interface PageSizeControlsProps {
   widthMm: number;
   heightMm: number;
   onChange: (width: number, height: number) => void;
+  templateRegion?: TemplateRegion;
 }
 
 // Common paper sizes in mm
@@ -56,10 +58,12 @@ export function PageSizeControls({
   widthMm,
   heightMm,
   onChange,
+  templateRegion,
 }: PageSizeControlsProps) {
   const [open, setOpen] = useState(false);
   const [customWidth, setCustomWidth] = useState(widthMm.toString());
   const [customHeight, setCustomHeight] = useState(heightMm.toString());
+  const { formatDimensions } = useRegionPreference(templateRegion);
 
   const currentPreset = findMatchingPreset(widthMm, heightMm);
   const landscape = isLandscape(widthMm, heightMm);
@@ -91,8 +95,8 @@ export function PageSizeControls({
     }
   }, [customWidth, customHeight, onChange]);
 
-  // Format display size
-  const displaySize = `${widthMm} × ${heightMm} mm`;
+  // Format display size using region-aware formatting
+  const displaySize = formatDimensions(widthMm, heightMm);
   const orientationLabel = landscape ? 'Landscape' : 'Portrait';
 
   return (

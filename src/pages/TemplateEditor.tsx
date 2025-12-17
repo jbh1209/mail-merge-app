@@ -529,6 +529,15 @@ export default function TemplateEditor() {
             </span>
           ) : null}
           
+          {/* Bleed toggle - only for non-label projects */}
+          {!isLabelProject && (
+            <PrintSettingsPanel
+              settings={printSettings}
+              onChange={setPrintSettings}
+              compact
+            />
+          )}
+          
           {hasUnsavedChanges && !isSaving && (
             <span className="text-xs text-amber-500 hidden sm:inline">Unsaved</span>
           )}
@@ -590,7 +599,7 @@ export default function TemplateEditor() {
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
         <CreativeEditorWrapper
-          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
+          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}-${printSettings.enablePrintMarks}`}
           availableFields={validFields}
           sampleData={sampleData}
           allSampleData={validRecords}
@@ -598,13 +607,26 @@ export default function TemplateEditor() {
           onSave={handleSave}
           onSceneChange={handleSceneChange}
           onReady={handleEditorReady}
-          labelWidth={template.width_mm || 100}
-          labelHeight={template.height_mm || 50}
+          labelWidth={
+            !isLabelProject && printSettings.enablePrintMarks
+              ? (template.width_mm || 100) + printSettings.bleedMm * 2
+              : (template.width_mm || 100)
+          }
+          labelHeight={
+            !isLabelProject && printSettings.enablePrintMarks
+              ? (template.height_mm || 50) + printSettings.bleedMm * 2
+              : (template.height_mm || 50)
+          }
           bleedMm={template.bleed_mm || 0}
           whiteUnderlayer={(template.design_config as { whiteUnderlayer?: boolean } | null)?.whiteUnderlayer ?? false}
           templateType={template.template_type || 'address_label'}
           projectType={project?.project_type || 'label'}
           projectImages={projectImages}
+          trimGuideMm={
+            !isLabelProject && printSettings.enablePrintMarks
+              ? { width: template.width_mm || 100, height: template.height_mm || 50, bleedMm: printSettings.bleedMm }
+              : undefined
+          }
         />
       </main>
 

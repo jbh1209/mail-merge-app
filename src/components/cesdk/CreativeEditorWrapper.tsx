@@ -1121,6 +1121,40 @@ export function CreativeEditorWrapper({
           
           // Always update, show placeholder if empty
           engine.block.replaceText(blockId, newContent || '(No data)');
+          
+          // Auto-scale font to fit container when content changes
+          if (newContent) {
+            try {
+              const blockHeight = engine.block.getHeight(blockId);
+              const blockWidth = engine.block.getWidth(blockId);
+              const currentFontSize = engine.block.getFloat(blockId, 'text/fontSize') || 12;
+              
+              // Get original font size from metadata or use current
+              const originalSizeStr = engine.block.getMetadata(blockId, 'originalFontSize');
+              const baseFontSize = originalSizeStr ? parseFloat(originalSizeStr) : currentFontSize;
+              
+              // Reset to base font size to measure accurately
+              engine.block.setTextFontSize(blockId, baseFontSize);
+              
+              // Measure rendered content
+              const frameHeight = engine.block.getFrameHeight(blockId);
+              const frameWidth = engine.block.getFrameWidth(blockId);
+              
+              if (frameHeight > 0 && blockHeight > 0) {
+                const heightRatio = blockHeight / frameHeight;
+                const widthRatio = blockWidth / frameWidth;
+                const scaleFactor = Math.min(heightRatio, widthRatio, 1.0);
+                
+                if (scaleFactor < 0.95) {
+                  const newFontSize = Math.max(6, baseFontSize * scaleFactor * 0.92);
+                  engine.block.setTextFontSize(blockId, newFontSize);
+                  console.log(`📐 Scaled address block: ${baseFontSize.toFixed(1)}pt → ${newFontSize.toFixed(1)}pt`);
+                }
+              }
+            } catch (err) {
+              console.warn('Font scaling error:', err);
+            }
+          }
         } else if (blockName.startsWith('vdp:text:')) {
           // Individual field
           const fieldName = blockName.replace('vdp:text:', '');

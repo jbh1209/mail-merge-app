@@ -409,6 +409,19 @@ export default function TemplateEditor() {
     (fieldMapping?.mappings ? Object.keys(fieldMapping.mappings as object) : []) ||
     [];
 
+  // Filter out junk columns like Unnamed_Column_*
+  const validFields = availableFields.filter(f => 
+    !/^Unnamed_Column_\d+$/i.test(f)
+  );
+
+  // Filter records that have at least one non-empty value in valid fields
+  const validRecords = allSampleData.filter(record => {
+    return validFields.some(field => {
+      const value = record[field];
+      return value !== null && value !== undefined && String(value).trim() !== '';
+    });
+  });
+
   // Detect image fields in data - check both column names AND values
   const imageFields = detectImageColumnsFromValues(availableFields, allSampleData);
   const hasImageFields = imageFields.length > 0;
@@ -592,7 +605,7 @@ export default function TemplateEditor() {
             <CesdkPdfGenerator
               cesdk={editorHandleRef.current?.cesdk || null}
               mergeJobId={currentMergeJobId}
-              dataRecords={allSampleData}
+              dataRecords={validRecords}
               projectType={project?.project_type || 'label'}
               projectImages={projectImages}
               templateConfig={{

@@ -12,6 +12,8 @@ import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
 import { useRegionPreference, TemplateRegion } from '@/hooks/useRegionPreference';
+import { PrintSettingsPanel } from '@/components/PrintSettingsPanel';
+import { PrintSettings, getDefaultPrintSettings } from '@/types/print-settings';
 export default function TemplateEditor() {
   const { projectId, templateId } = useParams<{ projectId: string; templateId: string }>();
   const navigate = useNavigate();
@@ -56,7 +58,17 @@ export default function TemplateEditor() {
 
   // Get formatted dimensions based on template region
   const templateRegion = labelTemplate?.region as TemplateRegion;
-  const { formatDimensions } = useRegionPreference(templateRegion);
+  const { isUS, formatDimensions } = useRegionPreference(templateRegion);
+  
+  // Print settings state (for non-label projects)
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(() => 
+    getDefaultPrintSettings(isUS)
+  );
+  
+  // Update print settings when region changes
+  useEffect(() => {
+    setPrintSettings(getDefaultPrintSettings(isUS));
+  }, [isUS]);
 
   // Fetch project details for breadcrumb and project type
   const { data: project } = useQuery({
@@ -602,27 +614,38 @@ export default function TemplateEditor() {
             <DialogTitle>Generate PDFs</DialogTitle>
           </DialogHeader>
           {currentMergeJobId && (
-            <CesdkPdfGenerator
-              cesdk={editorHandleRef.current?.cesdk || null}
-              mergeJobId={currentMergeJobId}
-              dataRecords={validRecords}
-              projectType={project?.project_type || 'label'}
-              projectImages={projectImages}
-              templateConfig={{
-                widthMm: template.width_mm || 100,
-                heightMm: template.height_mm || 50,
-                // Non-label projects are full page (certificates, cards, etc.)
-                isFullPage: project?.project_type !== 'label',
-                averyPartNumber: (template as any).avery_part_number || (template.design_config as any)?.averyCode,
-              }}
-              onComplete={(result) => {
-                // Don't auto-close - let user download first
-                toast.success(`Generated ${result.pageCount} pages`);
-              }}
-              onError={(error) => {
-                toast.error(error);
-              }}
-            />
+            <>
+              {/* Print settings panel for non-label projects */}
+              {project?.project_type !== 'label' && (
+                <PrintSettingsPanel
+                  settings={printSettings}
+                  onChange={setPrintSettings}
+                />
+              )}
+              
+              <CesdkPdfGenerator
+                cesdk={editorHandleRef.current?.cesdk || null}
+                mergeJobId={currentMergeJobId}
+                dataRecords={validRecords}
+                projectType={project?.project_type || 'label'}
+                projectImages={projectImages}
+                templateConfig={{
+                  widthMm: template.width_mm || 100,
+                  heightMm: template.height_mm || 50,
+                  // Non-label projects are full page (certificates, cards, etc.)
+                  isFullPage: project?.project_type !== 'label',
+                  averyPartNumber: (template as any).avery_part_number || (template.design_config as any)?.averyCode,
+                }}
+                printSettings={project?.project_type !== 'label' ? printSettings : undefined}
+                onComplete={(result) => {
+                  // Don't auto-close - let user download first
+                  toast.success(`Generated ${result.pageCount} pages`);
+                }}
+                onError={(error) => {
+                  toast.error(error);
+                }}
+              />
+            </>
           )}
         </DialogContent>
       </Dialog>

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, rgb, grayscale } from "https://esm.sh/pdf-lib@1.17.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,8 +21,89 @@ interface AveryLayoutConfig {
   gapYMm: number;
 }
 
+interface PrintConfig {
+  enablePrintMarks: boolean;
+  bleedMm: number;          // 3mm or 3.175mm (1/8")
+  cropMarkOffsetMm: number; // 3mm or 3.175mm (1/8")
+}
+
 // Convert mm to PDF points (72 points per inch)
 const mmToPoints = (mm: number): number => (mm / 25.4) * 72;
+
+// Crop mark settings
+const CROP_MARK_LENGTH_MM = 6; // 6mm crop mark length
+const CROP_MARK_STROKE_WIDTH = 0.5; // 0.5pt stroke
+
+/**
+ * Draw crop marks at the four corners of the trim area
+ */
+function drawCropMarks(
+  page: ReturnType<PDFDocument['addPage']>,
+  trimX: number,
+  trimY: number,
+  trimWidth: number,
+  trimHeight: number,
+  offsetPt: number
+): void {
+  const markLength = mmToPoints(CROP_MARK_LENGTH_MM);
+  const color = grayscale(0); // Black
+  
+  // Top-left corner
+  page.drawLine({
+    start: { x: trimX, y: trimY + trimHeight + offsetPt },
+    end: { x: trimX, y: trimY + trimHeight + offsetPt + markLength },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+  page.drawLine({
+    start: { x: trimX - offsetPt - markLength, y: trimY + trimHeight },
+    end: { x: trimX - offsetPt, y: trimY + trimHeight },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+  
+  // Top-right corner
+  page.drawLine({
+    start: { x: trimX + trimWidth, y: trimY + trimHeight + offsetPt },
+    end: { x: trimX + trimWidth, y: trimY + trimHeight + offsetPt + markLength },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+  page.drawLine({
+    start: { x: trimX + trimWidth + offsetPt, y: trimY + trimHeight },
+    end: { x: trimX + trimWidth + offsetPt + markLength, y: trimY + trimHeight },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+  
+  // Bottom-left corner
+  page.drawLine({
+    start: { x: trimX, y: trimY - offsetPt },
+    end: { x: trimX, y: trimY - offsetPt - markLength },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+  page.drawLine({
+    start: { x: trimX - offsetPt - markLength, y: trimY },
+    end: { x: trimX - offsetPt, y: trimY },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+  
+  // Bottom-right corner
+  page.drawLine({
+    start: { x: trimX + trimWidth, y: trimY - offsetPt },
+    end: { x: trimX + trimWidth, y: trimY - offsetPt - markLength },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+  page.drawLine({
+    start: { x: trimX + trimWidth + offsetPt, y: trimY },
+    end: { x: trimX + trimWidth + offsetPt + markLength, y: trimY },
+    thickness: CROP_MARK_STROKE_WIDTH,
+    color,
+  });
+}
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -31,7 +112,7 @@ serve(async (req) => {
   }
 
   try {
-    const { pdfPaths, layout, mergeJobId, fullPageMode } = await req.json();
+    const { pdfPaths, layout, mergeJobId, fullPageMode, printConfig } = await req.json();
 
     // Initialize Supabase client early for error handling
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -46,6 +127,11 @@ serve(async (req) => {
       throw new Error('No merge job ID provided');
     }
 
+    // Check if print features should be applied
+    const applyPrintFeatures = fullPageMode && printConfig?.enablePrintMarks;
+    if (applyPrintFeatures) {
+      console.log(`Print features enabled: ${printConfig.bleedMm}mm bleed, ${printConfig.cropMarkOffsetMm}mm crop mark offset`);
+    }
 
     // Process PDFs in small batches to manage memory
     const BATCH_SIZE = 5;
@@ -74,9 +160,63 @@ serve(async (req) => {
             }
             
             const bytes = new Uint8Array(await data.arrayBuffer());
-            const labelPdf = await PDFDocument.load(bytes);
-            const pages = await outputPdf.copyPages(labelPdf, labelPdf.getPageIndices());
-            pages.forEach(page => outputPdf.addPage(page));
+            const sourcePdf = await PDFDocument.load(bytes);
+            
+            if (applyPrintFeatures) {
+              // Apply bleed and crop marks
+              const bleedPt = mmToPoints(printConfig.bleedMm);
+              const cropOffsetPt = mmToPoints(printConfig.cropMarkOffsetMm);
+              const markLengthPt = mmToPoints(CROP_MARK_LENGTH_MM);
+              
+              for (let pageIdx = 0; pageIdx < sourcePdf.getPageCount(); pageIdx++) {
+                const sourcePage = sourcePdf.getPage(pageIdx);
+                const { width: trimWidth, height: trimHeight } = sourcePage.getSize();
+                
+                // Calculate new page size: trim + bleed + space for marks
+                const totalWidth = trimWidth + (bleedPt * 2) + (cropOffsetPt + markLengthPt) * 2;
+                const totalHeight = trimHeight + (bleedPt * 2) + (cropOffsetPt + markLengthPt) * 2;
+                
+                // Create new page with expanded dimensions
+                const newPage = outputPdf.addPage([totalWidth, totalHeight]);
+                
+                // Calculate where to place the content (offset from origin)
+                const contentX = cropOffsetPt + markLengthPt + bleedPt;
+                const contentY = cropOffsetPt + markLengthPt + bleedPt;
+                
+                // Embed and draw the source page
+                const [embeddedPage] = await outputPdf.embedPdf(sourcePdf, [pageIdx]);
+                newPage.drawPage(embeddedPage, {
+                  x: contentX,
+                  y: contentY,
+                  width: trimWidth,
+                  height: trimHeight,
+                });
+                
+                // Draw crop marks at trim box corners
+                const trimX = contentX;
+                const trimY = contentY;
+                drawCropMarks(newPage, trimX, trimY, trimWidth, trimHeight, cropOffsetPt);
+                
+                // Set PDF boxes for professional printing software
+                // TrimBox: The final page size after cutting
+                newPage.setTrimBox(trimX, trimY, trimWidth, trimHeight);
+                
+                // BleedBox: Trim + bleed area
+                newPage.setBleedBox(
+                  trimX - bleedPt,
+                  trimY - bleedPt,
+                  trimWidth + bleedPt * 2,
+                  trimHeight + bleedPt * 2
+                );
+                
+                // MediaBox is automatically set to full page size
+              }
+            } else {
+              // No print features - just copy pages directly
+              const pages = await outputPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+              pages.forEach(page => outputPdf.addPage(page));
+            }
+            
             processedCount++;
           } catch (err) {
             console.error(`Error processing ${path}:`, err);
@@ -85,7 +225,7 @@ serve(async (req) => {
       }
       
       pageCount = outputPdf.getPageCount();
-      console.log(`Full page mode: merged ${processedCount} pages into ${pageCount} output pages`);
+      console.log(`Full page mode: merged ${processedCount} pages into ${pageCount} output pages${applyPrintFeatures ? ' with bleed + crop marks' : ''}`);
     } else {
       // Label mode - download PDFs and tile onto sheets
       if (!layout) {

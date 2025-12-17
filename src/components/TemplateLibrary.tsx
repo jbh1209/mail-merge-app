@@ -410,7 +410,7 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
         </div>
       )}
 
-      <Tabs defaultValue="avery" className="w-full">
+      <Tabs defaultValue={projectType && projectType !== 'label' ? 'standard' : 'avery'} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="avery" className="flex items-center gap-2">
             <Package className="h-4 w-4" />

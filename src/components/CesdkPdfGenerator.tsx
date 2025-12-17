@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { batchExportWithCesdk, BatchExportProgress } from "@/lib/cesdk/pdfBatchExporter";
 import { createPortal } from "react-dom";
+import { PrintSettings } from "@/types/print-settings";
 
 // Helper to get document terminology based on project type
 const getDocumentName = (type: string, plural = false): string => {
@@ -37,6 +38,8 @@ interface CesdkPdfGeneratorProps {
     isFullPage?: boolean;
     averyPartNumber?: string;
   };
+  /** Print settings for professional output (bleed + crop marks) */
+  printSettings?: PrintSettings;
   onComplete: (result: { outputUrl: string; pageCount: number }) => void;
   onError: (error: string) => void;
 }
@@ -48,6 +51,7 @@ export function CesdkPdfGenerator({
   projectType = 'label',
   projectImages = [],
   templateConfig,
+  printSettings,
   onComplete,
   onError,
 }: CesdkPdfGeneratorProps) {
@@ -90,6 +94,7 @@ export function CesdkPdfGenerator({
           ...templateConfig,
           projectType, // Pass project type for multi-page handling
           projectImages, // Pass projectImages for VDP image resolution
+          printSettings, // Pass print settings for bleed + crop marks
         },
         mergeJobId,
         setProgress

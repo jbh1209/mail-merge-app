@@ -1,6 +1,7 @@
 import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { resolveVariables, VariableData } from './variableResolver';
 import { supabase } from '@/integrations/supabase/client';
+import { PrintSettings } from '@/types/print-settings';
 
 export interface BatchExportProgress {
   phase: 'exporting' | 'composing' | 'uploading' | 'complete' | 'error';
@@ -29,6 +30,13 @@ export interface BatchExportResult {
   outputUrl?: string;
   pageCount?: number;
   error?: string;
+}
+
+/** Print settings passed to edge function */
+export interface PrintConfig {
+  enablePrintMarks: boolean;
+  bleedMm: number;
+  cropMarkOffsetMm: number;
 }
 
 // Database label template type
@@ -353,13 +361,18 @@ async function composeFromStorage(
   layout: AveryLayoutConfig | null,
   mergeJobId: string,
   fullPageMode: boolean,
+  printConfig: PrintConfig | null,
   onProgress: (progress: BatchExportProgress) => void
 ): Promise<{ outputUrl: string; pageCount: number }> {
+  const message = fullPageMode 
+    ? (printConfig?.enablePrintMarks ? 'Adding bleed & crop marks...' : 'Merging pages...') 
+    : 'Composing labels onto sheets...';
+    
   onProgress({
     phase: 'composing',
     current: 0,
     total: 1,
-    message: fullPageMode ? 'Merging pages...' : 'Composing labels onto sheets...',
+    message,
   });
 
   const { data, error } = await supabase.functions.invoke('compose-label-sheet', {
@@ -368,6 +381,7 @@ async function composeFromStorage(
       layout,
       mergeJobId,
       fullPageMode,
+      printConfig, // Pass print configuration for bleed + crop marks
     },
   });
 
@@ -400,6 +414,7 @@ export async function batchExportWithCesdk(
     averyPartNumber?: string;
     projectType?: string; // Project type for multi-page handling
     projectImages?: { name: string; url: string }[];
+    printSettings?: PrintSettings; // Professional print settings
   },
   mergeJobId: string,
   onProgress: (progress: BatchExportProgress) => void
@@ -452,12 +467,22 @@ export async function batchExportWithCesdk(
       }
     }
 
-    // Step 4: Compose on server (downloads from storage, processes in batches)
+    // Step 4: Prepare print config for full-page mode (non-label documents)
+    const printConfig: PrintConfig | null = isFullPage && templateConfig.printSettings?.enablePrintMarks
+      ? {
+          enablePrintMarks: true,
+          bleedMm: templateConfig.printSettings.bleedMm,
+          cropMarkOffsetMm: templateConfig.printSettings.cropMarkOffsetMm,
+        }
+      : null;
+
+    // Step 5: Compose on server (downloads from storage, processes in batches)
     const result = await composeFromStorage(
       pdfPaths,
       layout,
       mergeJobId,
       isFullPage,
+      printConfig,
       onProgress
     );
 

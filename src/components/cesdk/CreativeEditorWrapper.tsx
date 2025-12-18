@@ -1079,6 +1079,9 @@ export function CreativeEditorWrapper({
     };
   }, [licenseKey]);
 
+  // Track previous dimensions to calculate offset for centering artwork
+  const prevDimensionsRef = useRef<{ width: number; height: number } | null>(null);
+
   // Separate effect for handling dimension changes without reinitializing the editor
   useEffect(() => {
     if (!editorRef.current) return;
@@ -1088,11 +1091,41 @@ export function CreativeEditorWrapper({
       const pages = engine.scene.getPages();
       
       if (pages.length > 0) {
+        const page = pages[0];
+        const prevDims = prevDimensionsRef.current;
+        
+        // Calculate offset to keep artwork centered (half the size change)
+        const offsetX = prevDims ? (labelWidth - prevDims.width) / 2 : 0;
+        const offsetY = prevDims ? (labelHeight - prevDims.height) / 2 : 0;
+        
         // Update all page dimensions
-        pages.forEach(page => {
-          engine.block.setWidth(page, labelWidth);
-          engine.block.setHeight(page, labelHeight);
+        pages.forEach(p => {
+          engine.block.setWidth(p, labelWidth);
+          engine.block.setHeight(p, labelHeight);
         });
+        
+        // Shift all existing artwork to keep it centered (only if there's an offset)
+        if ((offsetX !== 0 || offsetY !== 0) && prevDims) {
+          const children = engine.block.getChildren(page);
+          children.forEach(childId => {
+            try {
+              const name = engine.block.getName(childId);
+              // Don't move the trim guide - it positions itself based on bleed
+              if (name === '__trim_guide__') return;
+              
+              const currentX = engine.block.getPositionX(childId);
+              const currentY = engine.block.getPositionY(childId);
+              engine.block.setPositionX(childId, currentX + offsetX);
+              engine.block.setPositionY(childId, currentY + offsetY);
+            } catch (e) {
+              // Block might not support positioning
+            }
+          });
+          console.log(`📐 Shifted artwork by (${offsetX.toFixed(2)}, ${offsetY.toFixed(2)})mm to keep centered`);
+        }
+        
+        // Store current dimensions for next change
+        prevDimensionsRef.current = { width: labelWidth, height: labelHeight };
         console.log(`📐 Updated page dimensions: ${labelWidth}mm × ${labelHeight}mm`);
       }
     } catch (e) {
@@ -1148,9 +1181,10 @@ export function CreativeEditorWrapper({
           engine.block.setPositionY(trimGuide, bleed);
           
           engine.block.setStrokeEnabled(trimGuide, true);
-          engine.block.setStrokeWidth(trimGuide, 0.3);
+          engine.block.setStrokeWidth(trimGuide, 0.5);
           engine.block.setStrokeStyle(trimGuide, 'Dashed');
-          engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.0, g: 0.6, b: 0.9, a: 1.0 });
+          // Magenta/pink color like professional print software
+          engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.9, g: 0.0, b: 0.5, a: 1.0 });
           engine.block.setFillEnabled(trimGuide, false);
           engine.block.setName(trimGuide, '__trim_guide__');
           

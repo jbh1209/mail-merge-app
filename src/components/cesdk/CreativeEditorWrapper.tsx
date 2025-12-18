@@ -1085,34 +1085,37 @@ export function CreativeEditorWrapper({
   // Separate effect for handling dimension changes without reinitializing the editor
   useEffect(() => {
     if (!editorRef.current) return;
-    
+
     try {
       const engine = editorRef.current.engine;
       const pages = engine.scene.getPages();
-      
+
       if (pages.length > 0) {
         const page = pages[0];
-        const prevDims = prevDimensionsRef.current;
-        
+
+        // Read actual current page dimensions from the engine (works on first toggle too)
+        const currentWidth = engine.block.getWidth(page);
+        const currentHeight = engine.block.getHeight(page);
+
         // Calculate offset to keep artwork centered (half the size change)
-        const offsetX = prevDims ? (labelWidth - prevDims.width) / 2 : 0;
-        const offsetY = prevDims ? (labelHeight - prevDims.height) / 2 : 0;
-        
+        const offsetX = (labelWidth - currentWidth) / 2;
+        const offsetY = (labelHeight - currentHeight) / 2;
+
         // Update all page dimensions
-        pages.forEach(p => {
+        pages.forEach((p) => {
           engine.block.setWidth(p, labelWidth);
           engine.block.setHeight(p, labelHeight);
         });
-        
+
         // Shift all existing artwork to keep it centered (only if there's an offset)
-        if ((offsetX !== 0 || offsetY !== 0) && prevDims) {
+        if (offsetX !== 0 || offsetY !== 0) {
           const children = engine.block.getChildren(page);
-          children.forEach(childId => {
+          children.forEach((childId) => {
             try {
               const name = engine.block.getName(childId);
               // Don't move the trim guide - it positions itself based on bleed
               if (name === '__trim_guide__') return;
-              
+
               const currentX = engine.block.getPositionX(childId);
               const currentY = engine.block.getPositionY(childId);
               engine.block.setPositionX(childId, currentX + offsetX);
@@ -1121,10 +1124,11 @@ export function CreativeEditorWrapper({
               // Block might not support positioning
             }
           });
-          console.log(`📐 Shifted artwork by (${offsetX.toFixed(2)}, ${offsetY.toFixed(2)})mm to keep centered`);
+          console.log(
+            `📐 Shifted artwork by (${offsetX.toFixed(2)}, ${offsetY.toFixed(2)})mm to keep centered`
+          );
         }
-        
-        // Store current dimensions for next change
+
         prevDimensionsRef.current = { width: labelWidth, height: labelHeight };
         console.log(`📐 Updated page dimensions: ${labelWidth}mm × ${labelHeight}mm`);
       }
@@ -1182,25 +1186,29 @@ export function CreativeEditorWrapper({
             const trimGuide = engine.block.create('//ly.img.ubq/graphic');
             const trimShape = engine.block.createShape('//ly.img.ubq/shape/rect');
             engine.block.setShape(trimGuide, trimShape);
-            
+
             engine.block.setWidth(trimGuide, trimWidth);
             engine.block.setHeight(trimGuide, trimHeight);
+
+            // CRITICAL: Append to page FIRST before styling/positioning
+            engine.block.appendChild(page, trimGuide);
+
+            // Position it inside the bleed area
             engine.block.setPositionX(trimGuide, bleed);
             engine.block.setPositionY(trimGuide, bleed);
-            
-            // Enable stroke and make it visible - use thicker line (2mm) for visibility
+
+            // Enable stroke and make it visible
             engine.block.setStrokeEnabled(trimGuide, true);
             engine.block.setStrokeWidth(trimGuide, 2);
             engine.block.setStrokeStyle(trimGuide, 'DashedRound');
             // Magenta/pink color like professional print software
             engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.9, g: 0.0, b: 0.5, a: 1.0 });
-            
+
             // No fill - just the outline
             engine.block.setFillEnabled(trimGuide, false);
             engine.block.setName(trimGuide, '__trim_guide__');
-            
-            // Add to page and bring to front
-            engine.block.appendChild(page, trimGuide);
+
+            // Ensure it's above artwork
             engine.block.bringToFront(trimGuide);
             
             console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);

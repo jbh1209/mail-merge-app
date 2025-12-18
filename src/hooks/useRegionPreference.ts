@@ -7,9 +7,9 @@ export function useRegionPreference(templateRegion?: TemplateRegion) {
     // Template region takes priority over browser locale
     if (templateRegion === 'US') return true;
     if (templateRegion === 'EU') return false;
-    // Fallback to browser locale
+    // Fallback to browser locale - only en-US gets inches, not en-GB/en-AU etc.
     const lang = navigator.language || '';
-    return lang.includes('US') || lang === 'en';
+    return lang.includes('US') || lang === 'en-US';
   }, [templateRegion]);
 
   const formatDimension = (mm: number) => {

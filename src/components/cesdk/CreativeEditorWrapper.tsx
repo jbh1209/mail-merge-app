@@ -1137,71 +1137,87 @@ export function CreativeEditorWrapper({
   useEffect(() => {
     if (!editorRef.current) return;
     
-    try {
-      const engine = editorRef.current.engine;
-      const pages = engine.scene.getPages();
-      if (pages.length === 0) return;
+    // Small delay to ensure editor is fully ready after dimension changes
+    const timeoutId = setTimeout(() => {
+      if (!editorRef.current) return;
       
-      const page = pages[0];
-      
-      // Find existing trim guide
-      const children = engine.block.getChildren(page);
-      let existingGuide: number | undefined;
-      for (const childId of children) {
-        try {
-          if (engine.block.getName(childId) === '__trim_guide__') {
-            existingGuide = childId;
-            break;
-          }
-        } catch (e) {
-          // Block might not support getName
+      try {
+        const engine = editorRef.current.engine;
+        const pages = engine.scene.getPages();
+        if (pages.length === 0) {
+          console.log('✂️ No pages found for trim guide');
+          return;
         }
-      }
-      
-      if (trimGuideMm) {
-        const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
         
-        if (existingGuide !== undefined) {
-          // Update existing trim guide
-          engine.block.setWidth(existingGuide, trimWidth);
-          engine.block.setHeight(existingGuide, trimHeight);
-          engine.block.setPositionX(existingGuide, bleed);
-          engine.block.setPositionY(existingGuide, bleed);
-          engine.block.bringToFront(existingGuide);
-          console.log(`✂️ Updated trim guide: ${trimWidth}mm × ${trimHeight}mm`);
+        const page = pages[0];
+        
+        // Find existing trim guide
+        const children = engine.block.getChildren(page);
+        let existingGuide: number | undefined;
+        for (const childId of children) {
+          try {
+            if (engine.block.getName(childId) === '__trim_guide__') {
+              existingGuide = childId;
+              break;
+            }
+          } catch (e) {
+            // Block might not support getName
+          }
+        }
+        
+        if (trimGuideMm) {
+          const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
+          console.log(`✂️ Trim guide config: ${trimWidth}mm × ${trimHeight}mm, bleed: ${bleed}mm`);
+          
+          if (existingGuide !== undefined) {
+            // Update existing trim guide
+            engine.block.setWidth(existingGuide, trimWidth);
+            engine.block.setHeight(existingGuide, trimHeight);
+            engine.block.setPositionX(existingGuide, bleed);
+            engine.block.setPositionY(existingGuide, bleed);
+            engine.block.bringToFront(existingGuide);
+            console.log(`✂️ Updated trim guide: ${trimWidth}mm × ${trimHeight}mm`);
+          } else {
+            // Create new trim guide as a graphic with rect shape
+            const trimGuide = engine.block.create('//ly.img.ubq/graphic');
+            const trimShape = engine.block.createShape('//ly.img.ubq/shape/rect');
+            engine.block.setShape(trimGuide, trimShape);
+            
+            engine.block.setWidth(trimGuide, trimWidth);
+            engine.block.setHeight(trimGuide, trimHeight);
+            engine.block.setPositionX(trimGuide, bleed);
+            engine.block.setPositionY(trimGuide, bleed);
+            
+            // Enable stroke and make it visible - use thicker line (2mm) for visibility
+            engine.block.setStrokeEnabled(trimGuide, true);
+            engine.block.setStrokeWidth(trimGuide, 2);
+            engine.block.setStrokeStyle(trimGuide, 'DashedRound');
+            // Magenta/pink color like professional print software
+            engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.9, g: 0.0, b: 0.5, a: 1.0 });
+            
+            // No fill - just the outline
+            engine.block.setFillEnabled(trimGuide, false);
+            engine.block.setName(trimGuide, '__trim_guide__');
+            
+            // Add to page and bring to front
+            engine.block.appendChild(page, trimGuide);
+            engine.block.bringToFront(trimGuide);
+            
+            console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
+          }
         } else {
-          // Create new trim guide
-          const trimGuide = engine.block.create('//ly.img.ubq/graphic');
-          const trimShape = engine.block.createShape('//ly.img.ubq/shape/rect');
-          engine.block.setShape(trimGuide, trimShape);
-          
-          engine.block.setWidth(trimGuide, trimWidth);
-          engine.block.setHeight(trimGuide, trimHeight);
-          engine.block.setPositionX(trimGuide, bleed);
-          engine.block.setPositionY(trimGuide, bleed);
-          
-          engine.block.setStrokeEnabled(trimGuide, true);
-          engine.block.setStrokeWidth(trimGuide, 0.5);
-          engine.block.setStrokeStyle(trimGuide, 'Dashed');
-          // Magenta/pink color like professional print software
-          engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.9, g: 0.0, b: 0.5, a: 1.0 });
-          engine.block.setFillEnabled(trimGuide, false);
-          engine.block.setName(trimGuide, '__trim_guide__');
-          
-          engine.block.appendChild(page, trimGuide);
-          engine.block.bringToFront(trimGuide);
-          console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
+          // Remove trim guide if it exists and bleed is disabled
+          if (existingGuide !== undefined) {
+            engine.block.destroy(existingGuide);
+            console.log('✂️ Removed trim guide');
+          }
         }
-      } else {
-        // Remove trim guide if it exists and bleed is disabled
-        if (existingGuide !== undefined) {
-          engine.block.destroy(existingGuide);
-          console.log('✂️ Removed trim guide');
-        }
+      } catch (e) {
+        console.warn('Failed to manage trim guide:', e);
       }
-    } catch (e) {
-      console.warn('Failed to manage trim guide:', e);
-    }
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
   }, [trimGuideMm]);
 
   // Helper to normalize image names for matching

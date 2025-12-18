@@ -599,7 +599,7 @@ export default function TemplateEditor() {
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
         <CreativeEditorWrapper
-          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}-${printSettings.enablePrintMarks}`}
+          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
           availableFields={validFields}
           sampleData={sampleData}
           allSampleData={validRecords}

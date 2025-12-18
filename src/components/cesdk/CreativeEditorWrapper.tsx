@@ -1000,52 +1000,7 @@ export function CreativeEditorWrapper({
           setShowBackgroundGuide(true);
         }
 
-        // Create trim guide if bleed mode is enabled
-        if (trimGuideMm) {
-          try {
-            const pages = cesdk.engine.scene.getPages();
-            if (pages.length > 0) {
-              const page = pages[0];
-              const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
-              
-              // Create a graphic block for the trim guide
-              const trimGuide = cesdk.engine.block.create('//ly.img.ubq/graphic');
-              const trimShape = cesdk.engine.block.createShape('//ly.img.ubq/shape/rect');
-              cesdk.engine.block.setShape(trimGuide, trimShape);
-              
-              // Set size to trim dimensions (original page size before bleed)
-              cesdk.engine.block.setWidth(trimGuide, trimWidth);
-              cesdk.engine.block.setHeight(trimGuide, trimHeight);
-              
-              // Position at the bleed offset (centered in the expanded page)
-              cesdk.engine.block.setPositionX(trimGuide, bleed);
-              cesdk.engine.block.setPositionY(trimGuide, bleed);
-              
-              // Style: dashed stroke, no fill
-              cesdk.engine.block.setStrokeEnabled(trimGuide, true);
-              cesdk.engine.block.setStrokeWidth(trimGuide, 0.3); // 0.3mm stroke
-              cesdk.engine.block.setStrokeStyle(trimGuide, 'Dashed');
-              // Set stroke color (cyan/blue for visibility)
-              cesdk.engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.0, g: 0.6, b: 0.9, a: 1.0 });
-              
-              // No fill - transparent interior
-              cesdk.engine.block.setFillEnabled(trimGuide, false);
-              
-              // Name it for identification (and filtering during export)
-              cesdk.engine.block.setName(trimGuide, '__trim_guide__');
-              
-              // Add to page
-              cesdk.engine.block.appendChild(page, trimGuide);
-              
-              // Bring to front so it's always visible
-              cesdk.engine.block.bringToFront(trimGuide);
-              
-              console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
-            }
-          } catch (e) {
-            console.warn('Failed to create trim guide:', e);
-          }
-        }
+        // Trim guide is now handled in a separate useEffect to allow dynamic updates
 
         // Add selection listener to detect barcode/QR blocks
         cesdk.engine.block.onSelectionChanged(() => {
@@ -1122,7 +1077,98 @@ export function CreativeEditorWrapper({
         editorRef.current = null;
       }
     };
-  }, [licenseKey, labelWidth, labelHeight]);
+  }, [licenseKey]);
+
+  // Separate effect for handling dimension changes without reinitializing the editor
+  useEffect(() => {
+    if (!editorRef.current) return;
+    
+    try {
+      const engine = editorRef.current.engine;
+      const pages = engine.scene.getPages();
+      
+      if (pages.length > 0) {
+        // Update all page dimensions
+        pages.forEach(page => {
+          engine.block.setWidth(page, labelWidth);
+          engine.block.setHeight(page, labelHeight);
+        });
+        console.log(`📐 Updated page dimensions: ${labelWidth}mm × ${labelHeight}mm`);
+      }
+    } catch (e) {
+      console.warn('Failed to update page dimensions:', e);
+    }
+  }, [labelWidth, labelHeight]);
+
+  // Separate effect for trim guide - add/remove dynamically without reinit
+  useEffect(() => {
+    if (!editorRef.current) return;
+    
+    try {
+      const engine = editorRef.current.engine;
+      const pages = engine.scene.getPages();
+      if (pages.length === 0) return;
+      
+      const page = pages[0];
+      
+      // Find existing trim guide
+      const children = engine.block.getChildren(page);
+      let existingGuide: number | undefined;
+      for (const childId of children) {
+        try {
+          if (engine.block.getName(childId) === '__trim_guide__') {
+            existingGuide = childId;
+            break;
+          }
+        } catch (e) {
+          // Block might not support getName
+        }
+      }
+      
+      if (trimGuideMm) {
+        const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
+        
+        if (existingGuide !== undefined) {
+          // Update existing trim guide
+          engine.block.setWidth(existingGuide, trimWidth);
+          engine.block.setHeight(existingGuide, trimHeight);
+          engine.block.setPositionX(existingGuide, bleed);
+          engine.block.setPositionY(existingGuide, bleed);
+          engine.block.bringToFront(existingGuide);
+          console.log(`✂️ Updated trim guide: ${trimWidth}mm × ${trimHeight}mm`);
+        } else {
+          // Create new trim guide
+          const trimGuide = engine.block.create('//ly.img.ubq/graphic');
+          const trimShape = engine.block.createShape('//ly.img.ubq/shape/rect');
+          engine.block.setShape(trimGuide, trimShape);
+          
+          engine.block.setWidth(trimGuide, trimWidth);
+          engine.block.setHeight(trimGuide, trimHeight);
+          engine.block.setPositionX(trimGuide, bleed);
+          engine.block.setPositionY(trimGuide, bleed);
+          
+          engine.block.setStrokeEnabled(trimGuide, true);
+          engine.block.setStrokeWidth(trimGuide, 0.3);
+          engine.block.setStrokeStyle(trimGuide, 'Dashed');
+          engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.0, g: 0.6, b: 0.9, a: 1.0 });
+          engine.block.setFillEnabled(trimGuide, false);
+          engine.block.setName(trimGuide, '__trim_guide__');
+          
+          engine.block.appendChild(page, trimGuide);
+          engine.block.bringToFront(trimGuide);
+          console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
+        }
+      } else {
+        // Remove trim guide if it exists and bleed is disabled
+        if (existingGuide !== undefined) {
+          engine.block.destroy(existingGuide);
+          console.log('✂️ Removed trim guide');
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to manage trim guide:', e);
+    }
+  }, [trimGuideMm]);
 
   // Helper to normalize image names for matching
   const normalizeForImageMatch = (name: string): string => {

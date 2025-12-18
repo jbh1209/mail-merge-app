@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useRegionPreference } from "@/hooks/useRegionPreference";
 
 interface CustomLabelSizeDialogProps {
@@ -14,15 +15,31 @@ interface CustomLabelSizeDialogProps {
     height_mm: number;
     labelsPerSheet?: number;
     paperSize: string;
+    enableBleed?: boolean;
+    bleedMm?: number;
   }) => void;
   initialPartNumber?: string;
+  /** Product type for dynamic labeling (e.g., 'card', 'badge', 'label') */
+  productType?: string;
 }
+
+const getProductName = (type?: string): string => {
+  switch (type) {
+    case 'card': return 'Card';
+    case 'badge': return 'Badge';
+    case 'certificate': return 'Certificate';
+    case 'shelf_strip': return 'Shelf Strip';
+    case 'custom': return 'Custom';
+    default: return 'Label';
+  }
+};
 
 export function CustomLabelSizeDialog({ 
   open, 
   onOpenChange, 
   onSubmit,
-  initialPartNumber 
+  initialPartNumber,
+  productType
 }: CustomLabelSizeDialogProps) {
   const { isUS } = useRegionPreference();
   const [unit, setUnit] = useState<"mm" | "inches">(isUS ? "inches" : "mm");
@@ -30,6 +47,10 @@ export function CustomLabelSizeDialog({
   const [height, setHeight] = useState("");
   const [labelsPerSheet, setLabelsPerSheet] = useState("");
   const [paperSize, setPaperSize] = useState(isUS ? "US Letter" : "A4");
+  const [enableBleed, setEnableBleed] = useState(false);
+  const [bleedMm, setBleedMm] = useState("3");
+
+  const productName = getProductName(productType);
 
   const handleSubmit = () => {
     const widthNum = parseFloat(width);
@@ -47,6 +68,8 @@ export function CustomLabelSizeDialog({
       height_mm,
       labelsPerSheet: labelsPerSheet ? parseInt(labelsPerSheet) : undefined,
       paperSize,
+      enableBleed: enableBleed,
+      bleedMm: enableBleed ? parseFloat(bleedMm) || 3 : undefined,
     });
     onOpenChange(false);
   };
@@ -55,7 +78,7 @@ export function CustomLabelSizeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Enter Custom Label Size</DialogTitle>
+          <DialogTitle>Enter Custom {productName} Size</DialogTitle>
           {initialPartNumber && (
             <p className="text-sm text-muted-foreground">
               You can find the dimensions for {initialPartNumber} on the packaging or at{" "}
@@ -102,7 +125,7 @@ export function CustomLabelSizeDialog({
 
           <div className="flex gap-4">
             <div className="flex-1 space-y-2">
-              <Label>Label Width ({unit})</Label>
+              <Label>{productName} Width ({unit})</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -113,7 +136,7 @@ export function CustomLabelSizeDialog({
               />
             </div>
             <div className="flex-1 space-y-2">
-              <Label>Label Height ({unit})</Label>
+              <Label>{productName} Height ({unit})</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -126,7 +149,7 @@ export function CustomLabelSizeDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Labels per Sheet (optional)</Label>
+            <Label>{productName}s per Sheet (optional)</Label>
             <Input
               type="number"
               min="1"
@@ -134,6 +157,42 @@ export function CustomLabelSizeDialog({
               value={labelsPerSheet}
               onChange={(e) => setLabelsPerSheet(e.target.value)}
             />
+          </div>
+
+          <div className="border-t pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="enable-bleed" className="text-sm font-medium">
+                  Include print bleed
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Extends artwork beyond trim line for professional cutting
+                </p>
+              </div>
+              <Switch
+                id="enable-bleed"
+                checked={enableBleed}
+                onCheckedChange={setEnableBleed}
+              />
+            </div>
+            
+            {enableBleed && (
+              <div className="flex items-center gap-3 pl-1">
+                <Label className="text-sm text-muted-foreground whitespace-nowrap">
+                  Bleed amount:
+                </Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  max="10"
+                  className="w-20"
+                  value={bleedMm}
+                  onChange={(e) => setBleedMm(e.target.value)}
+                />
+                <span className="text-sm text-muted-foreground">mm</span>
+              </div>
+            )}
           </div>
         </div>
 

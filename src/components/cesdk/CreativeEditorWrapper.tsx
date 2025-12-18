@@ -1197,9 +1197,9 @@ export function CreativeEditorWrapper({
             engine.block.setPositionX(trimGuide, bleed);
             engine.block.setPositionY(trimGuide, bleed);
 
-            // Enable stroke and make it visible
+            // Enable stroke and make it visible - subtle 0.3mm line
             engine.block.setStrokeEnabled(trimGuide, true);
-            engine.block.setStrokeWidth(trimGuide, 2);
+            engine.block.setStrokeWidth(trimGuide, 0.3);
             engine.block.setStrokeStyle(trimGuide, 'DashedRound');
             // Magenta/pink color like professional print software
             engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.9, g: 0.0, b: 0.5, a: 1.0 });
@@ -1207,6 +1207,12 @@ export function CreativeEditorWrapper({
             // No fill - just the outline
             engine.block.setFillEnabled(trimGuide, false);
             engine.block.setName(trimGuide, '__trim_guide__');
+
+            // Make trim guide non-interactive - purely visual reference
+            engine.block.setScopeEnabled(trimGuide, 'editor/select', false);
+            engine.block.setScopeEnabled(trimGuide, 'layer/move', false);
+            engine.block.setScopeEnabled(trimGuide, 'layer/resize', false);
+            engine.block.setScopeEnabled(trimGuide, 'lifecycle/destroy', false);
 
             // Ensure it's above artwork
             engine.block.bringToFront(trimGuide);

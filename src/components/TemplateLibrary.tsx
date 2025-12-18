@@ -460,6 +460,7 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
         onOpenChange={setShowCustomSize}
         onSubmit={handleCustomSizeSubmit}
         initialPartNumber={searchQuery || undefined}
+        productType={projectType}
       />
     </div>
   );

@@ -1180,6 +1180,15 @@ export function CreativeEditorWrapper({
             engine.block.setPositionX(existingGuide, bleed);
             engine.block.setPositionY(existingGuide, bleed);
             engine.block.bringToFront(existingGuide);
+            
+            // Re-apply non-interactive scopes (must be set every time)
+            engine.block.setScopeEnabled(existingGuide, 'editor/select', false);
+            engine.block.setScopeEnabled(existingGuide, 'layer/move', false);
+            engine.block.setScopeEnabled(existingGuide, 'layer/resize', false);
+            engine.block.setScopeEnabled(existingGuide, 'layer/rotate', false);
+            engine.block.setScopeEnabled(existingGuide, 'lifecycle/destroy', false);
+            engine.block.setScopeEnabled(existingGuide, 'lifecycle/duplicate', false);
+            
             console.log(`✂️ Updated trim guide: ${trimWidth}mm × ${trimHeight}mm`);
           } else {
             // Create new trim guide as a graphic with rect shape
@@ -1212,7 +1221,9 @@ export function CreativeEditorWrapper({
             engine.block.setScopeEnabled(trimGuide, 'editor/select', false);
             engine.block.setScopeEnabled(trimGuide, 'layer/move', false);
             engine.block.setScopeEnabled(trimGuide, 'layer/resize', false);
+            engine.block.setScopeEnabled(trimGuide, 'layer/rotate', false);
             engine.block.setScopeEnabled(trimGuide, 'lifecycle/destroy', false);
+            engine.block.setScopeEnabled(trimGuide, 'lifecycle/duplicate', false);
 
             // Ensure it's above artwork
             engine.block.bringToFront(trimGuide);

@@ -1137,112 +1137,121 @@ export function CreativeEditorWrapper({
     }
   }, [labelWidth, labelHeight]);
 
+  // Ref to prevent re-entry during trim guide creation
+  const trimGuideCreatingRef = useRef(false);
+
   // Separate effect for trim guide - add/remove dynamically without reinit
   useEffect(() => {
     if (!editorRef.current) return;
     
+    // Prevent re-entry (race condition guard)
+    if (trimGuideCreatingRef.current) {
+      console.log('✂️ Trim guide creation already in progress, skipping');
+      return;
+    }
+    
     // Small delay to ensure editor is fully ready after dimension changes
     const timeoutId = setTimeout(() => {
       if (!editorRef.current) return;
+      if (trimGuideCreatingRef.current) return;
+      
+      trimGuideCreatingRef.current = true;
       
       try {
         const engine = editorRef.current.engine;
         const pages = engine.scene.getPages();
         if (pages.length === 0) {
           console.log('✂️ No pages found for trim guide');
+          trimGuideCreatingRef.current = false;
           return;
         }
         
         const page = pages[0];
         
-        // Find existing trim guide
-        const children = engine.block.getChildren(page);
-        let existingGuide: number | undefined;
-        for (const childId of children) {
-          try {
-            if (engine.block.getName(childId) === '__trim_guide__') {
-              existingGuide = childId;
-              break;
+        // GLOBAL CLEANUP: Find and destroy ALL existing trim guides (not just page children)
+        // This prevents duplicates from race conditions
+        try {
+          const allGraphics = engine.block.findByType('//ly.img.ubq/graphic');
+          for (const blockId of allGraphics) {
+            try {
+              if (engine.block.getName(blockId) === '__trim_guide__') {
+                engine.block.destroy(blockId);
+                console.log('✂️ Cleaned up existing trim guide:', blockId);
+              }
+            } catch (e) {
+              // Block might not exist anymore
             }
-          } catch (e) {
-            // Block might not support getName
           }
+        } catch (e) {
+          console.warn('Failed to clean up existing trim guides:', e);
         }
         
         if (trimGuideMm) {
           const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
           console.log(`✂️ Trim guide config: ${trimWidth}mm × ${trimHeight}mm, bleed: ${bleed}mm`);
           
-          if (existingGuide !== undefined) {
-            // Update existing trim guide
-            engine.block.setWidth(existingGuide, trimWidth);
-            engine.block.setHeight(existingGuide, trimHeight);
-            engine.block.setPositionX(existingGuide, bleed);
-            engine.block.setPositionY(existingGuide, bleed);
-            engine.block.bringToFront(existingGuide);
-            
-            // Re-apply non-interactive scopes (must be set every time)
-            engine.block.setScopeEnabled(existingGuide, 'editor/select', false);
-            engine.block.setScopeEnabled(existingGuide, 'layer/move', false);
-            engine.block.setScopeEnabled(existingGuide, 'layer/resize', false);
-            engine.block.setScopeEnabled(existingGuide, 'layer/rotate', false);
-            engine.block.setScopeEnabled(existingGuide, 'lifecycle/destroy', false);
-            engine.block.setScopeEnabled(existingGuide, 'lifecycle/duplicate', false);
-            
-            console.log(`✂️ Updated trim guide: ${trimWidth}mm × ${trimHeight}mm`);
-          } else {
-            // Create new trim guide as a graphic with rect shape
-            const trimGuide = engine.block.create('//ly.img.ubq/graphic');
-            const trimShape = engine.block.createShape('//ly.img.ubq/shape/rect');
-            engine.block.setShape(trimGuide, trimShape);
+          // Create new trim guide as a graphic with rect shape
+          const trimGuide = engine.block.create('//ly.img.ubq/graphic');
+          
+          // SET NAME IMMEDIATELY to prevent duplicates in race conditions
+          engine.block.setName(trimGuide, '__trim_guide__');
+          
+          const trimShape = engine.block.createShape('//ly.img.ubq/shape/rect');
+          engine.block.setShape(trimGuide, trimShape);
 
-            engine.block.setWidth(trimGuide, trimWidth);
-            engine.block.setHeight(trimGuide, trimHeight);
+          engine.block.setWidth(trimGuide, trimWidth);
+          engine.block.setHeight(trimGuide, trimHeight);
 
-            // CRITICAL: Append to page FIRST before styling/positioning
-            engine.block.appendChild(page, trimGuide);
+          // Append to page
+          engine.block.appendChild(page, trimGuide);
 
-            // Position it inside the bleed area
-            engine.block.setPositionX(trimGuide, bleed);
-            engine.block.setPositionY(trimGuide, bleed);
+          // Position it inside the bleed area
+          engine.block.setPositionX(trimGuide, bleed);
+          engine.block.setPositionY(trimGuide, bleed);
 
-            // Enable stroke and make it visible - subtle 0.3mm line
-            engine.block.setStrokeEnabled(trimGuide, true);
-            engine.block.setStrokeWidth(trimGuide, 0.3);
-            engine.block.setStrokeStyle(trimGuide, 'DashedRound');
-            // Magenta/pink color like professional print software
-            engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.9, g: 0.0, b: 0.5, a: 1.0 });
+          // Enable stroke and make it visible - subtle 0.3mm line
+          engine.block.setStrokeEnabled(trimGuide, true);
+          engine.block.setStrokeWidth(trimGuide, 0.3);
+          engine.block.setStrokeStyle(trimGuide, 'DashedRound');
+          // Magenta/pink color like professional print software
+          engine.block.setColor(trimGuide, 'stroke/color/value', { r: 0.9, g: 0.0, b: 0.5, a: 1.0 });
 
-            // No fill - just the outline
-            engine.block.setFillEnabled(trimGuide, false);
-            engine.block.setName(trimGuide, '__trim_guide__');
+          // No fill - just the outline
+          engine.block.setFillEnabled(trimGuide, false);
 
-            // Make trim guide non-interactive - purely visual reference
-            engine.block.setScopeEnabled(trimGuide, 'editor/select', false);
-            engine.block.setScopeEnabled(trimGuide, 'layer/move', false);
-            engine.block.setScopeEnabled(trimGuide, 'layer/resize', false);
-            engine.block.setScopeEnabled(trimGuide, 'layer/rotate', false);
-            engine.block.setScopeEnabled(trimGuide, 'lifecycle/destroy', false);
-            engine.block.setScopeEnabled(trimGuide, 'lifecycle/duplicate', false);
-
-            // Ensure it's above artwork
-            engine.block.bringToFront(trimGuide);
-            
-            console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
+          // Lock the trim guide to prevent any interaction (most reliable method)
+          try {
+            engine.block.setBool(trimGuide, 'locked', true);
+          } catch (e) {
+            console.warn('Could not set locked property:', e);
           }
-        } else {
-          // Remove trim guide if it exists and bleed is disabled
-          if (existingGuide !== undefined) {
-            engine.block.destroy(existingGuide);
-            console.log('✂️ Removed trim guide');
-          }
+
+          // Make trim guide non-interactive - purely visual reference (belt and suspenders)
+          engine.block.setScopeEnabled(trimGuide, 'editor/select', false);
+          engine.block.setScopeEnabled(trimGuide, 'layer/move', false);
+          engine.block.setScopeEnabled(trimGuide, 'layer/resize', false);
+          engine.block.setScopeEnabled(trimGuide, 'layer/rotate', false);
+          engine.block.setScopeEnabled(trimGuide, 'lifecycle/destroy', false);
+          engine.block.setScopeEnabled(trimGuide, 'lifecycle/duplicate', false);
+
+          // Ensure it's above artwork
+          engine.block.bringToFront(trimGuide);
+          
+          console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
         }
+        // If trimGuideMm is null, we already cleaned up all guides above
+        
       } catch (e) {
         console.warn('Failed to manage trim guide:', e);
+      } finally {
+        trimGuideCreatingRef.current = false;
       }
     }, 100);
     
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      trimGuideCreatingRef.current = false;
+    };
   }, [trimGuideMm]);
 
   // Helper to normalize image names for matching

@@ -433,9 +433,14 @@ export default function TemplateEditor() {
     (fieldMapping?.mappings ? Object.keys(fieldMapping.mappings as object) : []) ||
     [];
 
-  // Filter out junk columns like Unnamed_Column_*
+  // Detect image fields FIRST - check both column names AND values
+  // This must happen BEFORE filtering so image columns aren't excluded
+  const imageFields = detectImageColumnsFromValues(availableFields, allSampleData);
+
+  // Filter out junk columns like Unnamed_Column_* BUT KEEP image columns!
+  // Image columns may have generic names (e.g., Unnamed_Column_2) when CSV headers are empty
   const validFields = availableFields.filter(f => 
-    !/^Unnamed_Column_\d+$/i.test(f)
+    imageFields.includes(f) || !/^Unnamed_Column_\d+$/i.test(f)
   );
 
   // Filter records that have at least one non-empty value in valid fields
@@ -445,9 +450,6 @@ export default function TemplateEditor() {
       return value !== null && value !== undefined && String(value).trim() !== '';
     });
   });
-
-  // Detect image fields in data - check both column names AND values
-  const imageFields = detectImageColumnsFromValues(availableFields, allSampleData);
   const hasImageFields = imageFields.length > 0;
   const hasUploadedImages = projectImages.length > 0;
   const showImageUploadPrompt = hasImageFields && !hasUploadedImages;

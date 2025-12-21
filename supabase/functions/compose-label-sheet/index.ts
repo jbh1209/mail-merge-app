@@ -25,6 +25,9 @@ interface PrintConfig {
   enablePrintMarks: boolean;
   bleedMm: number;          // 3mm or 3.175mm (1/8")
   cropMarkOffsetMm: number; // 3mm or 3.175mm (1/8")
+  // Actual trim dimensions (original template size WITHOUT bleed)
+  trimWidthMm?: number;
+  trimHeightMm?: number;
 }
 
 // Convert mm to PDF points (72 points per inch)
@@ -170,46 +173,60 @@ serve(async (req) => {
               
               for (let pageIdx = 0; pageIdx < sourcePdf.getPageCount(); pageIdx++) {
                 const sourcePage = sourcePdf.getPage(pageIdx);
-                const { width: trimWidth, height: trimHeight } = sourcePage.getSize();
+                const sourceSize = sourcePage.getSize();
                 
-                // Calculate new page size: trim + bleed + space for marks
-                const totalWidth = trimWidth + (bleedPt * 2) + (cropOffsetPt + markLengthPt) * 2;
-                const totalHeight = trimHeight + (bleedPt * 2) + (cropOffsetPt + markLengthPt) * 2;
+                // CRITICAL: The source PDF already includes bleed (it was exported with expanded page size)
+                // Use the ACTUAL trim dimensions from config (original template size without bleed)
+                // If not provided, fall back to source size (backwards compat, but less accurate)
+                const trimWidthPt = printConfig.trimWidthMm 
+                  ? mmToPoints(printConfig.trimWidthMm) 
+                  : sourceSize.width;
+                const trimHeightPt = printConfig.trimHeightMm 
+                  ? mmToPoints(printConfig.trimHeightMm) 
+                  : sourceSize.height;
                 
-                // Create new page with expanded dimensions
+                // Source page size IS the bleed size (trim + bleed on all sides)
+                const sourceWidth = sourceSize.width;
+                const sourceHeight = sourceSize.height;
+                
+                // Total page = source content (with bleed) + space for crop marks
+                const totalWidth = sourceWidth + (cropOffsetPt + markLengthPt) * 2;
+                const totalHeight = sourceHeight + (cropOffsetPt + markLengthPt) * 2;
+                
+                // Create new page with room for crop marks
                 const newPage = outputPdf.addPage([totalWidth, totalHeight]);
                 
-                // Calculate where to place the content (offset from origin)
-                const contentX = cropOffsetPt + markLengthPt + bleedPt;
-                const contentY = cropOffsetPt + markLengthPt + bleedPt;
+                // Content offset (just space for crop marks)
+                const contentX = cropOffsetPt + markLengthPt;
+                const contentY = cropOffsetPt + markLengthPt;
                 
-                // Embed and draw the source page
+                // Embed and draw the source page at its full size (includes bleed)
                 const [embeddedPage] = await outputPdf.embedPdf(sourcePdf, [pageIdx]);
                 newPage.drawPage(embeddedPage, {
                   x: contentX,
                   y: contentY,
-                  width: trimWidth,
-                  height: trimHeight,
+                  width: sourceWidth,
+                  height: sourceHeight,
                 });
                 
-                // Draw crop marks at trim box corners
-                const trimX = contentX;
-                const trimY = contentY;
-                drawCropMarks(newPage, trimX, trimY, trimWidth, trimHeight, cropOffsetPt);
+                // Calculate where the TRIM edges are (center of the bleed area)
+                // Trim is inset from content edges by the bleed amount
+                const trimX = contentX + bleedPt;
+                const trimY = contentY + bleedPt;
+                
+                // Draw crop marks at TRIM edges (not bleed edges)
+                drawCropMarks(newPage, trimX, trimY, trimWidthPt, trimHeightPt, cropOffsetPt);
                 
                 // Set PDF boxes for professional printing software
-                // TrimBox: The final page size after cutting
-                newPage.setTrimBox(trimX, trimY, trimWidth, trimHeight);
+                // TrimBox: The final cut size (original design size)
+                newPage.setTrimBox(trimX, trimY, trimWidthPt, trimHeightPt);
                 
-                // BleedBox: Trim + bleed area
-                newPage.setBleedBox(
-                  trimX - bleedPt,
-                  trimY - bleedPt,
-                  trimWidth + bleedPt * 2,
-                  trimHeight + bleedPt * 2
-                );
+                // BleedBox: The full content area (source size, which includes bleed)
+                newPage.setBleedBox(contentX, contentY, sourceWidth, sourceHeight);
                 
                 // MediaBox is automatically set to full page size
+                
+                console.log(`Page ${pageIdx + 1}: Trim ${trimWidthPt.toFixed(1)}×${trimHeightPt.toFixed(1)}pt, Source ${sourceWidth.toFixed(1)}×${sourceHeight.toFixed(1)}pt`);
               }
             } else {
               // No print features - just copy pages directly

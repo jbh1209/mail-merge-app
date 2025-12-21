@@ -37,6 +37,9 @@ export interface PrintConfig {
   enablePrintMarks: boolean;
   bleedMm: number;
   cropMarkOffsetMm: number;
+  // Actual trim dimensions (original template size without bleed)
+  trimWidthMm?: number;
+  trimHeightMm?: number;
 }
 
 // Database label template type
@@ -197,26 +200,23 @@ async function exportLabelPdfs(
   const engine = cesdk.engine;
   const pdfBuffers: ArrayBuffer[] = [];
   
-  // Store original scene as archive (handles embedded assets like barcodes)
-  const originalArchiveBlob = await engine.scene.saveToArchive();
-  
-  // Hide trim guide before export (it's a visual aid, not part of the design)
-  const hiddenGuides: number[] = [];
+  // CRITICAL: Hide trim guide BEFORE saving archive (so it stays hidden on reload)
+  // The trim guide is a visual aid only, not part of the design
   try {
     const allBlocks = engine.block.findByType('//ly.img.ubq/graphic');
     for (const blockId of allBlocks) {
       const name = engine.block.getName(blockId);
       if (name === '__trim_guide__') {
         engine.block.setVisible(blockId, false);
-        hiddenGuides.push(blockId);
+        console.log('🔲 Hidden trim guide before archive save');
       }
-    }
-    if (hiddenGuides.length > 0) {
-      console.log(`🔲 Hidden ${hiddenGuides.length} trim guide(s) for export`);
     }
   } catch (e) {
     console.warn('Could not hide trim guides:', e);
   }
+  
+  // Store original scene as archive (NOW includes hidden trim guide state)
+  const originalArchiveBlob = await engine.scene.saveToArchive();
   
   // Time tracking for ETA estimates
   const exportStartTime = Date.now();
@@ -486,11 +486,15 @@ export async function batchExportWithCesdk(
     }
 
     // Step 4: Prepare print config for full-page mode (non-label documents)
+    // CRITICAL: Pass ORIGINAL template dimensions (without bleed) as trim size
+    // The exported PDF already includes bleed, so edge function needs to know actual trim size
     const printConfig: PrintConfig | null = isFullPage && templateConfig.printSettings?.enablePrintMarks
       ? {
           enablePrintMarks: true,
           bleedMm: templateConfig.printSettings.bleedMm,
           cropMarkOffsetMm: templateConfig.printSettings.cropMarkOffsetMm,
+          trimWidthMm: templateConfig.widthMm,
+          trimHeightMm: templateConfig.heightMm,
         }
       : null;
 

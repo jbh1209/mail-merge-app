@@ -1251,6 +1251,23 @@ export function CreativeEditorWrapper({
         
         if (trimGuideMm) {
           const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
+          
+          // CRITICAL FIX: Verify page dimensions are correct before creating guide
+          // If page is still at old dimensions (before bleed was added), skip and let the effect re-run
+          const currentPageWidth = engine.block.getWidth(page);
+          const currentPageHeight = engine.block.getHeight(page);
+          const expectedWidth = trimWidth + (bleed * 2);
+          const expectedHeight = trimHeight + (bleed * 2);
+          
+          // Use a small tolerance for floating point comparison (0.1mm)
+          const tolerance = 0.1;
+          if (Math.abs(currentPageWidth - expectedWidth) > tolerance || 
+              Math.abs(currentPageHeight - expectedHeight) > tolerance) {
+            console.log(`✂️ Page dimensions not ready: ${currentPageWidth.toFixed(1)}×${currentPageHeight.toFixed(1)}mm, expected ${expectedWidth.toFixed(1)}×${expectedHeight.toFixed(1)}mm - will retry when dimensions update`);
+            trimGuideCreatingRef.current = false;
+            return; // The effect will re-run when labelWidth/labelHeight update
+          }
+          
           console.log(`✂️ Trim guide config: ${trimWidth}mm × ${trimHeight}mm, bleed: ${bleed}mm`);
           
           // Create new trim guide as a graphic with rect shape
@@ -1315,7 +1332,7 @@ export function CreativeEditorWrapper({
       clearTimeout(timeoutId);
       trimGuideCreatingRef.current = false;
     };
-  }, [trimGuideMm]);
+  }, [trimGuideMm, labelWidth, labelHeight]); // Re-run when dimensions change to ensure trim guide is created after page resize
 
   // Helper to normalize image names for matching
   const normalizeForImageMatch = (name: string): string => {

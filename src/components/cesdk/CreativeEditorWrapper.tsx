@@ -591,6 +591,9 @@ export function CreativeEditorWrapper({
         engine.block.appendChild(page, graphic);
         engine.block.sendToBack(graphic);
         
+        // CRITICAL: Enable interaction scopes (required since global scopes are set to Defer)
+        enableBlockInteraction(engine, graphic);
+        
         // Name it for identification
         engine.block.setName(graphic, 'background');
         

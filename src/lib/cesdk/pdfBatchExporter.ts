@@ -1,10 +1,11 @@
 import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { resolveVariables, VariableData } from './variableResolver';
 import { supabase } from '@/integrations/supabase/client';
-import { PrintSettings } from '@/types/print-settings';
+import { PrintSettings, getIccProfileForRegion } from '@/types/print-settings';
+import { convertToPDFX3 } from '@imgly/plugin-print-ready-pdfs-web';
 
 export interface BatchExportProgress {
-  phase: 'exporting' | 'composing' | 'uploading' | 'complete' | 'error';
+  phase: 'exporting' | 'converting' | 'composing' | 'uploading' | 'complete' | 'error';
   current: number;
   total: number;
   message: string;
@@ -40,6 +41,8 @@ export interface PrintConfig {
   // Actual trim dimensions (original template size without bleed)
   trimWidthMm?: number;
   trimHeightMm?: number;
+  // Color mode for PDF output
+  colorMode?: 'rgb' | 'cmyk';
 }
 
 // Database label template type
@@ -189,16 +192,22 @@ async function loadFromArchiveBlob(engine: CreativeEditorSDK['engine'], blob: Bl
 
 /**
  * Export individual PDFs from CE.SDK
+ * Optionally converts to CMYK PDF/X-3 format for professional printing
  */
 async function exportLabelPdfs(
   cesdk: CreativeEditorSDK,
   dataRecords: VariableData[],
   onProgress: (progress: BatchExportProgress) => void,
   docType: string = 'document',
-  projectImages?: { name: string; url: string }[]
+  projectImages?: { name: string; url: string }[],
+  printSettings?: PrintSettings
 ): Promise<ArrayBuffer[]> {
   const engine = cesdk.engine;
-  const pdfBuffers: ArrayBuffer[] = [];
+  const pdfBlobs: Blob[] = [];
+  
+  // Determine if we need CMYK conversion
+  const needsCmykConversion = printSettings?.colorMode === 'cmyk';
+  const iccProfile = printSettings ? getIccProfileForRegion(printSettings.region) : 'fogra39';
   
   // CRITICAL: Hide trim guide BEFORE saving archive (so it stays hidden on reload)
   // The trim guide is a visual aid only, not part of the design
@@ -268,8 +277,7 @@ async function exportLabelPdfs(
             // This prevents text bunching/overlapping issues in the generated PDFs
             exportPdfWithHighCompatibility: true,
           });
-          const buffer = await blob.arrayBuffer();
-          pdfBuffers.push(buffer);
+          pdfBlobs.push(blob);
         }
         
         // Track export time for ETA calculation
@@ -282,12 +290,60 @@ async function exportLabelPdfs(
     }
     
     const totalTime = ((Date.now() - exportStartTime) / 1000).toFixed(1);
-    console.log(`✅ Exported ${pdfBuffers.length} ${docType}s in ${totalTime}s`);
+    console.log(`✅ Exported ${pdfBlobs.length} ${docType}s in ${totalTime}s`);
   } finally {
     // Restore original scene after all exports
     await loadFromArchiveBlob(engine, originalArchiveBlob);
   }
   
+  // Convert to CMYK if requested (PDF/X-3 compliance)
+  if (needsCmykConversion && pdfBlobs.length > 0) {
+    console.log(`🎨 Converting ${pdfBlobs.length} PDFs to CMYK (${iccProfile} profile)...`);
+    
+    onProgress({
+      phase: 'converting',
+      current: 0,
+      total: pdfBlobs.length,
+      message: `Converting to CMYK (${iccProfile === 'gracol' ? 'GRACoL 2013' : 'FOGRA39'})...`,
+    });
+    
+    const conversionStartTime = Date.now();
+    
+    try {
+      // Use batch conversion for efficiency (processes sequentially internally)
+      const cmykBlobs = await convertToPDFX3(pdfBlobs, {
+        outputProfile: iccProfile,
+        title: `Print-Ready ${docType}`,
+        flattenTransparency: false, // Preserve visual fidelity, may not be strictly X-3 compliant
+      });
+      
+      const conversionTime = ((Date.now() - conversionStartTime) / 1000).toFixed(1);
+      console.log(`✅ CMYK conversion complete in ${conversionTime}s`);
+      
+      onProgress({
+        phase: 'converting',
+        current: pdfBlobs.length,
+        total: pdfBlobs.length,
+        message: 'CMYK conversion complete',
+      });
+      
+      // Convert CMYK blobs to ArrayBuffers
+      const pdfBuffers: ArrayBuffer[] = [];
+      for (const blob of cmykBlobs) {
+        pdfBuffers.push(await blob.arrayBuffer());
+      }
+      return pdfBuffers;
+    } catch (cmykError) {
+      console.error('⚠️ CMYK conversion failed, falling back to RGB:', cmykError);
+      // Fall through to return RGB buffers
+    }
+  }
+  
+  // Return RGB buffers (either no conversion needed or conversion failed)
+  const pdfBuffers: ArrayBuffer[] = [];
+  for (const blob of pdfBlobs) {
+    pdfBuffers.push(await blob.arrayBuffer());
+  }
   return pdfBuffers;
 }
 
@@ -442,8 +498,15 @@ export async function batchExportWithCesdk(
     const isFullPage = templateConfig.isFullPage;
     const docType = isFullPage ? 'page' : 'label';
     
-    // Step 1: Export individual PDFs (pass projectImages for VDP image resolution)
-    const pdfBuffers = await exportLabelPdfs(cesdk, dataRecords, onProgress, docType, templateConfig.projectImages);
+    // Step 1: Export individual PDFs (pass projectImages for VDP image resolution, printSettings for CMYK)
+    const pdfBuffers = await exportLabelPdfs(
+      cesdk, 
+      dataRecords, 
+      onProgress, 
+      docType, 
+      templateConfig.projectImages,
+      templateConfig.printSettings
+    );
     
     if (pdfBuffers.length === 0) {
       throw new Error('No PDFs were exported');
@@ -495,6 +558,7 @@ export async function batchExportWithCesdk(
           cropMarkOffsetMm: templateConfig.printSettings.cropMarkOffsetMm,
           trimWidthMm: templateConfig.widthMm,
           trimHeightMm: templateConfig.heightMm,
+          colorMode: templateConfig.printSettings.colorMode,
         }
       : null;
 

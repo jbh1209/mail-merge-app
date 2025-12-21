@@ -11,6 +11,8 @@ export interface PrintSettings {
   cropMarkOffsetMm: number;
   /** Region for display purposes */
   region: 'US' | 'EU';
+  /** Color mode for PDF export - RGB for screen, CMYK for print */
+  colorMode: 'rgb' | 'cmyk';
 }
 
 /** 1/8 inch in mm (standard imperial bleed) */
@@ -26,6 +28,7 @@ export function getDefaultPrintSettings(isUS: boolean): PrintSettings {
     bleedMm: isUS ? EIGHTH_INCH_MM : 3,
     cropMarkOffsetMm: isUS ? EIGHTH_INCH_MM : 3,
     region: isUS ? 'US' : 'EU',
+    colorMode: 'rgb', // Default to RGB, auto-switch to CMYK when print marks enabled
   };
 }
 
@@ -37,4 +40,11 @@ export function formatBleedDimension(bleedMm: number, isUS: boolean): string {
     return '1/8"';
   }
   return `${bleedMm}mm`;
+}
+
+/**
+ * Get the ICC profile name based on region
+ */
+export function getIccProfileForRegion(region: 'US' | 'EU'): 'gracol' | 'fogra39' {
+  return region === 'US' ? 'gracol' : 'fogra39';
 }

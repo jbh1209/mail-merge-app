@@ -82,12 +82,14 @@ export function TemplateWizard({
         template_type: "built_in_library",
         width_mm: width,
         height_mm: height,
+        bleed_mm: selectedTemplate.bleedMm || null,
         avery_part_number: selectedTemplate.averyCode || null,
         design_config: {
           baseTemplate: selectedTemplate.id,
           averyCode: selectedTemplate.averyCode,
           labelsPerSheet: selectedTemplate.labelsPerSheet,
-          category: selectedTemplate.category
+          category: selectedTemplate.category,
+          enableBleed: selectedTemplate.enableBleed,
         },
         is_public: false
       });

@@ -11,6 +11,10 @@ export interface LabelSize {
   useCase?: string;
   /** Tags for filtering by project type (label, badge, certificate, card, etc.) */
   projectTypes?: string[];
+  /** Whether bleed is enabled for this size */
+  enableBleed?: boolean;
+  /** Bleed amount in mm (typically 3mm) */
+  bleedMm?: number;
 }
 
 // Map project types to search keywords for universal filtering

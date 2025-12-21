@@ -155,7 +155,14 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
     });
   };
 
-  const handleCustomSizeSubmit = (size: { width_mm: number; height_mm: number; labelsPerSheet?: number; paperSize: string }) => {
+  const handleCustomSizeSubmit = (size: { 
+    width_mm: number; 
+    height_mm: number; 
+    labelsPerSheet?: number; 
+    paperSize: string;
+    enableBleed?: boolean;
+    bleedMm?: number;
+  }) => {
     onSelect({
       id: `custom-${Date.now()}`,
       name: "Custom Size",
@@ -164,6 +171,8 @@ export function TemplateLibrary({ onSelect, selectedId, projectType }: TemplateL
       labelsPerSheet: size.labelsPerSheet,
       description: `${size.paperSize} sheet`,
       category: "custom",
+      enableBleed: size.enableBleed,
+      bleedMm: size.bleedMm,
     });
   };
 

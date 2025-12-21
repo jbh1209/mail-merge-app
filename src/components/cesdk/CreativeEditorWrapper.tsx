@@ -1090,9 +1090,40 @@ export function CreativeEditorWrapper({
           }
         });
 
-        // Add history listener to track unsaved changes
+        // ============ GLOBAL BLOCK INTERACTION LISTENER ============
+        // Track known blocks so we can detect NEW blocks and enable interaction on them
+        // This is critical because global scopes are set to "Defer", so new blocks
+        // won't be selectable unless we explicitly enable their scopes
+        let knownBlocks = new Set(cesdk.engine.block.findAll());
+        
+        // Add history listener to track unsaved changes AND enable interaction on new blocks
         cesdk.engine.editor.onHistoryUpdated(() => {
           onSceneChange?.(true);
+          
+          // Check for new blocks and enable interaction on them
+          try {
+            const currentBlocks = cesdk.engine.block.findAll();
+            currentBlocks.forEach(blockId => {
+              if (!knownBlocks.has(blockId)) {
+                // This is a NEW block - enable interaction (unless it's the trim guide)
+                try {
+                  const name = cesdk.engine.block.getName(blockId) || '';
+                  if (name !== '__trim_guide__') {
+                    enableBlockInteraction(cesdk.engine, blockId);
+                    console.log('🔓 Enabled interaction on new block:', blockId, name || '(unnamed)');
+                  }
+                } catch (e) {
+                  // Block may not support getName or scopes
+                }
+                knownBlocks.add(blockId);
+              }
+            });
+            
+            // Update tracking set (also removes deleted blocks)
+            knownBlocks = new Set(currentBlocks);
+          } catch (e) {
+            // Editor may be disposed or in transition state
+          }
         });
 
         setIsLoading(false);

@@ -65,21 +65,22 @@ export default function TemplateEditor() {
     getDefaultPrintSettings(isUS)
   );
   
-  // Update print settings when region changes or template loads
+  // Update print settings when region changes OR template loads
+  // Template's saved bleed value takes precedence over defaults
   useEffect(() => {
-    setPrintSettings(getDefaultPrintSettings(isUS));
-  }, [isUS]);
-
-  // Initialize print settings from template's saved bleed value
-  useEffect(() => {
+    const baseSettings = getDefaultPrintSettings(isUS);
+    
+    // If template has bleed enabled, preserve that setting
     if (template?.bleed_mm && template.bleed_mm > 0) {
-      setPrintSettings(prev => ({
-        ...prev,
+      setPrintSettings({
+        ...baseSettings,
         enablePrintMarks: true,
         bleedMm: Number(template.bleed_mm),
-      }));
+      });
+    } else {
+      setPrintSettings(baseSettings);
     }
-  }, [template]);
+  }, [isUS, template]);
 
   // Fetch project details for breadcrumb and project type
   const { data: project } = useQuery({

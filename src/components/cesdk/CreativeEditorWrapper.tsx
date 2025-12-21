@@ -1649,6 +1649,10 @@ export function CreativeEditorWrapper({
     // CE.SDK position is relative to parent - must be parented first
     engine.block.appendChild(page, textBlock);
     
+    // CRITICAL: Enable interaction scopes (required since global scopes are set to Defer)
+    // The global listener may not catch text blocks created via engine.block.create()
+    enableBlockInteraction(engine, textBlock);
+    
     // Now set text content
     engine.block.replaceText(textBlock, displayValue);
     

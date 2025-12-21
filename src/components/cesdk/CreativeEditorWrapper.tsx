@@ -121,6 +121,23 @@ function setRobotoFont(engine: any, textBlock: number): void {
   }
 }
 
+/**
+ * Enable all interaction scopes on a block.
+ * Required because global scopes are set to "Defer" for trim guide locking.
+ */
+function enableBlockInteraction(engine: any, blockId: number): void {
+  try {
+    engine.block.setScopeEnabled(blockId, 'editor/select', true);
+    engine.block.setScopeEnabled(blockId, 'layer/move', true);
+    engine.block.setScopeEnabled(blockId, 'layer/resize', true);
+    engine.block.setScopeEnabled(blockId, 'layer/rotate', true);
+    engine.block.setScopeEnabled(blockId, 'lifecycle/destroy', true);
+    engine.block.setScopeEnabled(blockId, 'lifecycle/duplicate', true);
+  } catch (e) {
+    // Some blocks may not support scopes
+  }
+}
+
 // Calculate auto-fit font size based on text content and available box dimensions
 function calculateAutoFitFontSize(
   textContent: string,
@@ -264,6 +281,9 @@ async function generateInitialLayout(
           // CRITICAL: Append to page FIRST before setting text content and font size
           // CE.SDK requires blocks to be part of the scene hierarchy before styling takes effect
           engine.block.appendChild(page, textBlock);
+          
+          // Enable interaction scopes (required since global scopes are set to Defer)
+          enableBlockInteraction(engine, textBlock);
 
           // Set position in mm (design unit is Millimeter)
           engine.block.setPositionX(textBlock, startXMm);
@@ -321,6 +341,9 @@ async function generateInitialLayout(
 
           // CRITICAL: Append to page FIRST before setting text content and font size
           engine.block.appendChild(page, textBlock);
+          
+          // Enable interaction scopes (required since global scopes are set to Defer)
+          enableBlockInteraction(engine, textBlock);
 
           // Set position in mm (design unit is Millimeter)
           engine.block.setPositionX(textBlock, field.x);
@@ -436,6 +459,9 @@ async function generateInitialLayout(
           
           // Append to page FIRST
           engine.block.appendChild(page, graphicBlock);
+          
+          // Enable interaction scopes (required since global scopes are set to Defer)
+          enableBlockInteraction(engine, graphicBlock);
           
           // Set size and position
           engine.block.setWidth(graphicBlock, imageSize);
@@ -1001,6 +1027,40 @@ export function CreativeEditorWrapper({
         }
 
         // Trim guide is now handled in a separate useEffect to allow dynamic updates
+
+        // ============ GLOBAL SCOPE CONFIGURATION ============
+        // Set global scopes to "Defer" so block-level setScopeEnabled() calls work
+        // This is REQUIRED for the trim guide to be non-selectable
+        try {
+          cesdk.engine.editor.setGlobalScope('editor/select', 'Defer');
+          cesdk.engine.editor.setGlobalScope('layer/move', 'Defer');
+          cesdk.engine.editor.setGlobalScope('layer/resize', 'Defer');
+          cesdk.engine.editor.setGlobalScope('layer/rotate', 'Defer');
+          cesdk.engine.editor.setGlobalScope('lifecycle/destroy', 'Defer');
+          cesdk.engine.editor.setGlobalScope('lifecycle/duplicate', 'Defer');
+          console.log('🔒 Global scopes set to Defer - trim guide will now be locked');
+          
+          // Enable scopes on ALL existing blocks (so they remain editable)
+          const allBlocks = cesdk.engine.block.findAll();
+          allBlocks.forEach(blockId => {
+            try {
+              const name = cesdk.engine.block.getName(blockId);
+              // Skip trim guide - it should NOT be enabled
+              if (name === '__trim_guide__') return;
+              
+              cesdk.engine.block.setScopeEnabled(blockId, 'editor/select', true);
+              cesdk.engine.block.setScopeEnabled(blockId, 'layer/move', true);
+              cesdk.engine.block.setScopeEnabled(blockId, 'layer/resize', true);
+              cesdk.engine.block.setScopeEnabled(blockId, 'layer/rotate', true);
+              cesdk.engine.block.setScopeEnabled(blockId, 'lifecycle/destroy', true);
+              cesdk.engine.block.setScopeEnabled(blockId, 'lifecycle/duplicate', true);
+            } catch (e) {
+              // Some blocks may not support scopes (scene, page structure blocks)
+            }
+          });
+        } catch (e) {
+          console.warn('Could not set global scopes:', e);
+        }
 
         // Add selection listener to detect barcode/QR blocks
         cesdk.engine.block.onSelectionChanged(() => {

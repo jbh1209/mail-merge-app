@@ -18,6 +18,8 @@ export interface ExportOptions {
   whiteUnderlayer?: boolean;
   /** Spot color name for underlayer */
   underlayerSpotColorName?: string;
+  /** Color mode for PDF output */
+  colorMode?: 'rgb' | 'cmyk';
 }
 
 export interface BatchExportOptions extends ExportOptions {
@@ -145,6 +147,7 @@ export async function batchExportToZip(
 export function getPrintReadyExportOptions(opts: {
   whiteUnderlayer?: boolean;
   bleedMm?: number;
+  colorMode?: 'rgb' | 'cmyk';
 }): ExportOptions {
   return {
     format: 'pdf',
@@ -155,6 +158,7 @@ export function getPrintReadyExportOptions(opts: {
     addCropMarks: true,
     whiteUnderlayer: opts.whiteUnderlayer ?? false,
     underlayerSpotColorName: 'White',
+    colorMode: opts.colorMode ?? 'cmyk',
   };
 }
 

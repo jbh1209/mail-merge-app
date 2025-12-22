@@ -1,12 +1,12 @@
+import Logo from "@/assets/logo.svg";
+
 export function AppFooter() {
   return (
     <footer className="border-t bg-muted/30 mt-auto">
       <div className="container mx-auto px-4 py-12">
         <div className="grid md:grid-cols-4 gap-8">
           <div>
-            <h3 className="text-lg font-bold mb-4 bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Mail Merge
-            </h3>
+            <img src={Logo} alt="Mail Merge" className="h-6 mb-4" />
             <p className="text-sm text-muted-foreground">
               Transform your data into professional documents with AI-powered mail merge.
             </p>

@@ -19,8 +19,8 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 215 25% 12%;
 
-    /* Primary Blue - Stripe-inspired, professional trust */
-    --primary: 243 75% 59%;
+    /* Primary Purple - Brand color #58519e */
+    --primary: 248 32% 47%;
     --primary-foreground: 0 0% 100%;
 
     /* Secondary - Muted surface color */
@@ -31,12 +31,12 @@ All colors MUST be HSL.
     --muted: 210 16% 93%;
     --muted-foreground: 215 15% 46%;
 
-    /* Accent Purple - Creative, modern, premium */
-    --accent: 262 83% 58%;
+    /* Accent Green - Brand color #53baa5 */
+    --accent: 165 37% 53%;
     --accent-foreground: 0 0% 100%;
 
-    /* Success Green - Friendly, positive, completion */
-    --success: 170 100% 42%;
+    /* Success Green - Same as accent for consistency */
+    --success: 165 37% 53%;
     --success-foreground: 0 0% 100%;
 
     /* Warning Orange - Friendly alert */
@@ -54,12 +54,12 @@ All colors MUST be HSL.
     /* Border - Subtle, not stark */
     --border: 214 20% 92%;
     --input: 214 20% 92%;
-    --ring: 243 75% 59%;
+    --ring: 248 32% 47%;
 
     --radius: 0.5rem;
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(243 75% 59%), hsl(262 83% 58%));
+    --gradient-primary: linear-gradient(135deg, hsl(248 32% 47%), hsl(165 37% 53%));
     --gradient-subtle: linear-gradient(180deg, hsl(210 20% 98%), hsl(210 16% 96%));
 
     /* Shadows */
@@ -88,7 +88,7 @@ All colors MUST be HSL.
     --popover: 215 25% 12%;
     --popover-foreground: 210 20% 98%;
 
-    --primary: 243 75% 59%;
+    --primary: 248 32% 47%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 215 20% 18%;
@@ -97,10 +97,10 @@ All colors MUST be HSL.
     --muted: 215 20% 18%;
     --muted-foreground: 215 15% 65%;
 
-    --accent: 262 83% 58%;
+    --accent: 165 37% 53%;
     --accent-foreground: 0 0% 100%;
 
-    --success: 170 100% 42%;
+    --success: 165 37% 53%;
     --success-foreground: 0 0% 100%;
 
     --warning: 14 100% 60%;
@@ -114,16 +114,16 @@ All colors MUST be HSL.
 
     --border: 215 20% 22%;
     --input: 215 20% 22%;
-    --ring: 243 75% 59%;
+    --ring: 248 32% 47%;
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 243 75% 59%;
+    --sidebar-primary: 248 32% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 240 3.7% 15.9%;
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 243 75% 59%;
+    --sidebar-ring: 248 32% 47%;
   }
 }
 

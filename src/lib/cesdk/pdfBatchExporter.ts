@@ -298,12 +298,23 @@ async function exportLabelPdfs(
   
   // Convert to CMYK if requested (PDF/X-3 compliance)
   if (needsCmykConversion && pdfBlobs.length > 0) {
-    console.log(`🎨 Converting ${pdfBlobs.length} PDFs to CMYK (${iccProfile} profile)...`);
+    // Validate blob types before conversion
+    const validBlobs = pdfBlobs.filter(b => b instanceof Blob);
+    if (validBlobs.length !== pdfBlobs.length) {
+      console.warn(`⚠️ Some exports were not Blobs: ${pdfBlobs.length - validBlobs.length} invalid`);
+    }
+    
+    console.log(`🎨 Starting CMYK conversion:`, {
+      blobCount: validBlobs.length,
+      blobSizes: validBlobs.map(b => `${(b.size / 1024).toFixed(1)}KB`),
+      profile: iccProfile,
+      flattenTransparency: false,
+    });
     
     onProgress({
       phase: 'converting',
       current: 0,
-      total: pdfBlobs.length,
+      total: validBlobs.length,
       message: `Converting to CMYK (${iccProfile === 'gracol' ? 'GRACoL 2013' : 'FOGRA39'})...`,
     });
     
@@ -311,7 +322,7 @@ async function exportLabelPdfs(
     
     try {
       // Use batch conversion for efficiency (processes sequentially internally)
-      const cmykBlobs = await convertToPDFX3(pdfBlobs, {
+      const cmykBlobs = await convertToPDFX3(validBlobs, {
         outputProfile: iccProfile,
         title: `Print-Ready ${docType}`,
         flattenTransparency: false, // Preserve visual fidelity, may not be strictly X-3 compliant
@@ -322,8 +333,8 @@ async function exportLabelPdfs(
       
       onProgress({
         phase: 'converting',
-        current: pdfBlobs.length,
-        total: pdfBlobs.length,
+        current: validBlobs.length,
+        total: validBlobs.length,
         message: 'CMYK conversion complete',
       });
       
@@ -334,7 +345,19 @@ async function exportLabelPdfs(
       }
       return pdfBuffers;
     } catch (cmykError) {
-      console.error('⚠️ CMYK conversion failed, falling back to RGB:', cmykError);
+      console.error('⚠️ CMYK conversion failed:', cmykError);
+      
+      // NOTIFY USER of fallback - don't silently fail
+      onProgress({
+        phase: 'converting',
+        current: validBlobs.length,
+        total: validBlobs.length,
+        message: '⚠️ CMYK conversion failed - using RGB instead',
+      });
+      
+      // Add small delay so user sees the warning
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
       // Fall through to return RGB buffers
     }
   }

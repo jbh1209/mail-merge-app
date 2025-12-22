@@ -65,6 +65,7 @@ export function CesdkPdfGenerator({
     pageCount: number;
   } | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [cmykStatus, setCmykStatus] = useState<'pending' | 'success' | 'failed'>('pending');
   const { toast } = useToast();
 
   const handleGenerate = async () => {
@@ -97,7 +98,15 @@ export function CesdkPdfGenerator({
           printSettings, // Pass print settings for bleed + crop marks
         },
         mergeJobId,
-        setProgress
+        (progressUpdate) => {
+          setProgress(progressUpdate);
+          // Track CMYK conversion status
+          if (progressUpdate.message?.includes('CMYK conversion failed')) {
+            setCmykStatus('failed');
+          } else if (progressUpdate.message === 'CMYK conversion complete') {
+            setCmykStatus('success');
+          }
+        }
       );
 
       if (result.success && result.outputUrl) {
@@ -229,6 +238,15 @@ export function CesdkPdfGenerator({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {cmykStatus === 'failed' && (
+            <Alert variant="destructive" className="mb-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                CMYK conversion failed – PDF was exported in RGB instead. 
+                This may not be suitable for professional printing.
+              </AlertDescription>
+            </Alert>
+          )}
           <Button
             onClick={handleDownload}
             disabled={downloading}

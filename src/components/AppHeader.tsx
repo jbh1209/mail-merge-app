@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogOut, Settings, User } from "lucide-react";
+import Logo from "@/assets/logo.svg";
 
 interface AppHeaderProps {
   isAuthenticated?: boolean;
@@ -37,9 +38,7 @@ export function AppHeader({
             onClick={() => navigate(isAuthenticated ? "/dashboard" : "/")}
             className="flex items-center"
           >
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Mail Merge
-            </h1>
+            <img src={Logo} alt="Mail Merge" className="h-8" />
           </button>
           
           {!isAuthenticated && (

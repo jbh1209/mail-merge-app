@@ -60,14 +60,26 @@ export default function TemplateEditor() {
   const templateRegion = labelTemplate?.region as TemplateRegion;
   const { isUS, formatDimensions } = useRegionPreference(templateRegion);
   
+  // Track if user has explicitly changed print settings
+  const userChangedSettingsRef = useRef(false);
+  
   // Print settings state (for non-label projects)
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() => 
     getDefaultPrintSettings(isUS)
   );
   
-  // Update print settings when region changes OR template loads
-  // Template's saved bleed value takes precedence over defaults
+  // Wrap setPrintSettings to track user changes
+  const handlePrintSettingsChange = useCallback((newSettings: PrintSettings) => {
+    userChangedSettingsRef.current = true;
+    setPrintSettings(newSettings);
+  }, []);
+  
+  // Initialize print settings from template on first load ONLY
+  // Don't reset if user has already changed settings
   useEffect(() => {
+    // Skip if user already changed settings
+    if (userChangedSettingsRef.current) return;
+    
     const baseSettings = getDefaultPrintSettings(isUS);
     
     // If template has bleed enabled, preserve that setting
@@ -547,7 +559,7 @@ export default function TemplateEditor() {
           {!isLabelProject && (
             <PrintSettingsPanel
               settings={printSettings}
-              onChange={setPrintSettings}
+              onChange={handlePrintSettingsChange}
               compact
             />
           )}
@@ -656,7 +668,7 @@ export default function TemplateEditor() {
               {project?.project_type !== 'label' && (
                 <PrintSettingsPanel
                   settings={printSettings}
-                  onChange={setPrintSettings}
+                  onChange={handlePrintSettingsChange}
                 />
               )}
               

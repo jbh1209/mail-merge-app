@@ -344,15 +344,37 @@ async function exportLabelPdfs(
         pdfBuffers.push(await blob.arrayBuffer());
       }
       return pdfBuffers;
-    } catch (cmykError) {
-      console.error('⚠️ CMYK conversion failed:', cmykError);
+    } catch (cmykError: any) {
+      // Enhanced error diagnostics
+      const errorName = cmykError?.name || 'UnknownError';
+      const errorMessage = cmykError?.message || String(cmykError);
+      const errorStack = cmykError?.stack || '';
+      
+      console.error('⚠️ CMYK conversion failed:', {
+        name: errorName,
+        message: errorMessage,
+        stack: errorStack,
+      });
+      
+      // Detect common failure modes for targeted messaging
+      let userMessage = '⚠️ CMYK conversion failed - using RGB instead';
+      
+      if (errorMessage.includes('SharedArrayBuffer') || errorMessage.includes('cross-origin')) {
+        userMessage = '⚠️ CMYK unavailable (browser security) - using RGB';
+        console.warn('💡 CMYK requires Cross-Origin-Isolation headers (COOP/COEP)');
+      } else if (errorMessage.includes('wasm') || errorMessage.includes('WebAssembly')) {
+        userMessage = '⚠️ CMYK worker failed to load - using RGB';
+        console.warn('💡 Check if WASM worker is properly bundled');
+      } else if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
+        userMessage = '⚠️ CMYK resources failed to load - using RGB';
+      }
       
       // NOTIFY USER of fallback - don't silently fail
       onProgress({
         phase: 'converting',
         current: validBlobs.length,
         total: validBlobs.length,
-        message: '⚠️ CMYK conversion failed - using RGB instead',
+        message: userMessage,
       });
       
       // Add small delay so user sees the warning

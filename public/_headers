@@ -1,0 +1,5 @@
+# Cross-Origin Isolation headers for WASM workers (CMYK PDF conversion)
+# Required for SharedArrayBuffer support used by @imgly/plugin-print-ready-pdfs-web
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp

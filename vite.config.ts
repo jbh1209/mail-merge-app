@@ -8,11 +8,20 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // Cross-Origin Isolation headers for WASM workers (CMYK conversion)
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  // Optimize WASM handling for the CMYK conversion plugin
+  optimizeDeps: {
+    exclude: ['@imgly/plugin-print-ready-pdfs-web'],
   },
 }));

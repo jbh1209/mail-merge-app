@@ -100,10 +100,11 @@ export function CesdkPdfGenerator({
         mergeJobId,
         (progressUpdate) => {
           setProgress(progressUpdate);
-          // Track CMYK conversion status
-          if (progressUpdate.message?.includes('CMYK conversion failed')) {
+          // Track CMYK conversion status - detect any warning or failure message
+          const msg = progressUpdate.message?.toLowerCase() || '';
+          if (msg.includes('⚠️') || msg.includes('using rgb') || msg.includes('cmyk conversion failed') || msg.includes('cmyk unavailable')) {
             setCmykStatus('failed');
-          } else if (progressUpdate.message === 'CMYK conversion complete') {
+          } else if (msg === 'cmyk conversion complete') {
             setCmykStatus('success');
           }
         }

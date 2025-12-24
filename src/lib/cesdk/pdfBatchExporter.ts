@@ -1,7 +1,7 @@
 import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { resolveVariables, VariableData } from './variableResolver';
 import { supabase } from '@/integrations/supabase/client';
-import { PrintSettings, getIccProfileForRegion } from '@/types/print-settings';
+import { PrintSettings } from '@/types/print-settings';
 import { convertToPDFX3 } from '@imgly/plugin-print-ready-pdfs-web';
 
 export interface BatchExportProgress {
@@ -429,8 +429,67 @@ async function composeFromStorage(
 }
 
 /**
+ * Load ICC profile from local public folder
+ * This ensures reliable access to the ICC files without dependency on bundled assets
+ */
+async function loadIccProfile(region: 'US' | 'EU'): Promise<{ blob: Blob; identifier: string; condition: string }> {
+  const profilePath = region === 'US' 
+    ? '/icc/GRACoL2013_CRPC6.icc' 
+    : '/icc/ISOcoated_v2_eci.icc';
+  
+  const identifier = region === 'US' 
+    ? 'GRACoL2013_CRPC6' 
+    : 'ISOcoated_v2_eci';
+  
+  const condition = region === 'US'
+    ? 'GRACoL 2013 (CRPC6) coated #1, 100 lpi, GCR High, 300% TAC'
+    : 'ISO Coated v2 (ECI) - FOGRA39';
+
+  console.log(`📥 Loading ICC profile from: ${profilePath}`);
+  
+  const response = await fetch(profilePath);
+  if (!response.ok) {
+    throw new Error(`Failed to load ICC profile from ${profilePath}: ${response.status}`);
+  }
+  
+  const blob = await response.blob();
+  console.log(`✅ Loaded ICC profile: ${identifier} (${(blob.size / 1024).toFixed(1)}KB)`);
+  
+  return { blob, identifier, condition };
+}
+
+/**
+ * Verify that PDF output contains CMYK markers
+ */
+function verifyPdfXOutput(buffer: ArrayBuffer): { isValid: boolean; markers: string[] } {
+  const bytes = new Uint8Array(buffer);
+  const text = new TextDecoder('latin1').decode(bytes.slice(0, Math.min(bytes.length, 50000)));
+  
+  const markers: string[] = [];
+  
+  if (text.includes('/OutputIntents')) {
+    markers.push('/OutputIntents');
+  }
+  if (text.includes('/GTS_PDFX')) {
+    markers.push('/GTS_PDFX');
+  }
+  if (text.includes('/DeviceCMYK') || text.includes('/ICCBased')) {
+    markers.push('CMYK colorspace');
+  }
+  if (text.includes('PDF/X-3')) {
+    markers.push('PDF/X-3');
+  }
+  
+  const isValid = markers.includes('/OutputIntents') && 
+                  (markers.includes('/GTS_PDFX') || markers.includes('CMYK colorspace'));
+  
+  return { isValid, markers };
+}
+
+/**
  * Convert final composed PDF to CMYK PDF/X-3
  * This is the ONLY place CMYK conversion happens - on the final output
+ * Uses custom ICC profile loading from public folder for reliability
  */
 async function convertFinalPdfToCmyk(
   outputUrl: string,
@@ -439,14 +498,15 @@ async function convertFinalPdfToCmyk(
   printSettings: PrintSettings,
   onProgress: (progress: BatchExportProgress) => void
 ): Promise<{ outputUrl: string }> {
-  const iccProfile = getIccProfileForRegion(printSettings.region);
-  
   console.log(`🎨 Starting CMYK conversion on final PDF:`, {
     outputUrl,
-    profile: iccProfile,
+    region: printSettings.region,
   });
   
-  // Step 1: Get signed URL to download the composed PDF
+  // Step 1: Load the ICC profile from our public folder
+  const { blob: iccBlob, identifier, condition } = await loadIccProfile(printSettings.region);
+  
+  // Step 2: Get signed URL to download the composed PDF
   const { data: downloadData, error: downloadError } = await supabase.functions.invoke('get-download-url', {
     body: { mergeJobId },
   });
@@ -455,7 +515,7 @@ async function convertFinalPdfToCmyk(
     throw new Error('Failed to get download URL for CMYK conversion');
   }
   
-  // Step 2: Download the composed PDF
+  // Step 3: Download the composed PDF
   const pdfResponse = await fetch(downloadData.signedUrl);
   if (!pdfResponse.ok) {
     throw new Error(`Failed to download PDF: ${pdfResponse.status}`);
@@ -463,11 +523,14 @@ async function convertFinalPdfToCmyk(
   const pdfBlob = await pdfResponse.blob();
   console.log(`📥 Downloaded composed PDF: ${(pdfBlob.size / 1024 / 1024).toFixed(2)}MB`);
   
-  // Step 3: Convert to CMYK using the imgly plugin
+  // Step 4: Convert to CMYK using custom ICC profile
   const conversionStartTime = Date.now();
   
   const cmykBlobs = await convertToPDFX3([pdfBlob], {
-    outputProfile: iccProfile,
+    outputProfile: 'custom',
+    customProfile: iccBlob,
+    outputConditionIdentifier: identifier,
+    outputCondition: condition,
     title: 'Print-Ready Document',
     flattenTransparency: false,
   });
@@ -480,9 +543,18 @@ async function convertFinalPdfToCmyk(
   const conversionTime = ((Date.now() - conversionStartTime) / 1000).toFixed(1);
   console.log(`✅ CMYK conversion complete in ${conversionTime}s, size: ${(cmykBlob.size / 1024 / 1024).toFixed(2)}MB`);
   
-  // Step 4: Upload the CMYK PDF back to storage (overwrite the RGB version)
-  const storagePath = `${workspaceId}/outputs/${mergeJobId}.pdf`;
+  // Step 5: Verify the output is actually CMYK PDF/X-3
   const cmykBuffer = await cmykBlob.arrayBuffer();
+  const verification = verifyPdfXOutput(cmykBuffer);
+  
+  if (verification.isValid) {
+    console.log(`✅ PDF/X-3 verification passed: ${verification.markers.join(', ')}`);
+  } else {
+    console.warn(`⚠️ PDF/X-3 verification: found ${verification.markers.join(', ') || 'no markers'}`);
+  }
+  
+  // Step 6: Upload the CMYK PDF back to storage (overwrite the RGB version)
+  const storagePath = `${workspaceId}/outputs/${mergeJobId}.pdf`;
   
   const { error: uploadError } = await supabase.storage
     .from('generated-pdfs')
@@ -497,7 +569,7 @@ async function convertFinalPdfToCmyk(
   
   console.log(`📤 Uploaded CMYK PDF to: ${storagePath}`);
   
-  // Step 5: Update merge job with new output URL
+  // Step 7: Update merge job with new output URL
   const { error: updateError } = await supabase
     .from('merge_jobs')
     .update({ output_url: storagePath })

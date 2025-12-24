@@ -358,14 +358,22 @@ async function exportLabelPdfs(
       
       // Detect common failure modes for targeted messaging
       let userMessage = '⚠️ CMYK conversion failed - using RGB instead';
+      const lowerMessage = errorMessage.toLowerCase();
+      const lowerStack = errorStack.toLowerCase();
       
-      if (errorMessage.includes('SharedArrayBuffer') || errorMessage.includes('cross-origin')) {
+      if (lowerMessage.includes('sharedarraybuffer') || lowerMessage.includes('cross-origin')) {
         userMessage = '⚠️ CMYK unavailable (browser security) - using RGB';
         console.warn('💡 CMYK requires Cross-Origin-Isolation headers (COOP/COEP)');
-      } else if (errorMessage.includes('wasm') || errorMessage.includes('WebAssembly')) {
+      } else if (lowerMessage.includes('.icc') || lowerStack.includes('.icc') || lowerMessage.includes('icc profile')) {
+        userMessage = '⚠️ CMYK ICC profile failed to load - using RGB';
+        console.warn('💡 ICC profile file not found or failed to load. Check assetsInclude config.');
+      } else if (lowerMessage.includes('404') || lowerMessage.includes('not found')) {
+        userMessage = '⚠️ CMYK resource missing (404) - using RGB';
+        console.warn('💡 A required resource returned 404. Check network tab for details.');
+      } else if (lowerMessage.includes('wasm') || lowerMessage.includes('webassembly')) {
         userMessage = '⚠️ CMYK worker failed to load - using RGB';
         console.warn('💡 Check if WASM worker is properly bundled');
-      } else if (errorMessage.includes('fetch') || errorMessage.includes('network')) {
+      } else if (lowerMessage.includes('fetch') || lowerMessage.includes('network') || lowerMessage.includes('failed to load')) {
         userMessage = '⚠️ CMYK resources failed to load - using RGB';
       }
       

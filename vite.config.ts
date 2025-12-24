@@ -20,6 +20,8 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // Ensure ICC profile files are treated as assets
+  assetsInclude: ['**/*.icc'],
   // Optimize WASM handling for the CMYK conversion plugin
   optimizeDeps: {
     exclude: ['@imgly/plugin-print-ready-pdfs-web'],

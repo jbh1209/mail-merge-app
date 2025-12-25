@@ -428,14 +428,16 @@ async function composeFromStorage(
   };
 }
 
+// CDN URL for plugin assets (gs.wasm is too large to bundle locally)
+const PRINT_PLUGIN_CDN_BASE = 'https://unpkg.com/@imgly/plugin-print-ready-pdfs-web@1.1.1/dist';
+
 /**
- * Load ICC profile from local public folder
- * This ensures reliable access to the ICC files without dependency on bundled assets
+ * Load ICC profile - try local /assets first (for reliability), fallback to CDN
  */
 async function loadIccProfile(region: 'US' | 'EU'): Promise<{ blob: Blob; identifier: string; condition: string }> {
-  const profilePath = region === 'US' 
-    ? '/icc/GRACoL2013_CRPC6.icc' 
-    : '/icc/ISOcoated_v2_eci.icc';
+  const profileName = region === 'US' 
+    ? 'GRACoL2013_CRPC6.icc' 
+    : 'ISOcoated_v2_eci.icc';
   
   const identifier = region === 'US' 
     ? 'GRACoL2013_CRPC6' 
@@ -445,17 +447,28 @@ async function loadIccProfile(region: 'US' | 'EU'): Promise<{ blob: Blob; identi
     ? 'GRACoL 2013 (CRPC6) coated #1, 100 lpi, GCR High, 300% TAC'
     : 'ISO Coated v2 (ECI) - FOGRA39';
 
-  console.log(`📥 Loading ICC profile from: ${profilePath}`);
-  
-  const response = await fetch(profilePath);
-  if (!response.ok) {
-    throw new Error(`Failed to load ICC profile from ${profilePath}: ${response.status}`);
+  // Try local path first, then CDN fallback
+  const paths = [
+    `/assets/${profileName}`,     // Local (from public/assets)
+    `/icc/${profileName}`,        // Alternative local path
+    `${PRINT_PLUGIN_CDN_BASE}/${profileName}`, // CDN fallback
+  ];
+
+  for (const profilePath of paths) {
+    try {
+      console.log(`📥 Trying ICC profile from: ${profilePath}`);
+      const response = await fetch(profilePath);
+      if (response.ok) {
+        const blob = await response.blob();
+        console.log(`✅ Loaded ICC profile: ${identifier} (${(blob.size / 1024).toFixed(1)}KB) from ${profilePath}`);
+        return { blob, identifier, condition };
+      }
+    } catch (e) {
+      console.warn(`❌ Failed to load from ${profilePath}:`, e);
+    }
   }
-  
-  const blob = await response.blob();
-  console.log(`✅ Loaded ICC profile: ${identifier} (${(blob.size / 1024).toFixed(1)}KB)`);
-  
-  return { blob, identifier, condition };
+
+  throw new Error(`Failed to load ICC profile ${profileName} from any source`);
 }
 
 /**
@@ -501,10 +514,12 @@ async function convertFinalPdfToCmyk(
   console.log(`🎨 Starting CMYK conversion on final PDF:`, {
     outputUrl,
     region: printSettings.region,
+    cdnBase: PRINT_PLUGIN_CDN_BASE,
   });
   
-  // Step 1: Load the ICC profile from our public folder
+  // Step 1: Load the ICC profile (tries local first, then CDN)
   const { blob: iccBlob, identifier, condition } = await loadIccProfile(printSettings.region);
+  console.log(`🎨 Using ICC profile: ${identifier} (${(iccBlob.size / 1024).toFixed(1)}KB)`);
   
   // Step 2: Get signed URL to download the composed PDF
   const { data: downloadData, error: downloadError } = await supabase.functions.invoke('get-download-url', {
@@ -524,7 +539,15 @@ async function convertFinalPdfToCmyk(
   console.log(`📥 Downloaded composed PDF: ${(pdfBlob.size / 1024 / 1024).toFixed(2)}MB`);
   
   // Step 4: Convert to CMYK using custom ICC profile
+  // CRITICAL: Use baseUrl to tell the plugin where to find gs.wasm (too large to bundle locally)
   const conversionStartTime = Date.now();
+  console.log(`🎨 Starting PDF/X-3 conversion with settings:`, {
+    outputProfile: 'custom',
+    customProfileSize: `${(iccBlob.size / 1024).toFixed(1)}KB`,
+    outputConditionIdentifier: identifier,
+    outputCondition: condition,
+    baseUrl: PRINT_PLUGIN_CDN_BASE,
+  });
   
   const cmykBlobs = await convertToPDFX3([pdfBlob], {
     outputProfile: 'custom',
@@ -533,6 +556,7 @@ async function convertFinalPdfToCmyk(
     outputCondition: condition,
     title: 'Print-Ready Document',
     flattenTransparency: false,
+    baseUrl: PRINT_PLUGIN_CDN_BASE, // Tell plugin where to find gs.wasm
   });
   
   if (!cmykBlobs || cmykBlobs.length === 0) {
@@ -548,9 +572,10 @@ async function convertFinalPdfToCmyk(
   const verification = verifyPdfXOutput(cmykBuffer);
   
   if (verification.isValid) {
-    console.log(`✅ PDF/X-3 verification passed: ${verification.markers.join(', ')}`);
+    console.log(`✅ PDF/X-3 verification PASSED:`, verification.markers);
   } else {
-    console.warn(`⚠️ PDF/X-3 verification: found ${verification.markers.join(', ') || 'no markers'}`);
+    console.warn(`⚠️ PDF/X-3 verification INCOMPLETE - found:`, verification.markers.length > 0 ? verification.markers : 'no markers');
+    // Don't throw - the conversion may still be usable, just log the warning
   }
   
   // Step 6: Upload the CMYK PDF back to storage (overwrite the RGB version)

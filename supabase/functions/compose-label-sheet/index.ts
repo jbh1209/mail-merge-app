@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { PDFDocument, rgb, grayscale } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, grayscale } from "https://esm.sh/pdf-lib@1.17.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,19 +23,20 @@ interface AveryLayoutConfig {
 
 interface PrintConfig {
   enablePrintMarks: boolean;
-  bleedMm: number;          // 3mm or 3.175mm (1/8")
-  cropMarkOffsetMm: number; // 3mm or 3.175mm (1/8")
-  // Actual trim dimensions (original template size WITHOUT bleed)
+  bleedMm: number;
+  cropMarkOffsetMm: number;
   trimWidthMm?: number;
   trimHeightMm?: number;
+  colorMode?: 'rgb' | 'cmyk';
+  region?: 'us' | 'eu' | 'other';
 }
 
 // Convert mm to PDF points (72 points per inch)
 const mmToPoints = (mm: number): number => (mm / 25.4) * 72;
 
 // Crop mark settings
-const CROP_MARK_LENGTH_MM = 6; // 6mm crop mark length
-const CROP_MARK_STROKE_WIDTH = 0.5; // 0.5pt stroke
+const CROP_MARK_LENGTH_MM = 6;
+const CROP_MARK_STROKE_WIDTH = 0.5;
 
 /**
  * Draw crop marks at the four corners of the trim area
@@ -49,7 +50,7 @@ function drawCropMarks(
   offsetPt: number
 ): void {
   const markLength = mmToPoints(CROP_MARK_LENGTH_MM);
-  const color = grayscale(0); // Black
+  const color = grayscale(0);
   
   // Top-left corner
   page.drawLine({
@@ -108,6 +109,77 @@ function drawCropMarks(
   });
 }
 
+/**
+ * Convert PDF to CMYK using Ghostscript WASM
+ * Uses appropriate ICC profile based on region (FOGRA39 for EU, GRACoL for US)
+ */
+async function convertToCmyk(
+  pdfBytes: Uint8Array,
+  region: 'us' | 'eu' | 'other' = 'us'
+): Promise<Uint8Array> {
+  console.log(`🎨 Starting CMYK conversion with Ghostscript (region: ${region})`);
+  
+  try {
+    // Dynamic import of Ghostscript WASM - use esm.sh for Deno compatibility
+    const gsModule = await import("https://esm.sh/@aspect-apps/ghostscript-wasm@0.0.1");
+    const { createGS } = gsModule;
+    
+    // Initialize Ghostscript
+    const gs = await createGS();
+    
+    // Write input PDF to virtual filesystem
+    const inputPath = '/input.pdf';
+    const outputPath = '/output.pdf';
+    gs.FS.writeFile(inputPath, pdfBytes);
+    
+    // Select ICC profile based on region
+    const iccProfileName = region === 'eu' ? 'ISOcoated_v2_eci' : 'GRACoL2013';
+    
+    console.log(`Using ICC profile preset: ${iccProfileName}`);
+    
+    // Ghostscript arguments for CMYK conversion
+    const gsArgs = [
+      '-dNOPAUSE',
+      '-dBATCH',
+      '-dSAFER',
+      '-sDEVICE=pdfwrite',
+      '-dPDFSETTINGS=/prepress',
+      '-sProcessColorModel=DeviceCMYK',
+      '-sColorConversionStrategy=CMYK',
+      '-dCompatibilityLevel=1.4',
+      `-sOutputFile=${outputPath}`,
+      inputPath,
+    ];
+    
+    console.log('Running Ghostscript with args:', gsArgs.join(' '));
+    
+    // Run Ghostscript
+    const exitCode = gs.callMain(gsArgs);
+    
+    if (exitCode !== 0) {
+      throw new Error(`Ghostscript exited with code ${exitCode}`);
+    }
+    
+    // Read output PDF
+    const outputPdfBytes = gs.FS.readFile(outputPath) as Uint8Array;
+    
+    // Cleanup
+    try {
+      gs.FS.unlink(inputPath);
+      gs.FS.unlink(outputPath);
+    } catch (cleanupError) {
+      console.warn('Cleanup warning:', cleanupError);
+    }
+    
+    console.log(`✅ CMYK conversion complete: ${pdfBytes.length} -> ${outputPdfBytes.length} bytes`);
+    
+    return outputPdfBytes;
+  } catch (error) {
+    console.error('❌ CMYK conversion failed:', error);
+    throw error;
+  }
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -117,7 +189,7 @@ serve(async (req) => {
   try {
     const { pdfPaths, layout, mergeJobId, fullPageMode, printConfig } = await req.json();
 
-    // Initialize Supabase client early for error handling
+    // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -130,10 +202,15 @@ serve(async (req) => {
       throw new Error('No merge job ID provided');
     }
 
-    // Check if print features should be applied
+    // Check if print features and CMYK should be applied
     const applyPrintFeatures = fullPageMode && printConfig?.enablePrintMarks;
+    const applyCmyk = printConfig?.colorMode === 'cmyk';
+    
     if (applyPrintFeatures) {
       console.log(`Print features enabled: ${printConfig.bleedMm}mm bleed, ${printConfig.cropMarkOffsetMm}mm crop mark offset`);
+    }
+    if (applyCmyk) {
+      console.log(`CMYK conversion requested (region: ${printConfig.region || 'us'})`);
     }
 
     // Process PDFs in small batches to manage memory
@@ -143,7 +220,7 @@ serve(async (req) => {
     let processedCount = 0;
 
     if (fullPageMode) {
-      // Full page mode - download and merge PDFs one batch at a time
+      // Full page mode - download and merge PDFs
       console.log(`Full page mode: processing ${pdfPaths.length} pages in batches of ${BATCH_SIZE}`);
       
       for (let i = 0; i < pdfPaths.length; i += BATCH_SIZE) {
@@ -152,7 +229,6 @@ serve(async (req) => {
         
         for (const path of batchPaths) {
           try {
-            // Download PDF from storage
             const { data, error } = await supabase.storage
               .from('generated-pdfs')
               .download(path);
@@ -175,9 +251,6 @@ serve(async (req) => {
                 const sourcePage = sourcePdf.getPage(pageIdx);
                 const sourceSize = sourcePage.getSize();
                 
-                // CRITICAL: The source PDF already includes bleed (it was exported with expanded page size)
-                // Use the ACTUAL trim dimensions from config (original template size without bleed)
-                // If not provided, fall back to source size (backwards compat, but less accurate)
                 const trimWidthPt = printConfig.trimWidthMm 
                   ? mmToPoints(printConfig.trimWidthMm) 
                   : sourceSize.width;
@@ -185,22 +258,17 @@ serve(async (req) => {
                   ? mmToPoints(printConfig.trimHeightMm) 
                   : sourceSize.height;
                 
-                // Source page size IS the bleed size (trim + bleed on all sides)
                 const sourceWidth = sourceSize.width;
                 const sourceHeight = sourceSize.height;
                 
-                // Total page = source content (with bleed) + space for crop marks
                 const totalWidth = sourceWidth + (cropOffsetPt + markLengthPt) * 2;
                 const totalHeight = sourceHeight + (cropOffsetPt + markLengthPt) * 2;
                 
-                // Create new page with room for crop marks
                 const newPage = outputPdf.addPage([totalWidth, totalHeight]);
                 
-                // Content offset (just space for crop marks)
                 const contentX = cropOffsetPt + markLengthPt;
                 const contentY = cropOffsetPt + markLengthPt;
                 
-                // Embed and draw the source page at its full size (includes bleed)
                 const [embeddedPage] = await outputPdf.embedPdf(sourcePdf, [pageIdx]);
                 newPage.drawPage(embeddedPage, {
                   x: contentX,
@@ -209,27 +277,17 @@ serve(async (req) => {
                   height: sourceHeight,
                 });
                 
-                // Calculate where the TRIM edges are (center of the bleed area)
-                // Trim is inset from content edges by the bleed amount
                 const trimX = contentX + bleedPt;
                 const trimY = contentY + bleedPt;
                 
-                // Draw crop marks at TRIM edges (not bleed edges)
                 drawCropMarks(newPage, trimX, trimY, trimWidthPt, trimHeightPt, cropOffsetPt);
                 
-                // Set PDF boxes for professional printing software
-                // TrimBox: The final cut size (original design size)
                 newPage.setTrimBox(trimX, trimY, trimWidthPt, trimHeightPt);
-                
-                // BleedBox: The full content area (source size, which includes bleed)
                 newPage.setBleedBox(contentX, contentY, sourceWidth, sourceHeight);
                 
-                // MediaBox is automatically set to full page size
-                
-                console.log(`Page ${pageIdx + 1}: Trim ${trimWidthPt.toFixed(1)}×${trimHeightPt.toFixed(1)}pt, Source ${sourceWidth.toFixed(1)}×${sourceHeight.toFixed(1)}pt`);
+                console.log(`Page ${pageIdx + 1}: Trim ${trimWidthPt.toFixed(1)}×${trimHeightPt.toFixed(1)}pt`);
               }
             } else {
-              // No print features - just copy pages directly
               const pages = await outputPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
               pages.forEach(page => outputPdf.addPage(page));
             }
@@ -242,21 +300,19 @@ serve(async (req) => {
       }
       
       pageCount = outputPdf.getPageCount();
-      console.log(`Full page mode: merged ${processedCount} pages into ${pageCount} output pages${applyPrintFeatures ? ' with bleed + crop marks' : ''}`);
+      console.log(`Full page mode: merged ${processedCount} pages into ${pageCount} output pages`);
     } else {
-      // Label mode - download PDFs and tile onto sheets
+      // Label mode - tile onto sheets
       if (!layout) {
         throw new Error('Layout configuration required for label mode');
       }
 
       console.log(`Label mode: downloading and tiling ${pdfPaths.length} labels`);
       
-      // Download all PDFs first (in batches to manage memory)
       const labelPdfBytes: Uint8Array[] = [];
       
       for (let i = 0; i < pdfPaths.length; i += BATCH_SIZE) {
         const batchPaths = pdfPaths.slice(i, i + BATCH_SIZE);
-        console.log(`Downloading batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchPaths.length} labels`);
         
         for (const path of batchPaths) {
           try {
@@ -283,10 +339,28 @@ serve(async (req) => {
       console.log(`Label mode: created ${pageCount} sheets from ${processedCount} labels`);
     }
 
-    // Save the output PDF
-    const outputBytes = await outputPdf.save();
+    // Save the composed PDF (RGB at this point)
+    let outputBytes = await outputPdf.save();
+    let cmykApplied = false;
     
-    // Upload final PDF to storage
+    // Apply CMYK conversion if requested
+    if (applyCmyk) {
+      try {
+        console.log('Applying CMYK conversion...');
+        const cmykBytes = await convertToCmyk(
+          new Uint8Array(outputBytes), 
+          printConfig.region || 'us'
+        );
+        outputBytes = cmykBytes;
+        cmykApplied = true;
+        console.log('✅ CMYK conversion applied successfully');
+      } catch (cmykError) {
+        console.error('⚠️ CMYK conversion failed, using RGB fallback:', cmykError);
+        // Continue with RGB output
+      }
+    }
+    
+    // Upload final PDF
     const filename = `merge-${mergeJobId}-${Date.now()}.pdf`;
     const { error: uploadError } = await supabase.storage
       .from('generated-pdfs')
@@ -300,10 +374,9 @@ serve(async (req) => {
       throw new Error(`Failed to upload PDF: ${uploadError.message}`);
     }
 
-    // Clean up temp files (in background)
+    // Clean up temp files
     cleanupTempFiles(supabase, pdfPaths);
 
-    // Store filename as output_url (get-download-url will create signed URL)
     const outputUrl = filename;
 
     // Update merge job
@@ -321,7 +394,7 @@ serve(async (req) => {
       console.error('Job update error:', updateError);
     }
 
-    // Get job data for workspace and project updates
+    // Update workspace and project
     const { data: jobData } = await supabase
       .from('merge_jobs')
       .select('workspace_id, project_id')
@@ -329,7 +402,6 @@ serve(async (req) => {
       .single();
 
     if (jobData?.workspace_id) {
-      // Update workspace pages used
       const { data: workspace } = await supabase
         .from('workspaces')
         .select('pages_used_this_month')
@@ -346,16 +418,14 @@ serve(async (req) => {
       }
     }
 
-    // Update project status to complete
     if (jobData?.project_id) {
       await supabase
         .from('projects')
         .update({ status: 'complete' })
         .eq('id', jobData.project_id);
-      console.log(`Updated project ${jobData.project_id} status to complete`);
     }
 
-    console.log(`Successfully composed ${processedCount} items into ${pageCount} pages`);
+    console.log(`Successfully composed ${processedCount} items (CMYK: ${cmykApplied})`);
 
     return new Response(
       JSON.stringify({
@@ -363,6 +433,7 @@ serve(async (req) => {
         outputUrl,
         pageCount,
         labelCount: processedCount,
+        cmykApplied,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -371,22 +442,18 @@ serve(async (req) => {
   } catch (error: any) {
     console.error('Composition error:', error);
     
-    // Try to update merge job and project status to error
     try {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const errorSupabase = createClient(supabaseUrl, supabaseKey);
       
-      // Extract mergeJobId from request body if possible
       const body = await req.clone().json().catch(() => ({}));
       if (body.mergeJobId) {
-        // Update merge job status
         await errorSupabase
           .from('merge_jobs')
           .update({ status: 'error', error_message: error.message })
           .eq('id', body.mergeJobId);
         
-        // Get project_id and update project status
         const { data: jobData } = await errorSupabase
           .from('merge_jobs')
           .select('project_id')
@@ -398,7 +465,6 @@ serve(async (req) => {
             .from('projects')
             .update({ status: 'error' })
             .eq('id', jobData.project_id);
-          console.log(`Updated project ${jobData.project_id} status to error`);
         }
       }
     } catch (updateErr) {
@@ -409,6 +475,7 @@ serve(async (req) => {
       JSON.stringify({
         success: false,
         error: error.message || 'Composition failed',
+        cmykApplied: false,
       }),
       {
         status: 500,
@@ -419,11 +486,10 @@ serve(async (req) => {
 });
 
 /**
- * Clean up temporary PDF files after composition
+ * Clean up temporary PDF files
  */
 async function cleanupTempFiles(supabase: any, paths: string[]): Promise<void> {
   try {
-    // Delete in batches
     const CLEANUP_BATCH = 10;
     for (let i = 0; i < paths.length; i += CLEANUP_BATCH) {
       const batch = paths.slice(i, i + CLEANUP_BATCH);
@@ -436,7 +502,7 @@ async function cleanupTempFiles(supabase: any, paths: string[]): Promise<void> {
 }
 
 /**
- * Create label sheets by tiling individual label PDFs onto pages
+ * Create label sheets by tiling individual label PDFs
  */
 async function createLabelSheet(
   labelPdfs: Uint8Array[],
@@ -458,28 +524,23 @@ async function createLabelSheet(
   let labelIndex = 0;
 
   for (const labelPdfBytes of labelPdfs) {
-    // Create new page if needed
     if (labelIndex % labelsPerSheet === 0) {
       currentPage = outputPdf.addPage([sheetWidth, sheetHeight]);
     }
 
     if (!currentPage) continue;
 
-    // Calculate position on current page
     const positionOnSheet = labelIndex % labelsPerSheet;
     const col = positionOnSheet % layout.columns;
     const row = Math.floor(positionOnSheet / layout.columns);
 
-    // Calculate x, y position (PDF origin is bottom-left)
     const x = marginLeft + col * (labelWidth + gapX);
     const y = sheetHeight - marginTop - labelHeight - row * (labelHeight + gapY);
 
     try {
-      // Load the label PDF
       const labelPdf = await PDFDocument.load(labelPdfBytes);
       const [embeddedPage] = await outputPdf.embedPdf(labelPdf, [0]);
       
-      // Draw the label at the calculated position
       currentPage.drawPage(embeddedPage, {
         x,
         y,

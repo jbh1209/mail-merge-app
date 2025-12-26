@@ -110,70 +110,80 @@ function drawCropMarks(
 }
 
 /**
- * Convert PDF to CMYK using Ghostscript WASM
+ * Convert PDF to CMYK using pdfRest API
  * Uses appropriate ICC profile based on region (FOGRA39 for EU, GRACoL for US)
+ * Fallback approach since Ghostscript WASM has issues in Deno edge functions
  */
 async function convertToCmyk(
   pdfBytes: Uint8Array,
   region: 'us' | 'eu' | 'other' = 'us'
 ): Promise<Uint8Array> {
-  console.log(`🎨 Starting CMYK conversion with Ghostscript (region: ${region})`);
+  console.log(`🎨 Starting CMYK conversion with pdfRest API (region: ${region})`);
+  
+  const pdfRestApiKey = Deno.env.get('PDFREST_API_KEY');
+  
+  if (!pdfRestApiKey) {
+    throw new Error('PDFREST_API_KEY not configured - CMYK conversion unavailable');
+  }
   
   try {
-    // Dynamic import of Ghostscript WASM - use esm.sh for Deno compatibility
-    const gsModule = await import("https://esm.sh/@aspect-apps/ghostscript-wasm@0.0.1");
-    const { createGS } = gsModule;
+    // Create form data with the PDF file
+    const formData = new FormData();
+    // Create a new ArrayBuffer copy to ensure compatibility
+    const arrayBuffer = new ArrayBuffer(pdfBytes.length);
+    new Uint8Array(arrayBuffer).set(pdfBytes);
+    const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+    formData.append('file', blob, 'input.pdf');
     
-    // Initialize Ghostscript
-    const gs = await createGS();
+    // Select color profile based on region
+    // pdfRest uses predefined profile names
+    const colorProfile = region === 'eu' ? 'fogra39' : 'gracol2006_coated1v2';
+    formData.append('color_profile', colorProfile);
+    formData.append('output', 'pdfrest_cmyk');
     
-    // Write input PDF to virtual filesystem
-    const inputPath = '/input.pdf';
-    const outputPath = '/output.pdf';
-    gs.FS.writeFile(inputPath, pdfBytes);
+    console.log(`Using pdfRest color profile: ${colorProfile}`);
     
-    // Select ICC profile based on region
-    const iccProfileName = region === 'eu' ? 'ISOcoated_v2_eci' : 'GRACoL2013';
+    // Call pdfRest API
+    const response = await fetch('https://api.pdfrest.com/pdf-with-converted-colors', {
+      method: 'POST',
+      headers: {
+        'Api-Key': pdfRestApiKey,
+      },
+      body: formData,
+    });
     
-    console.log(`Using ICC profile preset: ${iccProfileName}`);
-    
-    // Ghostscript arguments for CMYK conversion
-    const gsArgs = [
-      '-dNOPAUSE',
-      '-dBATCH',
-      '-dSAFER',
-      '-sDEVICE=pdfwrite',
-      '-dPDFSETTINGS=/prepress',
-      '-sProcessColorModel=DeviceCMYK',
-      '-sColorConversionStrategy=CMYK',
-      '-dCompatibilityLevel=1.4',
-      `-sOutputFile=${outputPath}`,
-      inputPath,
-    ];
-    
-    console.log('Running Ghostscript with args:', gsArgs.join(' '));
-    
-    // Run Ghostscript
-    const exitCode = gs.callMain(gsArgs);
-    
-    if (exitCode !== 0) {
-      throw new Error(`Ghostscript exited with code ${exitCode}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('pdfRest API error:', response.status, errorText);
+      throw new Error(`pdfRest API failed: ${response.status} - ${errorText}`);
     }
     
-    // Read output PDF
-    const outputPdfBytes = gs.FS.readFile(outputPath) as Uint8Array;
+    // Get the result - pdfRest returns JSON with output URL or direct binary
+    const contentType = response.headers.get('content-type');
     
-    // Cleanup
-    try {
-      gs.FS.unlink(inputPath);
-      gs.FS.unlink(outputPath);
-    } catch (cleanupError) {
-      console.warn('Cleanup warning:', cleanupError);
+    if (contentType?.includes('application/json')) {
+      // Response is JSON with URL to download
+      const result = await response.json();
+      console.log('pdfRest response:', result);
+      
+      if (result.outputUrl) {
+        // Download the converted PDF
+        const pdfResponse = await fetch(result.outputUrl);
+        if (!pdfResponse.ok) {
+          throw new Error(`Failed to download converted PDF: ${pdfResponse.status}`);
+        }
+        const outputBytes = new Uint8Array(await pdfResponse.arrayBuffer());
+        console.log(`✅ CMYK conversion complete: ${pdfBytes.length} -> ${outputBytes.length} bytes`);
+        return outputBytes;
+      } else {
+        throw new Error('pdfRest did not return output URL');
+      }
+    } else {
+      // Response is direct binary PDF
+      const outputBytes = new Uint8Array(await response.arrayBuffer());
+      console.log(`✅ CMYK conversion complete: ${pdfBytes.length} -> ${outputBytes.length} bytes`);
+      return outputBytes;
     }
-    
-    console.log(`✅ CMYK conversion complete: ${pdfBytes.length} -> ${outputPdfBytes.length} bytes`);
-    
-    return outputPdfBytes;
   } catch (error) {
     console.error('❌ CMYK conversion failed:', error);
     throw error;

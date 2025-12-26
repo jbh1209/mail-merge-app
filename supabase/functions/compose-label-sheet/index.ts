@@ -112,13 +112,15 @@ function drawCropMarks(
 /**
  * Convert PDF to CMYK using pdfRest API
  * Uses appropriate ICC profile based on region (FOGRA39 for EU, GRACoL for US)
- * Fallback approach since Ghostscript WASM has issues in Deno edge functions
+ * Note: Ghostscript WASM packages are not compatible with Deno Edge Functions,
+ * so we use pdfRest as a reliable external API for professional CMYK conversion
  */
 async function convertToCmyk(
   pdfBytes: Uint8Array,
   region: 'us' | 'eu' | 'other' = 'us'
 ): Promise<Uint8Array> {
   console.log(`🎨 Starting CMYK conversion with pdfRest API (region: ${region})`);
+  console.log(`Input PDF size: ${pdfBytes.length} bytes`);
   
   const pdfRestApiKey = Deno.env.get('PDFREST_API_KEY');
   
@@ -129,14 +131,14 @@ async function convertToCmyk(
   try {
     // Create form data with the PDF file
     const formData = new FormData();
-    // Create a new ArrayBuffer copy to ensure compatibility
+    // Create ArrayBuffer copy for Blob compatibility
     const arrayBuffer = new ArrayBuffer(pdfBytes.length);
     new Uint8Array(arrayBuffer).set(pdfBytes);
     const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
     formData.append('file', blob, 'input.pdf');
     
     // Select color profile based on region
-    // pdfRest uses predefined profile names
+    // FOGRA39 for EU (ISO coated v2), GRACoL for US (commercial printing)
     const colorProfile = region === 'eu' ? 'fogra39' : 'gracol2006_coated1v2';
     formData.append('color_profile', colorProfile);
     formData.append('output', 'pdfrest_cmyk');
@@ -164,7 +166,7 @@ async function convertToCmyk(
     if (contentType?.includes('application/json')) {
       // Response is JSON with URL to download
       const result = await response.json();
-      console.log('pdfRest response:', result);
+      console.log('pdfRest response:', JSON.stringify(result));
       
       if (result.outputUrl) {
         // Download the converted PDF
@@ -173,7 +175,7 @@ async function convertToCmyk(
           throw new Error(`Failed to download converted PDF: ${pdfResponse.status}`);
         }
         const outputBytes = new Uint8Array(await pdfResponse.arrayBuffer());
-        console.log(`✅ CMYK conversion complete: ${pdfBytes.length} -> ${outputBytes.length} bytes`);
+        console.log(`✅ CMYK conversion complete: ${pdfBytes.length} → ${outputBytes.length} bytes`);
         return outputBytes;
       } else {
         throw new Error('pdfRest did not return output URL');
@@ -181,7 +183,7 @@ async function convertToCmyk(
     } else {
       // Response is direct binary PDF
       const outputBytes = new Uint8Array(await response.arrayBuffer());
-      console.log(`✅ CMYK conversion complete: ${pdfBytes.length} -> ${outputBytes.length} bytes`);
+      console.log(`✅ CMYK conversion complete: ${pdfBytes.length} → ${outputBytes.length} bytes`);
       return outputBytes;
     }
   } catch (error) {

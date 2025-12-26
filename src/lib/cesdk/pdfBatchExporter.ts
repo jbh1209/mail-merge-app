@@ -2,10 +2,9 @@ import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { resolveVariables, VariableData } from './variableResolver';
 import { supabase } from '@/integrations/supabase/client';
 import { PrintSettings, getIccProfileForRegion } from '@/types/print-settings';
-import { convertToPDFX3 } from '@imgly/plugin-print-ready-pdfs-web';
 
 export interface BatchExportProgress {
-  phase: 'exporting' | 'converting' | 'composing' | 'uploading' | 'complete' | 'error';
+  phase: 'exporting' | 'composing' | 'uploading' | 'complete' | 'error';
   current: number;
   total: number;
   message: string;
@@ -31,6 +30,7 @@ export interface BatchExportResult {
   outputUrl?: string;
   pageCount?: number;
   error?: string;
+  cmykApplied?: boolean; // Server indicates if CMYK was applied
 }
 
 /** Print settings passed to edge function */
@@ -38,11 +38,10 @@ export interface PrintConfig {
   enablePrintMarks: boolean;
   bleedMm: number;
   cropMarkOffsetMm: number;
-  // Actual trim dimensions (original template size without bleed)
   trimWidthMm?: number;
   trimHeightMm?: number;
-  // Color mode for PDF output
   colorMode?: 'rgb' | 'cmyk';
+  region?: 'us' | 'eu' | 'other';
 }
 
 // Database label template type
@@ -103,8 +102,6 @@ export async function getLayoutFromTemplate(
   }
   
   // Calculate the actual gap values
-  // spacing_x_mm/spacing_y_mm are PITCH values (center-to-center), not gaps
-  // Actual gap = pitch - label dimension
   const gapX = Number(template.gap_x_mm) > 0 
     ? Number(template.gap_x_mm)
     : Math.max(0, Number(template.spacing_x_mm) - Number(template.label_width_mm));
@@ -191,26 +188,19 @@ async function loadFromArchiveBlob(engine: CreativeEditorSDK['engine'], blob: Bl
 }
 
 /**
- * Export individual PDFs from CE.SDK
- * Optionally converts to CMYK PDF/X-3 format for professional printing
+ * Export individual PDFs from CE.SDK (RGB only - CMYK conversion happens server-side)
  */
 async function exportLabelPdfs(
   cesdk: CreativeEditorSDK,
   dataRecords: VariableData[],
   onProgress: (progress: BatchExportProgress) => void,
   docType: string = 'document',
-  projectImages?: { name: string; url: string }[],
-  printSettings?: PrintSettings
+  projectImages?: { name: string; url: string }[]
 ): Promise<ArrayBuffer[]> {
   const engine = cesdk.engine;
   const pdfBlobs: Blob[] = [];
   
-  // Determine if we need CMYK conversion
-  const needsCmykConversion = printSettings?.colorMode === 'cmyk';
-  const iccProfile = printSettings ? getIccProfileForRegion(printSettings.region) : 'fogra39';
-  
   // CRITICAL: Hide trim guide BEFORE saving archive (so it stays hidden on reload)
-  // The trim guide is a visual aid only, not part of the design
   try {
     const allBlocks = engine.block.findByType('//ly.img.ubq/graphic');
     for (const blockId of allBlocks) {
@@ -260,21 +250,18 @@ async function exportLabelPdfs(
         estimatedSecondsRemaining,
       });
       
-      // Resolve variables with current data record (pass recordIndex for sequences, projectImages for VDP images)
+      // Resolve variables with current data record
       await resolveVariables(engine, data, i, projectImages);
       
-      // Force engine to process variable changes (replaces unnecessary delay)
+      // Force engine to process variable changes
       engine.editor.addUndoStep();
       
       // Export ALL pages (supports multi-page designs like double-sided cards)
       const pages = engine.scene.getPages();
       if (pages.length > 0) {
-        // Export each page separately for proper multi-page handling
         for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
           const blob = await engine.block.export(pages[pageIndex], { 
             mimeType: 'application/pdf',
-            // Enable high compatibility for proper font embedding
-            // This prevents text bunching/overlapping issues in the generated PDFs
             exportPdfWithHighCompatibility: true,
           });
           pdfBlobs.push(blob);
@@ -282,7 +269,6 @@ async function exportLabelPdfs(
         
         // Track export time for ETA calculation
         exportTimes.push(Date.now() - itemStartTime);
-        // Keep only last 5 times for rolling average
         if (exportTimes.length > 5) exportTimes.shift();
         
         console.log(`Exported ${docType} ${i + 1}/${dataRecords.length} (${pages.length} pages) in ${Date.now() - itemStartTime}ms`);
@@ -296,103 +282,7 @@ async function exportLabelPdfs(
     await loadFromArchiveBlob(engine, originalArchiveBlob);
   }
   
-  // Convert to CMYK if requested (PDF/X-3 compliance)
-  if (needsCmykConversion && pdfBlobs.length > 0) {
-    // Validate blob types before conversion
-    const validBlobs = pdfBlobs.filter(b => b instanceof Blob);
-    if (validBlobs.length !== pdfBlobs.length) {
-      console.warn(`⚠️ Some exports were not Blobs: ${pdfBlobs.length - validBlobs.length} invalid`);
-    }
-    
-    console.log(`🎨 Starting CMYK conversion:`, {
-      blobCount: validBlobs.length,
-      blobSizes: validBlobs.map(b => `${(b.size / 1024).toFixed(1)}KB`),
-      profile: iccProfile,
-      flattenTransparency: false,
-    });
-    
-    onProgress({
-      phase: 'converting',
-      current: 0,
-      total: validBlobs.length,
-      message: `Converting to CMYK (${iccProfile === 'gracol' ? 'GRACoL 2013' : 'FOGRA39'})...`,
-    });
-    
-    const conversionStartTime = Date.now();
-    
-    try {
-      // Use batch conversion for efficiency (processes sequentially internally)
-      const cmykBlobs = await convertToPDFX3(validBlobs, {
-        outputProfile: iccProfile,
-        title: `Print-Ready ${docType}`,
-        flattenTransparency: false, // Preserve visual fidelity, may not be strictly X-3 compliant
-      });
-      
-      const conversionTime = ((Date.now() - conversionStartTime) / 1000).toFixed(1);
-      console.log(`✅ CMYK conversion complete in ${conversionTime}s`);
-      
-      onProgress({
-        phase: 'converting',
-        current: validBlobs.length,
-        total: validBlobs.length,
-        message: 'CMYK conversion complete',
-      });
-      
-      // Convert CMYK blobs to ArrayBuffers
-      const pdfBuffers: ArrayBuffer[] = [];
-      for (const blob of cmykBlobs) {
-        pdfBuffers.push(await blob.arrayBuffer());
-      }
-      return pdfBuffers;
-    } catch (cmykError: any) {
-      // Enhanced error diagnostics
-      const errorName = cmykError?.name || 'UnknownError';
-      const errorMessage = cmykError?.message || String(cmykError);
-      const errorStack = cmykError?.stack || '';
-      
-      console.error('⚠️ CMYK conversion failed:', {
-        name: errorName,
-        message: errorMessage,
-        stack: errorStack,
-      });
-      
-      // Detect common failure modes for targeted messaging
-      let userMessage = '⚠️ CMYK conversion failed - using RGB instead';
-      const lowerMessage = errorMessage.toLowerCase();
-      const lowerStack = errorStack.toLowerCase();
-      
-      if (lowerMessage.includes('sharedarraybuffer') || lowerMessage.includes('cross-origin')) {
-        userMessage = '⚠️ CMYK unavailable (browser security) - using RGB';
-        console.warn('💡 CMYK requires Cross-Origin-Isolation headers (COOP/COEP)');
-      } else if (lowerMessage.includes('.icc') || lowerStack.includes('.icc') || lowerMessage.includes('icc profile')) {
-        userMessage = '⚠️ CMYK ICC profile failed to load - using RGB';
-        console.warn('💡 ICC profile file not found or failed to load. Check assetsInclude config.');
-      } else if (lowerMessage.includes('404') || lowerMessage.includes('not found')) {
-        userMessage = '⚠️ CMYK resource missing (404) - using RGB';
-        console.warn('💡 A required resource returned 404. Check network tab for details.');
-      } else if (lowerMessage.includes('wasm') || lowerMessage.includes('webassembly')) {
-        userMessage = '⚠️ CMYK worker failed to load - using RGB';
-        console.warn('💡 Check if WASM worker is properly bundled');
-      } else if (lowerMessage.includes('fetch') || lowerMessage.includes('network') || lowerMessage.includes('failed to load')) {
-        userMessage = '⚠️ CMYK resources failed to load - using RGB';
-      }
-      
-      // NOTIFY USER of fallback - don't silently fail
-      onProgress({
-        phase: 'converting',
-        current: validBlobs.length,
-        total: validBlobs.length,
-        message: userMessage,
-      });
-      
-      // Add small delay so user sees the warning
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Fall through to return RGB buffers
-    }
-  }
-  
-  // Return RGB buffers (either no conversion needed or conversion failed)
+  // Convert to ArrayBuffers
   const pdfBuffers: ArrayBuffer[] = [];
   for (const blob of pdfBlobs) {
     pdfBuffers.push(await blob.arrayBuffer());
@@ -409,7 +299,6 @@ async function uploadTempPdf(
   jobId: string, 
   index: number
 ): Promise<string> {
-  // Path includes workspaceId for RLS validation
   const filename = `${workspaceId}/temp/${jobId}/page-${index.toString().padStart(4, '0')}.pdf`;
   
   const { error } = await supabase.storage
@@ -458,7 +347,7 @@ async function uploadPdfsToStorage(
   onProgress: (progress: BatchExportProgress) => void
 ): Promise<string[]> {
   const paths: string[] = [];
-  const UPLOAD_BATCH = 5; // Upload 5 at a time
+  const UPLOAD_BATCH = 5;
   
   for (let i = 0; i < buffers.length; i += UPLOAD_BATCH) {
     const batch = buffers.slice(i, i + UPLOAD_BATCH);
@@ -481,7 +370,7 @@ async function uploadPdfsToStorage(
 }
 
 /**
- * Send PDF paths to edge function for composition
+ * Send PDF paths to edge function for composition (and optional CMYK conversion)
  */
 async function composeFromStorage(
   pdfPaths: string[],
@@ -490,10 +379,20 @@ async function composeFromStorage(
   fullPageMode: boolean,
   printConfig: PrintConfig | null,
   onProgress: (progress: BatchExportProgress) => void
-): Promise<{ outputUrl: string; pageCount: number }> {
-  const message = fullPageMode 
-    ? (printConfig?.enablePrintMarks ? 'Adding bleed & crop marks...' : 'Merging pages...') 
-    : 'Composing labels onto sheets...';
+): Promise<{ outputUrl: string; pageCount: number; cmykApplied?: boolean }> {
+  // Determine progress message based on settings
+  let message = 'Composing...';
+  if (fullPageMode) {
+    if (printConfig?.colorMode === 'cmyk') {
+      message = 'Composing & converting to CMYK...';
+    } else if (printConfig?.enablePrintMarks) {
+      message = 'Adding bleed & crop marks...';
+    } else {
+      message = 'Merging pages...';
+    }
+  } else {
+    message = 'Composing labels onto sheets...';
+  }
     
   onProgress({
     phase: 'composing',
@@ -508,7 +407,7 @@ async function composeFromStorage(
       layout,
       mergeJobId,
       fullPageMode,
-      printConfig, // Pass print configuration for bleed + crop marks
+      printConfig,
     },
   });
 
@@ -523,12 +422,13 @@ async function composeFromStorage(
   return {
     outputUrl: data.outputUrl,
     pageCount: data.pageCount,
+    cmykApplied: data.cmykApplied,
   };
 }
 
 /**
  * Main batch export function for CE.SDK templates
- * Exports labels client-side, then sends to server for composition
+ * Exports labels client-side as RGB, then sends to server for composition + CMYK
  */
 export async function batchExportWithCesdk(
   cesdk: CreativeEditorSDK,
@@ -539,33 +439,31 @@ export async function batchExportWithCesdk(
     labelsPerSheet?: number;
     isFullPage?: boolean;
     averyPartNumber?: string;
-    projectType?: string; // Project type for multi-page handling
+    projectType?: string;
     projectImages?: { name: string; url: string }[];
-    printSettings?: PrintSettings; // Professional print settings
+    printSettings?: PrintSettings;
   },
   mergeJobId: string,
   onProgress: (progress: BatchExportProgress) => void
 ): Promise<BatchExportResult> {
   try {
-    // Determine if this is full-page mode (non-label documents like certificates)
     const isFullPage = templateConfig.isFullPage;
     const docType = isFullPage ? 'page' : 'label';
     
-    // Step 1: Export individual PDFs (pass projectImages for VDP image resolution, printSettings for CMYK)
+    // Step 1: Export individual PDFs as RGB (CMYK happens server-side)
     const pdfBuffers = await exportLabelPdfs(
       cesdk, 
       dataRecords, 
       onProgress, 
       docType, 
-      templateConfig.projectImages,
-      templateConfig.printSettings
+      templateConfig.projectImages
     );
     
     if (pdfBuffers.length === 0) {
       throw new Error('No PDFs were exported');
     }
 
-    // Step 2: Get workspace ID and upload PDFs to temp storage (workspace-scoped for RLS)
+    // Step 2: Get workspace ID and upload PDFs
     const workspaceId = await getCurrentWorkspaceId();
     
     onProgress({
@@ -601,26 +499,26 @@ export async function batchExportWithCesdk(
       }
     }
 
-    // Step 4: Prepare print config for full-page mode (non-label documents)
-    // CRITICAL: Pass ORIGINAL template dimensions (without bleed) as trim size
-    // The exported PDF already includes bleed, so edge function needs to know actual trim size
-    const printConfig: PrintConfig | null = isFullPage && templateConfig.printSettings?.enablePrintMarks
+    // Step 4: Prepare print config (includes colorMode for server-side CMYK)
+    // Region is lowercase for edge function
+    const printConfig: PrintConfig | null = templateConfig.printSettings
       ? {
-          enablePrintMarks: true,
+          enablePrintMarks: templateConfig.printSettings.enablePrintMarks,
           bleedMm: templateConfig.printSettings.bleedMm,
           cropMarkOffsetMm: templateConfig.printSettings.cropMarkOffsetMm,
           trimWidthMm: templateConfig.widthMm,
           trimHeightMm: templateConfig.heightMm,
           colorMode: templateConfig.printSettings.colorMode,
+          region: templateConfig.printSettings.region.toLowerCase() as 'us' | 'eu' | 'other',
         }
       : null;
 
-    // Step 5: Compose on server (downloads from storage, processes in batches)
+    // Step 5: Compose on server (includes CMYK conversion if requested)
     const result = await composeFromStorage(
       pdfPaths,
       layout,
       mergeJobId,
-      isFullPage,
+      isFullPage ?? false,
       printConfig,
       onProgress
     );
@@ -629,13 +527,16 @@ export async function batchExportWithCesdk(
       phase: 'complete',
       current: 1,
       total: 1,
-      message: 'PDF generation complete!',
+      message: result.cmykApplied 
+        ? 'PDF generation complete (CMYK)!' 
+        : 'PDF generation complete!',
     });
 
     return {
       success: true,
       outputUrl: result.outputUrl,
       pageCount: result.pageCount,
+      cmykApplied: result.cmykApplied,
     };
   } catch (error: any) {
     console.error('Batch export error:', error);

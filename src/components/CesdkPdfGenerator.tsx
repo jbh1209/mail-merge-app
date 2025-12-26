@@ -194,18 +194,16 @@ export function CesdkPdfGenerator({
     if (progress.phase === 'error') return 0;
     if (progress.total === 0) return 0;
     
-    // Weight phases: exporting 70%, converting 10%, uploading 10%, composing 10%
+    // Weight phases: exporting 70%, uploading 15%, composing 15% (CMYK now happens server-side)
     const basePercent = (progress.current / progress.total) * 100;
     
     switch (progress.phase) {
       case 'exporting':
         return basePercent * 0.7;
-      case 'converting':
-        return 70 + basePercent * 0.1;
       case 'uploading':
-        return 80 + basePercent * 0.1;
+        return 70 + basePercent * 0.15;
       case 'composing':
-        return 90 + basePercent * 0.1;
+        return 85 + basePercent * 0.15;
       default:
         return basePercent;
     }
@@ -298,12 +296,11 @@ export function CesdkPdfGenerator({
                 </div>
                 <Progress value={getProgressPercentage()} className="h-3" />
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>
-                    {progress.phase === 'exporting' && `${docName.charAt(0).toUpperCase() + docName.slice(1)} ${progress.current} of ${progress.total}`}
-                    {progress.phase === 'converting' && 'Converting to CMYK...'}
-                    {progress.phase === 'uploading' && 'Uploading pages...'}
-                    {progress.phase === 'composing' && (isFullPage ? 'Merging pages...' : 'Arranging on sheets...')}
-                  </span>
+                    <span>
+                      {progress.phase === 'exporting' && `${docName.charAt(0).toUpperCase() + docName.slice(1)} ${progress.current} of ${progress.total}`}
+                      {progress.phase === 'uploading' && 'Uploading pages...'}
+                      {progress.phase === 'composing' && (isFullPage ? 'Processing...' : 'Arranging on sheets...')}
+                    </span>
                   <span>{Math.round(getProgressPercentage())}%</span>
                 </div>
               </div>

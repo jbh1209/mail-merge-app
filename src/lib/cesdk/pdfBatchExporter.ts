@@ -428,11 +428,16 @@ async function composeFromStorage(
   };
 }
 
-// CDN URL for plugin assets (gs.wasm is too large to bundle locally)
-const PRINT_PLUGIN_CDN_BASE = 'https://unpkg.com/@imgly/plugin-print-ready-pdfs-web@1.1.1/dist';
+// ICC profiles are local for reliability, gs.wasm comes from CDN (too large to bundle ~15MB)
+const PRINT_PLUGIN_ICC_BASE = '/assets';
+// Use jsdelivr instead of unpkg - it has better CORS support
+const PRINT_PLUGIN_WASM_CDN = 'https://cdn.jsdelivr.net/npm/@imgly/plugin-print-ready-pdfs-web@1.1.1/dist';
+
+// Timeout for CMYK conversion to prevent indefinite hangs (2 minutes)
+const CMYK_CONVERSION_TIMEOUT_MS = 120000;
 
 /**
- * Load ICC profile - try local /assets first (for reliability), fallback to CDN
+ * Load ICC profile from local /assets (same-origin for reliability)
  */
 async function loadIccProfile(region: 'US' | 'EU'): Promise<{ blob: Blob; identifier: string; condition: string }> {
   const profileName = region === 'US' 
@@ -447,11 +452,10 @@ async function loadIccProfile(region: 'US' | 'EU'): Promise<{ blob: Blob; identi
     ? 'GRACoL 2013 (CRPC6) coated #1, 100 lpi, GCR High, 300% TAC'
     : 'ISO Coated v2 (ECI) - FOGRA39';
 
-  // Try local path first, then CDN fallback
+  // Only use same-origin paths to avoid CORS issues
   const paths = [
-    `/assets/${profileName}`,     // Local (from public/assets)
-    `/icc/${profileName}`,        // Alternative local path
-    `${PRINT_PLUGIN_CDN_BASE}/${profileName}`, // CDN fallback
+    `${PRINT_PLUGIN_ICC_BASE}/${profileName}`,
+    `/icc/${profileName}`,
   ];
 
   for (const profilePath of paths) {
@@ -469,6 +473,42 @@ async function loadIccProfile(region: 'US' | 'EU'): Promise<{ blob: Blob; identi
   }
 
   throw new Error(`Failed to load ICC profile ${profileName} from any source`);
+}
+
+/**
+ * Preflight check for CMYK conversion requirements
+ */
+async function checkCmykPrerequisites(): Promise<{ ready: boolean; issues: string[]; warnings: string[] }> {
+  const issues: string[] = [];
+  const warnings: string[] = [];
+  
+  // Check SharedArrayBuffer (required for WASM workers)
+  if (typeof SharedArrayBuffer === 'undefined') {
+    issues.push('SharedArrayBuffer not available (requires cross-origin isolation)');
+  }
+  
+  if (!crossOriginIsolated) {
+    warnings.push('Cross-origin isolation not enabled - CMYK may not work');
+  }
+  
+  // Check if gs.wasm is reachable from CDN
+  try {
+    const wasmCheck = await fetch(`${PRINT_PLUGIN_WASM_CDN}/gs.wasm`, { method: 'HEAD' });
+    if (!wasmCheck.ok) {
+      issues.push(`gs.wasm not found at CDN (status: ${wasmCheck.status})`);
+    } else {
+      const sizeBytes = wasmCheck.headers.get('content-length');
+      console.log(`✅ gs.wasm reachable from CDN (${sizeBytes ? (parseInt(sizeBytes) / 1024 / 1024).toFixed(1) + 'MB' : 'unknown size'})`);
+    }
+  } catch (e) {
+    issues.push(`gs.wasm fetch failed: ${e}`);
+  }
+  
+  if (warnings.length > 0) {
+    console.warn('⚠️ CMYK preflight warnings:', warnings);
+  }
+  
+  return { ready: issues.length === 0, issues, warnings };
 }
 
 /**
@@ -514,10 +554,19 @@ async function convertFinalPdfToCmyk(
   console.log(`🎨 Starting CMYK conversion on final PDF:`, {
     outputUrl,
     region: printSettings.region,
-    cdnBase: PRINT_PLUGIN_CDN_BASE,
+    iccBase: PRINT_PLUGIN_ICC_BASE,
+    wasmCdn: PRINT_PLUGIN_WASM_CDN,
   });
   
-  // Step 1: Load the ICC profile (tries local first, then CDN)
+  // Step 0: Preflight checks
+  const preflight = await checkCmykPrerequisites();
+  if (!preflight.ready) {
+    console.error('❌ CMYK preflight failed:', preflight.issues);
+    throw new Error(`CMYK conversion prerequisites not met: ${preflight.issues.join(', ')}`);
+  }
+  console.log('✅ CMYK preflight checks passed');
+  
+  // Step 1: Load the ICC profile (same-origin only)
   const { blob: iccBlob, identifier, condition } = await loadIccProfile(printSettings.region);
   console.log(`🎨 Using ICC profile: ${identifier} (${(iccBlob.size / 1024).toFixed(1)}KB)`);
   
@@ -538,26 +587,33 @@ async function convertFinalPdfToCmyk(
   const pdfBlob = await pdfResponse.blob();
   console.log(`📥 Downloaded composed PDF: ${(pdfBlob.size / 1024 / 1024).toFixed(2)}MB`);
   
-  // Step 4: Convert to CMYK using custom ICC profile
-  // CRITICAL: Use baseUrl to tell the plugin where to find gs.wasm (too large to bundle locally)
+  // Step 4: Convert to CMYK using custom ICC profile with timeout protection
   const conversionStartTime = Date.now();
   console.log(`🎨 Starting PDF/X-3 conversion with settings:`, {
     outputProfile: 'custom',
     customProfileSize: `${(iccBlob.size / 1024).toFixed(1)}KB`,
     outputConditionIdentifier: identifier,
     outputCondition: condition,
-    baseUrl: PRINT_PLUGIN_CDN_BASE,
+    baseUrl: PRINT_PLUGIN_WASM_CDN,
+    timeout: `${CMYK_CONVERSION_TIMEOUT_MS / 1000}s`,
   });
   
-  const cmykBlobs = await convertToPDFX3([pdfBlob], {
+  // Wrap conversion in timeout to prevent indefinite hangs
+  const conversionPromise = convertToPDFX3([pdfBlob], {
     outputProfile: 'custom',
     customProfile: iccBlob,
     outputConditionIdentifier: identifier,
     outputCondition: condition,
     title: 'Print-Ready Document',
-    flattenTransparency: false,
-    baseUrl: PRINT_PLUGIN_CDN_BASE, // Tell plugin where to find gs.wasm
+    flattenTransparency: true, // Enable for stability
+    baseUrl: PRINT_PLUGIN_WASM_CDN, // CDN for gs.wasm (too large to bundle)
   });
+  
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`CMYK conversion timed out after ${CMYK_CONVERSION_TIMEOUT_MS / 1000}s`)), CMYK_CONVERSION_TIMEOUT_MS);
+  });
+  
+  const cmykBlobs = await Promise.race([conversionPromise, timeoutPromise]);
   
   if (!cmykBlobs || cmykBlobs.length === 0) {
     throw new Error('CMYK conversion returned no output');

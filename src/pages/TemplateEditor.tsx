@@ -82,12 +82,13 @@ export default function TemplateEditor() {
     
     const baseSettings = getDefaultPrintSettings(isUS);
     
-    // If template has bleed enabled, preserve that setting
+    // If template has bleed enabled, preserve that setting AND default to CMYK
     if (template?.bleed_mm && template.bleed_mm > 0) {
       setPrintSettings({
         ...baseSettings,
         enablePrintMarks: true,
         bleedMm: Number(template.bleed_mm),
+        colorMode: 'cmyk', // Default to CMYK when professional print output is enabled
       });
     } else {
       setPrintSettings(baseSettings);
@@ -625,7 +626,7 @@ export default function TemplateEditor() {
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
         <CreativeEditorWrapper
-          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
+          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}-${printSettings.enablePrintMarks}-${printSettings.bleedMm}`}
           availableFields={validFields}
           sampleData={sampleData}
           allSampleData={validRecords}

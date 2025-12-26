@@ -13,6 +13,7 @@ import ProjectNew from "./pages/ProjectNew";
 import ProjectDetail from "./pages/ProjectDetail";
 import Settings from "./pages/Settings";
 import TemplateEditor from "./pages/TemplateEditor";
+import EditorDemo from "./pages/EditorDemo";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
 import AppLayout from "./components/AppLayout";
@@ -54,6 +55,8 @@ const App = () => (
           </Route>
           {/* Full-page editor route (outside AppLayout for full viewport) */}
           <Route path="/projects/:projectId/edit/:templateId" element={<ProtectedRoute><TemplateEditor /></ProtectedRoute>} />
+          {/* Fabric.js Editor Demo (for evaluation) */}
+          <Route path="/editor-demo" element={<ProtectedRoute><EditorDemo /></ProtectedRoute>} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
           </Routes>

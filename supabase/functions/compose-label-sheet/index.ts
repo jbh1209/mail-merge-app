@@ -115,7 +115,7 @@ serve(async (req) => {
   }
 
   try {
-    const { pdfPaths, layout, mergeJobId, fullPageMode, printConfig, workspaceId: requestWorkspaceId } = await req.json();
+    const { pdfPaths, layout, mergeJobId, fullPageMode, printConfig } = await req.json();
 
     // Initialize Supabase client early for error handling
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -128,17 +128,6 @@ serve(async (req) => {
 
     if (!mergeJobId) {
       throw new Error('No merge job ID provided');
-    }
-    
-    // Get workspace ID from job if not provided
-    let workspaceId = requestWorkspaceId;
-    if (!workspaceId) {
-      const { data: jobData } = await supabase
-        .from('merge_jobs')
-        .select('workspace_id')
-        .eq('id', mergeJobId)
-        .single();
-      workspaceId = jobData?.workspace_id;
     }
 
     // Check if print features should be applied
@@ -297,14 +286,11 @@ serve(async (req) => {
     // Save the output PDF
     const outputBytes = await outputPdf.save();
     
-    // Save to a PREDICTABLE workspace-scoped path (allows client to overwrite for CMYK)
-    const storagePath = workspaceId 
-      ? `${workspaceId}/outputs/${mergeJobId}.pdf`
-      : `outputs/merge-${mergeJobId}-${Date.now()}.pdf`;
-    
+    // Upload final PDF to storage
+    const filename = `merge-${mergeJobId}-${Date.now()}.pdf`;
     const { error: uploadError } = await supabase.storage
       .from('generated-pdfs')
-      .upload(storagePath, outputBytes, {
+      .upload(filename, outputBytes, {
         contentType: 'application/pdf',
         upsert: true,
       });
@@ -313,14 +299,12 @@ serve(async (req) => {
       console.error('Upload error:', uploadError);
       throw new Error(`Failed to upload PDF: ${uploadError.message}`);
     }
-    
-    console.log(`Saved PDF to: ${storagePath}`);
 
     // Clean up temp files (in background)
     cleanupTempFiles(supabase, pdfPaths);
 
-    // Store storagePath as output_url (get-download-url will create signed URL)
-    const outputUrl = storagePath;
+    // Store filename as output_url (get-download-url will create signed URL)
+    const outputUrl = filename;
 
     // Update merge job
     const { error: updateError } = await supabase
@@ -377,7 +361,6 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         outputUrl,
-        storagePath, // Return storage path for CMYK conversion
         pageCount,
         labelCount: processedCount,
       }),

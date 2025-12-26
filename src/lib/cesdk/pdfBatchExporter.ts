@@ -1,7 +1,7 @@
 import CreativeEditorSDK from '@cesdk/cesdk-js';
 import { resolveVariables, VariableData } from './variableResolver';
 import { supabase } from '@/integrations/supabase/client';
-import { PrintSettings } from '@/types/print-settings';
+import { PrintSettings, getIccProfileForRegion } from '@/types/print-settings';
 import { convertToPDFX3 } from '@imgly/plugin-print-ready-pdfs-web';
 
 export interface BatchExportProgress {
@@ -192,17 +192,22 @@ async function loadFromArchiveBlob(engine: CreativeEditorSDK['engine'], blob: Bl
 
 /**
  * Export individual PDFs from CE.SDK
- * Always exports RGB - CMYK conversion happens AFTER composition
+ * Optionally converts to CMYK PDF/X-3 format for professional printing
  */
 async function exportLabelPdfs(
   cesdk: CreativeEditorSDK,
   dataRecords: VariableData[],
   onProgress: (progress: BatchExportProgress) => void,
   docType: string = 'document',
-  projectImages?: { name: string; url: string }[]
+  projectImages?: { name: string; url: string }[],
+  printSettings?: PrintSettings
 ): Promise<ArrayBuffer[]> {
   const engine = cesdk.engine;
   const pdfBlobs: Blob[] = [];
+  
+  // Determine if we need CMYK conversion
+  const needsCmykConversion = printSettings?.colorMode === 'cmyk';
+  const iccProfile = printSettings ? getIccProfileForRegion(printSettings.region) : 'fogra39';
   
   // CRITICAL: Hide trim guide BEFORE saving archive (so it stays hidden on reload)
   // The trim guide is a visual aid only, not part of the design
@@ -291,7 +296,103 @@ async function exportLabelPdfs(
     await loadFromArchiveBlob(engine, originalArchiveBlob);
   }
   
-  // Always return RGB buffers - CMYK conversion happens after composition
+  // Convert to CMYK if requested (PDF/X-3 compliance)
+  if (needsCmykConversion && pdfBlobs.length > 0) {
+    // Validate blob types before conversion
+    const validBlobs = pdfBlobs.filter(b => b instanceof Blob);
+    if (validBlobs.length !== pdfBlobs.length) {
+      console.warn(`⚠️ Some exports were not Blobs: ${pdfBlobs.length - validBlobs.length} invalid`);
+    }
+    
+    console.log(`🎨 Starting CMYK conversion:`, {
+      blobCount: validBlobs.length,
+      blobSizes: validBlobs.map(b => `${(b.size / 1024).toFixed(1)}KB`),
+      profile: iccProfile,
+      flattenTransparency: false,
+    });
+    
+    onProgress({
+      phase: 'converting',
+      current: 0,
+      total: validBlobs.length,
+      message: `Converting to CMYK (${iccProfile === 'gracol' ? 'GRACoL 2013' : 'FOGRA39'})...`,
+    });
+    
+    const conversionStartTime = Date.now();
+    
+    try {
+      // Use batch conversion for efficiency (processes sequentially internally)
+      const cmykBlobs = await convertToPDFX3(validBlobs, {
+        outputProfile: iccProfile,
+        title: `Print-Ready ${docType}`,
+        flattenTransparency: false, // Preserve visual fidelity, may not be strictly X-3 compliant
+      });
+      
+      const conversionTime = ((Date.now() - conversionStartTime) / 1000).toFixed(1);
+      console.log(`✅ CMYK conversion complete in ${conversionTime}s`);
+      
+      onProgress({
+        phase: 'converting',
+        current: validBlobs.length,
+        total: validBlobs.length,
+        message: 'CMYK conversion complete',
+      });
+      
+      // Convert CMYK blobs to ArrayBuffers
+      const pdfBuffers: ArrayBuffer[] = [];
+      for (const blob of cmykBlobs) {
+        pdfBuffers.push(await blob.arrayBuffer());
+      }
+      return pdfBuffers;
+    } catch (cmykError: any) {
+      // Enhanced error diagnostics
+      const errorName = cmykError?.name || 'UnknownError';
+      const errorMessage = cmykError?.message || String(cmykError);
+      const errorStack = cmykError?.stack || '';
+      
+      console.error('⚠️ CMYK conversion failed:', {
+        name: errorName,
+        message: errorMessage,
+        stack: errorStack,
+      });
+      
+      // Detect common failure modes for targeted messaging
+      let userMessage = '⚠️ CMYK conversion failed - using RGB instead';
+      const lowerMessage = errorMessage.toLowerCase();
+      const lowerStack = errorStack.toLowerCase();
+      
+      if (lowerMessage.includes('sharedarraybuffer') || lowerMessage.includes('cross-origin')) {
+        userMessage = '⚠️ CMYK unavailable (browser security) - using RGB';
+        console.warn('💡 CMYK requires Cross-Origin-Isolation headers (COOP/COEP)');
+      } else if (lowerMessage.includes('.icc') || lowerStack.includes('.icc') || lowerMessage.includes('icc profile')) {
+        userMessage = '⚠️ CMYK ICC profile failed to load - using RGB';
+        console.warn('💡 ICC profile file not found or failed to load. Check assetsInclude config.');
+      } else if (lowerMessage.includes('404') || lowerMessage.includes('not found')) {
+        userMessage = '⚠️ CMYK resource missing (404) - using RGB';
+        console.warn('💡 A required resource returned 404. Check network tab for details.');
+      } else if (lowerMessage.includes('wasm') || lowerMessage.includes('webassembly')) {
+        userMessage = '⚠️ CMYK worker failed to load - using RGB';
+        console.warn('💡 Check if WASM worker is properly bundled');
+      } else if (lowerMessage.includes('fetch') || lowerMessage.includes('network') || lowerMessage.includes('failed to load')) {
+        userMessage = '⚠️ CMYK resources failed to load - using RGB';
+      }
+      
+      // NOTIFY USER of fallback - don't silently fail
+      onProgress({
+        phase: 'converting',
+        current: validBlobs.length,
+        total: validBlobs.length,
+        message: userMessage,
+      });
+      
+      // Add small delay so user sees the warning
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Fall through to return RGB buffers
+    }
+  }
+  
+  // Return RGB buffers (either no conversion needed or conversion failed)
   const pdfBuffers: ArrayBuffer[] = [];
   for (const blob of pdfBlobs) {
     pdfBuffers.push(await blob.arrayBuffer());
@@ -386,11 +487,10 @@ async function composeFromStorage(
   pdfPaths: string[],
   layout: AveryLayoutConfig | null,
   mergeJobId: string,
-  workspaceId: string,
   fullPageMode: boolean,
   printConfig: PrintConfig | null,
   onProgress: (progress: BatchExportProgress) => void
-): Promise<{ outputUrl: string; pageCount: number; storagePath?: string }> {
+): Promise<{ outputUrl: string; pageCount: number }> {
   const message = fullPageMode 
     ? (printConfig?.enablePrintMarks ? 'Adding bleed & crop marks...' : 'Merging pages...') 
     : 'Composing labels onto sheets...';
@@ -407,7 +507,6 @@ async function composeFromStorage(
       pdfPaths,
       layout,
       mergeJobId,
-      workspaceId, // Pass workspace ID for predictable storage path
       fullPageMode,
       printConfig, // Pass print configuration for bleed + crop marks
     },
@@ -424,243 +523,7 @@ async function composeFromStorage(
   return {
     outputUrl: data.outputUrl,
     pageCount: data.pageCount,
-    storagePath: data.storagePath, // Path in storage for CMYK overwrite
   };
-}
-
-// ICC profiles are local for reliability, gs.wasm comes from CDN (too large to bundle ~15MB)
-const PRINT_PLUGIN_ICC_BASE = '/assets';
-// Use jsdelivr instead of unpkg - it has better CORS support
-const PRINT_PLUGIN_WASM_CDN = 'https://cdn.jsdelivr.net/npm/@imgly/plugin-print-ready-pdfs-web@1.1.1/dist';
-
-// Timeout for CMYK conversion to prevent indefinite hangs (2 minutes)
-const CMYK_CONVERSION_TIMEOUT_MS = 120000;
-
-/**
- * Load ICC profile from local /assets (same-origin for reliability)
- */
-async function loadIccProfile(region: 'US' | 'EU'): Promise<{ blob: Blob; identifier: string; condition: string }> {
-  const profileName = region === 'US' 
-    ? 'GRACoL2013_CRPC6.icc' 
-    : 'ISOcoated_v2_eci.icc';
-  
-  const identifier = region === 'US' 
-    ? 'GRACoL2013_CRPC6' 
-    : 'ISOcoated_v2_eci';
-  
-  const condition = region === 'US'
-    ? 'GRACoL 2013 (CRPC6) coated #1, 100 lpi, GCR High, 300% TAC'
-    : 'ISO Coated v2 (ECI) - FOGRA39';
-
-  // Only use same-origin paths to avoid CORS issues
-  const paths = [
-    `${PRINT_PLUGIN_ICC_BASE}/${profileName}`,
-    `/icc/${profileName}`,
-  ];
-
-  for (const profilePath of paths) {
-    try {
-      console.log(`📥 Trying ICC profile from: ${profilePath}`);
-      const response = await fetch(profilePath);
-      if (response.ok) {
-        const blob = await response.blob();
-        console.log(`✅ Loaded ICC profile: ${identifier} (${(blob.size / 1024).toFixed(1)}KB) from ${profilePath}`);
-        return { blob, identifier, condition };
-      }
-    } catch (e) {
-      console.warn(`❌ Failed to load from ${profilePath}:`, e);
-    }
-  }
-
-  throw new Error(`Failed to load ICC profile ${profileName} from any source`);
-}
-
-/**
- * Preflight check for CMYK conversion requirements
- */
-async function checkCmykPrerequisites(): Promise<{ ready: boolean; issues: string[]; warnings: string[] }> {
-  const issues: string[] = [];
-  const warnings: string[] = [];
-  
-  // Check SharedArrayBuffer (required for WASM workers)
-  if (typeof SharedArrayBuffer === 'undefined') {
-    issues.push('SharedArrayBuffer not available (requires cross-origin isolation)');
-  }
-  
-  if (!crossOriginIsolated) {
-    warnings.push('Cross-origin isolation not enabled - CMYK may not work');
-  }
-  
-  // Check if gs.wasm is reachable from CDN
-  try {
-    const wasmCheck = await fetch(`${PRINT_PLUGIN_WASM_CDN}/gs.wasm`, { method: 'HEAD' });
-    if (!wasmCheck.ok) {
-      issues.push(`gs.wasm not found at CDN (status: ${wasmCheck.status})`);
-    } else {
-      const sizeBytes = wasmCheck.headers.get('content-length');
-      console.log(`✅ gs.wasm reachable from CDN (${sizeBytes ? (parseInt(sizeBytes) / 1024 / 1024).toFixed(1) + 'MB' : 'unknown size'})`);
-    }
-  } catch (e) {
-    issues.push(`gs.wasm fetch failed: ${e}`);
-  }
-  
-  if (warnings.length > 0) {
-    console.warn('⚠️ CMYK preflight warnings:', warnings);
-  }
-  
-  return { ready: issues.length === 0, issues, warnings };
-}
-
-/**
- * Verify that PDF output contains CMYK markers
- */
-function verifyPdfXOutput(buffer: ArrayBuffer): { isValid: boolean; markers: string[] } {
-  const bytes = new Uint8Array(buffer);
-  const text = new TextDecoder('latin1').decode(bytes.slice(0, Math.min(bytes.length, 50000)));
-  
-  const markers: string[] = [];
-  
-  if (text.includes('/OutputIntents')) {
-    markers.push('/OutputIntents');
-  }
-  if (text.includes('/GTS_PDFX')) {
-    markers.push('/GTS_PDFX');
-  }
-  if (text.includes('/DeviceCMYK') || text.includes('/ICCBased')) {
-    markers.push('CMYK colorspace');
-  }
-  if (text.includes('PDF/X-3')) {
-    markers.push('PDF/X-3');
-  }
-  
-  const isValid = markers.includes('/OutputIntents') && 
-                  (markers.includes('/GTS_PDFX') || markers.includes('CMYK colorspace'));
-  
-  return { isValid, markers };
-}
-
-/**
- * Convert final composed PDF to CMYK PDF/X-3
- * This is the ONLY place CMYK conversion happens - on the final output
- * Uses custom ICC profile loading from public folder for reliability
- */
-async function convertFinalPdfToCmyk(
-  outputUrl: string,
-  mergeJobId: string,
-  workspaceId: string,
-  printSettings: PrintSettings,
-  onProgress: (progress: BatchExportProgress) => void
-): Promise<{ outputUrl: string }> {
-  console.log(`🎨 Starting CMYK conversion on final PDF:`, {
-    outputUrl,
-    region: printSettings.region,
-    iccBase: PRINT_PLUGIN_ICC_BASE,
-    wasmCdn: PRINT_PLUGIN_WASM_CDN,
-  });
-  
-  // Step 0: Preflight checks
-  const preflight = await checkCmykPrerequisites();
-  if (!preflight.ready) {
-    console.error('❌ CMYK preflight failed:', preflight.issues);
-    throw new Error(`CMYK conversion prerequisites not met: ${preflight.issues.join(', ')}`);
-  }
-  console.log('✅ CMYK preflight checks passed');
-  
-  // Step 1: Load the ICC profile (same-origin only)
-  const { blob: iccBlob, identifier, condition } = await loadIccProfile(printSettings.region);
-  console.log(`🎨 Using ICC profile: ${identifier} (${(iccBlob.size / 1024).toFixed(1)}KB)`);
-  
-  // Step 2: Get signed URL to download the composed PDF
-  const { data: downloadData, error: downloadError } = await supabase.functions.invoke('get-download-url', {
-    body: { mergeJobId },
-  });
-  
-  if (downloadError || !downloadData?.signedUrl) {
-    throw new Error('Failed to get download URL for CMYK conversion');
-  }
-  
-  // Step 3: Download the composed PDF
-  const pdfResponse = await fetch(downloadData.signedUrl);
-  if (!pdfResponse.ok) {
-    throw new Error(`Failed to download PDF: ${pdfResponse.status}`);
-  }
-  const pdfBlob = await pdfResponse.blob();
-  console.log(`📥 Downloaded composed PDF: ${(pdfBlob.size / 1024 / 1024).toFixed(2)}MB`);
-  
-  // Step 4: Convert to CMYK using custom ICC profile with timeout protection
-  const conversionStartTime = Date.now();
-  console.log(`🎨 Starting PDF/X-3 conversion with settings:`, {
-    outputProfile: 'custom',
-    customProfileSize: `${(iccBlob.size / 1024).toFixed(1)}KB`,
-    outputConditionIdentifier: identifier,
-    outputCondition: condition,
-    baseUrl: PRINT_PLUGIN_WASM_CDN,
-    timeout: `${CMYK_CONVERSION_TIMEOUT_MS / 1000}s`,
-  });
-  
-  // Wrap conversion in timeout to prevent indefinite hangs
-  const conversionPromise = convertToPDFX3([pdfBlob], {
-    outputProfile: 'custom',
-    customProfile: iccBlob,
-    outputConditionIdentifier: identifier,
-    outputCondition: condition,
-    title: 'Print-Ready Document',
-    flattenTransparency: true, // Enable for stability
-    baseUrl: PRINT_PLUGIN_WASM_CDN, // CDN for gs.wasm (too large to bundle)
-  });
-  
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`CMYK conversion timed out after ${CMYK_CONVERSION_TIMEOUT_MS / 1000}s`)), CMYK_CONVERSION_TIMEOUT_MS);
-  });
-  
-  const cmykBlobs = await Promise.race([conversionPromise, timeoutPromise]);
-  
-  if (!cmykBlobs || cmykBlobs.length === 0) {
-    throw new Error('CMYK conversion returned no output');
-  }
-  
-  const cmykBlob = cmykBlobs[0];
-  const conversionTime = ((Date.now() - conversionStartTime) / 1000).toFixed(1);
-  console.log(`✅ CMYK conversion complete in ${conversionTime}s, size: ${(cmykBlob.size / 1024 / 1024).toFixed(2)}MB`);
-  
-  // Step 5: Verify the output is actually CMYK PDF/X-3
-  const cmykBuffer = await cmykBlob.arrayBuffer();
-  const verification = verifyPdfXOutput(cmykBuffer);
-  
-  if (verification.isValid) {
-    console.log(`✅ PDF/X-3 verification PASSED:`, verification.markers);
-  } else {
-    console.warn(`⚠️ PDF/X-3 verification INCOMPLETE - found:`, verification.markers.length > 0 ? verification.markers : 'no markers');
-    // Don't throw - the conversion may still be usable, just log the warning
-  }
-  
-  // Step 6: Upload the CMYK PDF back to storage (overwrite the RGB version)
-  const storagePath = `${workspaceId}/outputs/${mergeJobId}.pdf`;
-  
-  const { error: uploadError } = await supabase.storage
-    .from('generated-pdfs')
-    .upload(storagePath, cmykBuffer, {
-      contentType: 'application/pdf',
-      upsert: true, // Overwrite the existing file
-    });
-  
-  if (uploadError) {
-    throw new Error(`Failed to upload CMYK PDF: ${uploadError.message}`);
-  }
-  
-  console.log(`📤 Uploaded CMYK PDF to: ${storagePath}`);
-  
-  // Step 7: Update merge job with new output URL
-  const { error: updateError } = await supabase
-    .from('merge_jobs')
-    .update({ output_url: storagePath })
-    .eq('id', mergeJobId);
-  
-  if (updateError) {
-    console.warn('Failed to update merge job output URL:', updateError);
-  }
-  
-  return { outputUrl: storagePath };
 }
 
 /**
@@ -688,13 +551,14 @@ export async function batchExportWithCesdk(
     const isFullPage = templateConfig.isFullPage;
     const docType = isFullPage ? 'page' : 'label';
     
-    // Step 1: Export individual PDFs as RGB (CMYK conversion happens after composition)
+    // Step 1: Export individual PDFs (pass projectImages for VDP image resolution, printSettings for CMYK)
     const pdfBuffers = await exportLabelPdfs(
       cesdk, 
       dataRecords, 
       onProgress, 
       docType, 
-      templateConfig.projectImages
+      templateConfig.projectImages,
+      templateConfig.printSettings
     );
     
     if (pdfBuffers.length === 0) {
@@ -756,51 +620,10 @@ export async function batchExportWithCesdk(
       pdfPaths,
       layout,
       mergeJobId,
-      workspaceId,
       isFullPage,
       printConfig,
       onProgress
     );
-
-    // Step 6: Convert to CMYK if requested (on the FINAL composed PDF)
-    let finalOutputUrl = result.outputUrl;
-    const needsCmyk = templateConfig.printSettings?.colorMode === 'cmyk';
-    
-    if (needsCmyk) {
-      onProgress({
-        phase: 'converting',
-        current: 0,
-        total: 1,
-        message: 'Converting final PDF to CMYK...',
-      });
-      
-      try {
-        const cmykResult = await convertFinalPdfToCmyk(
-          result.outputUrl,
-          mergeJobId,
-          workspaceId,
-          templateConfig.printSettings!,
-          onProgress
-        );
-        finalOutputUrl = cmykResult.outputUrl;
-        
-        onProgress({
-          phase: 'converting',
-          current: 1,
-          total: 1,
-          message: 'CMYK conversion complete',
-        });
-      } catch (cmykError: any) {
-        console.error('CMYK conversion failed:', cmykError);
-        onProgress({
-          phase: 'converting',
-          current: 1,
-          total: 1,
-          message: '⚠️ CMYK conversion failed - using RGB',
-        });
-        // Continue with RGB version
-      }
-    }
 
     onProgress({
       phase: 'complete',
@@ -811,7 +634,7 @@ export async function batchExportWithCesdk(
 
     return {
       success: true,
-      outputUrl: finalOutputUrl,
+      outputUrl: result.outputUrl,
       pageCount: result.pageCount,
     };
   } catch (error: any) {

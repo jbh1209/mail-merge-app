@@ -1233,9 +1233,6 @@ export function CreativeEditorWrapper({
 
   // Ref to prevent re-entry during trim guide creation
   const trimGuideCreatingRef = useRef(false);
-  // Retry count for trim guide creation when dimensions aren't ready
-  const trimGuideRetryRef = useRef(0);
-  const MAX_TRIM_GUIDE_RETRIES = 5;
 
   // Separate effect for trim guide - add/remove dynamically without reinit
   useEffect(() => {
@@ -1247,10 +1244,8 @@ export function CreativeEditorWrapper({
       return;
     }
     
-    // Reset retry count when dependencies change
-    trimGuideRetryRef.current = 0;
-    
-    const attemptTrimGuideCreation = () => {
+    // Small delay to ensure editor is fully ready after dimension changes
+    const timeoutId = setTimeout(() => {
       if (!editorRef.current) return;
       if (trimGuideCreatingRef.current) return;
       
@@ -1289,7 +1284,7 @@ export function CreativeEditorWrapper({
           const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
           
           // CRITICAL FIX: Verify page dimensions are correct before creating guide
-          // If page is still at old dimensions (before bleed was added), retry
+          // If page is still at old dimensions (before bleed was added), skip and let the effect re-run
           const currentPageWidth = engine.block.getWidth(page);
           const currentPageHeight = engine.block.getHeight(page);
           const expectedWidth = trimWidth + (bleed * 2);
@@ -1299,18 +1294,9 @@ export function CreativeEditorWrapper({
           const tolerance = 0.1;
           if (Math.abs(currentPageWidth - expectedWidth) > tolerance || 
               Math.abs(currentPageHeight - expectedHeight) > tolerance) {
-            console.log(`✂️ Page dimensions not ready: ${currentPageWidth.toFixed(1)}×${currentPageHeight.toFixed(1)}mm, expected ${expectedWidth.toFixed(1)}×${expectedHeight.toFixed(1)}mm`);
-            
-            // RETRY LOGIC: Schedule another attempt if we haven't exceeded max retries
-            if (trimGuideRetryRef.current < MAX_TRIM_GUIDE_RETRIES) {
-              trimGuideRetryRef.current++;
-              console.log(`✂️ Scheduling retry ${trimGuideRetryRef.current}/${MAX_TRIM_GUIDE_RETRIES}`);
-              trimGuideCreatingRef.current = false;
-              setTimeout(attemptTrimGuideCreation, 200); // Retry after 200ms
-              return;
-            } else {
-              console.warn('✂️ Max retries exceeded, creating trim guide anyway');
-            }
+            console.log(`✂️ Page dimensions not ready: ${currentPageWidth.toFixed(1)}×${currentPageHeight.toFixed(1)}mm, expected ${expectedWidth.toFixed(1)}×${expectedHeight.toFixed(1)}mm - will retry when dimensions update`);
+            trimGuideCreatingRef.current = false;
+            return; // The effect will re-run when labelWidth/labelHeight update
           }
           
           console.log(`✂️ Trim guide config: ${trimWidth}mm × ${trimHeight}mm, bleed: ${bleed}mm`);
@@ -1371,10 +1357,7 @@ export function CreativeEditorWrapper({
       } finally {
         trimGuideCreatingRef.current = false;
       }
-    };
-    
-    // Start with a small initial delay to ensure editor is ready
-    const timeoutId = setTimeout(attemptTrimGuideCreation, 100);
+    }, 100);
     
     return () => {
       clearTimeout(timeoutId);

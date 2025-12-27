@@ -6,6 +6,76 @@ export interface VariableData {
   [key: string]: string | number | boolean;
 }
 
+// ============ CLIENT-SIDE IMAGE CACHE ============
+// Cache image URLs as blob URLs for faster VDP preview navigation
+const imageCache = new Map<string, string>(); // Original URL -> Blob URL
+const pendingFetches = new Map<string, Promise<string>>(); // Prevent duplicate fetches
+
+/**
+ * Prefetch an image and cache it as a blob URL for instant access
+ */
+async function prefetchImage(url: string): Promise<string> {
+  // Return cached blob URL if available
+  if (imageCache.has(url)) {
+    return imageCache.get(url)!;
+  }
+  
+  // If already fetching this URL, wait for the existing fetch
+  if (pendingFetches.has(url)) {
+    return pendingFetches.get(url)!;
+  }
+  
+  // Start new fetch
+  const fetchPromise = (async () => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      imageCache.set(url, blobUrl);
+      return blobUrl;
+    } catch (e) {
+      console.warn('Failed to prefetch image:', url, e);
+      return url; // Fallback to original URL
+    } finally {
+      pendingFetches.delete(url);
+    }
+  })();
+  
+  pendingFetches.set(url, fetchPromise);
+  return fetchPromise;
+}
+
+/**
+ * Prefetch all images for a set of records for smooth VDP navigation
+ */
+export async function prefetchImagesForRecords(
+  records: VariableData[],
+  projectImages?: { name: string; url: string }[]
+): Promise<void> {
+  if (!projectImages?.length || !records?.length) return;
+  
+  const urlsToPrefetch = new Set<string>();
+  
+  // Also prefetch all project images directly
+  for (const img of projectImages) {
+    if (img.url) urlsToPrefetch.add(img.url);
+  }
+  
+  console.log(`🖼️ Prefetching ${urlsToPrefetch.size} images for VDP cache...`);
+  
+  // Prefetch all in parallel (but limit concurrency to avoid overwhelming browser)
+  const urls = [...urlsToPrefetch];
+  const BATCH_SIZE = 5;
+  
+  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+    const batch = urls.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map(prefetchImage));
+  }
+  
+  console.log(`✅ Prefetched ${imageCache.size} images into cache`);
+}
+
 /**
  * Auto-fit text to container using binary search for optimal font size
  * Returns the optimal font size that fits within the container
@@ -318,16 +388,20 @@ interface BarcodeMetadata {
 
 /**
  * Update a block's image fill with a new data URL
+ * Uses cached blob URL if available for faster updates
  */
 async function updateBlockImage(
   engine: CreativeEditorSDK['engine'],
   blockId: number,
-  dataUrl: string
+  imageUrl: string
 ): Promise<void> {
   try {
+    // Use cached blob URL if available, otherwise prefetch and cache
+    const cachedUrl = await prefetchImage(imageUrl);
+    
     const fill = engine.block.getFill(blockId);
     if (fill) {
-      engine.block.setString(fill, 'fill/image/imageFileURI', dataUrl);
+      engine.block.setString(fill, 'fill/image/imageFileURI', cachedUrl);
     }
   } catch (e) {
     console.warn(`Failed to update block ${blockId} image:`, e);

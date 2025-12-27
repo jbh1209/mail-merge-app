@@ -6,6 +6,7 @@ import { createSequenceAssetSource, SequenceConfig, parseSequenceMetadata, forma
 import { createImageAssetSource } from './imageAssetSource';
 import { SequenceConfigDialog } from '@/components/canvas/SequenceConfigDialog';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
+import { prefetchImagesForRecords, VariableData } from '@/lib/cesdk/variableResolver';
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
 import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
@@ -1025,8 +1026,12 @@ export function CreativeEditorWrapper({
           allSelected.forEach(blockId => cesdk.engine.block.setSelected(blockId, false));
           console.log('🧹 Cleared selection after layout generation');
           
-          // Show background guidance panel for new designs
-          setShowBackgroundGuide(true);
+          // Show background guidance panel for template types that commonly use backgrounds
+          // Labels typically don't need background guidance - users mostly do text
+          const backgroundFocusedTypes = ['badge', 'certificate', 'card', 'ticket', 'invitation'];
+          if (backgroundFocusedTypes.includes(templateType?.toLowerCase() || '')) {
+            setShowBackgroundGuide(true);
+          }
         }
 
         // Trim guide is now handled in a separate useEffect to allow dynamic updates
@@ -1524,6 +1529,9 @@ export function CreativeEditorWrapper({
       console.log('⏳ Waiting for projectImages to load...');
       return;
     }
+    
+    // Prefetch all project images into cache for fast VDP navigation
+    prefetchImagesForRecords(allSampleData || [], projectImages);
     
     console.log('📦 Available projectImages:', projectImages.map(img => ({
       name: img.name,

@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { MappingPreview } from "./MappingPreview";
 import { SubscriptionFeatures } from "@/hooks/useSubscription";
-import { isLikelyImageField, detectFieldType } from "@/lib/avery-labels";
+import { isLikelyImageField, detectFieldType, detectImageColumnsFromValues } from "@/lib/avery-labels";
 
 interface FieldMapping {
   templateField: string;
@@ -47,13 +47,19 @@ export function FieldMappingWizard({
   const [excludedTemplateFields, setExcludedTemplateFields] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
-  // Auto-exclude Unnamed_Column_* template fields on mount
+  // Auto-exclude Unnamed_Column_* template fields on mount, BUT preserve image columns
   useEffect(() => {
-    const junkFields = templateFields.filter(tf => /^Unnamed_Column_\d+$/i.test(tf));
+    // Detect columns that contain image filenames/paths
+    const imageColumns = detectImageColumnsFromValues(dataColumns, sampleData);
+    
+    // Only exclude Unnamed_Column_* if they DON'T contain images
+    const junkFields = templateFields.filter(tf => 
+      /^Unnamed_Column_\d+$/i.test(tf) && !imageColumns.includes(tf)
+    );
     if (junkFields.length > 0) {
       setExcludedTemplateFields(new Set(junkFields));
     }
-  }, [templateFields]);
+  }, [templateFields, dataColumns, sampleData]);
   
   const [columnsFromDb, setColumnsFromDb] = useState<string[] | null>(null);
   const sanitize = (s: string) => (s ?? '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -328,9 +334,17 @@ export function FieldMappingWizard({
   const canSave = visibleMappings.every(m => m.dataColumn !== null);
   const mappedCount = visibleMappings.filter(m => m.dataColumn).length;
   const sourceColumns = (columnsFromDb ?? dataColumns).map(sanitize);
+  
+  // Detect image columns BEFORE filtering - these should always be preserved
+  const imageColumnsSet = new Set(detectImageColumnsFromValues(sourceColumns, sampleData));
+  
   const usableColumns = sourceColumns.filter(c => {
     if (!c || c.trim() === "") return false;
     if (/^__EMPTY/i.test(c)) return false;
+    
+    // Always keep columns that contain image values, even if "Unnamed"
+    if (imageColumnsSet.has(c)) return true;
+    
     // Filter out Unnamed_Column_* that has no data
     if (/^Unnamed_Column_\d+$/i.test(c)) {
       const hasData = sampleData.some(row => {

@@ -755,7 +755,7 @@ export function CreativeEditorWrapper({
               },
               dock: {
                 iconSize: 'normal',
-                hideLabels: false,
+                hideLabels: true, // Use icons with tooltips to prevent label truncation
               },
               libraries: {
                 insert: {

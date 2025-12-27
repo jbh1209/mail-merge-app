@@ -55,6 +55,14 @@ export interface CesdkEditorHandle {
   cesdk: CreativeEditorSDK;
 }
 
+// Record navigation state exposed to parent
+export interface RecordNavigationState {
+  currentIndex: number;
+  totalRecords: number;
+  goToNext: () => void;
+  goToPrevious: () => void;
+}
+
 interface CreativeEditorWrapperProps {
   availableFields?: string[];
   sampleData?: Record<string, string>;
@@ -63,6 +71,7 @@ interface CreativeEditorWrapperProps {
   onSave?: (sceneString: string) => void;
   onSceneChange?: (hasChanges: boolean) => void; // Called when scene is modified
   onReady?: (handle: CesdkEditorHandle) => void; // Now exposes handle with save method
+  onRecordNavigationChange?: (state: RecordNavigationState) => void; // Callback for record nav state
   licenseKey?: string;
   labelWidth?: number;
   labelHeight?: number;
@@ -504,6 +513,7 @@ export function CreativeEditorWrapper({
   onSave,
   onSceneChange,
   onReady,
+  onRecordNavigationChange,
   licenseKey,
   labelWidth = 100,
   labelHeight = 50,
@@ -771,7 +781,7 @@ export function CreativeEditorWrapper({
                       title: () => 'Data Fields',
                     };
                     
-                    // Add a custom "Barcodes & QR" section
+                    // Add a custom "Codes" section (shortened label to prevent truncation)
                     const barcodesEntry = {
                       id: 'barcodes-qrcodes',
                       sourceIds: ['barcodes-qrcodes'],
@@ -789,10 +799,10 @@ export function CreativeEditorWrapper({
                         textOverflow: 'ellipsis',
                       }),
                       icon: () => 'https://img.icons8.com/ios/50/barcode.png',
-                      title: () => 'Barcodes & QR',
+                      title: () => 'Codes',
                     };
 
-                    // Add a custom "Sequences" section
+                    // Add a custom "Sequence" section (shortened label to prevent truncation)
                     const sequencesEntry = {
                       id: 'sequences',
                       sourceIds: ['sequences'],
@@ -810,10 +820,10 @@ export function CreativeEditorWrapper({
                         textOverflow: 'ellipsis',
                       }),
                       icon: () => 'https://img.icons8.com/ios/50/123.png',
-                      title: () => 'Sequential Numbers',
+                      title: () => 'Sequence',
                     };
 
-                    // Add a custom "VDP Images" section for variable images
+                    // Add a custom "VDP Images" section for variable images (shortened label)
                     const imagesEntry = {
                       id: 'vdp-images',
                       sourceIds: ['vdp-images'],
@@ -831,7 +841,7 @@ export function CreativeEditorWrapper({
                         textOverflow: 'ellipsis',
                       }),
                       icon: () => 'https://img.icons8.com/ios/50/image.png',
-                      title: () => 'Variable Images',
+                      title: () => 'VDP Images',
                     };
                     
                     return [dataFieldsEntry, barcodesEntry, sequencesEntry, imagesEntry, ...defaultEntries];
@@ -1718,6 +1728,16 @@ export function CreativeEditorWrapper({
     setCurrentRecordIndex(prev => Math.min(totalRecords - 1, prev + 1));
   }, [totalRecords]);
 
+  // Notify parent of record navigation state changes
+  useEffect(() => {
+    onRecordNavigationChange?.({
+      currentIndex: currentRecordIndex,
+      totalRecords,
+      goToNext: goToNextRecord,
+      goToPrevious: goToPreviousRecord,
+    });
+  }, [currentRecordIndex, totalRecords, goToNextRecord, goToPreviousRecord, onRecordNavigationChange]);
+
   return (
     <div className="relative h-full w-full">
       {(isLoading || layoutStatus) && (
@@ -1728,31 +1748,6 @@ export function CreativeEditorWrapper({
               {layoutStatus || 'Loading editor...'}
             </span>
           </div>
-        </div>
-      )}
-      
-      {/* Record Navigation Bar - positioned above page timeline */}
-      {totalRecords > 1 && !isLoading && (
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-card border rounded-lg shadow-lg px-3 py-2">
-          <button
-            onClick={goToPreviousRecord}
-            disabled={currentRecordIndex === 0}
-            className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Previous record"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
-          <span className="text-sm font-medium tabular-nums min-w-[80px] text-center">
-            Record {currentRecordIndex + 1} of {totalRecords}
-          </span>
-          <button
-            onClick={goToNextRecord}
-            disabled={currentRecordIndex === totalRecords - 1}
-            className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Next record"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-          </button>
         </div>
       )}
       

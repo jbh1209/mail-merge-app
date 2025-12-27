@@ -11,10 +11,14 @@ export interface VariableData {
 const imageCache = new Map<string, string>(); // Original URL -> Blob URL
 const pendingFetches = new Map<string, Promise<string>>(); // Prevent duplicate fetches
 
+// Track which images are priority (current record) vs background
+let priorityImageUrls = new Set<string>();
+
 /**
  * Prefetch an image and cache it as a blob URL for instant access
+ * Priority images are fetched immediately, others can be deferred
  */
-async function prefetchImage(url: string): Promise<string> {
+export async function prefetchImage(url: string): Promise<string> {
   // Return cached blob URL if available
   if (imageCache.has(url)) {
     return imageCache.get(url)!;
@@ -47,7 +51,34 @@ async function prefetchImage(url: string): Promise<string> {
 }
 
 /**
+ * Normalize image name for matching (handles paths, extensions, etc.)
+ */
+function normalizeForMatch(name: string): string {
+  let baseName = name;
+  if (name.includes('\\')) baseName = name.split('\\').pop() || name;
+  else if (name.includes('/')) baseName = name.split('/').pop() || name;
+  if (baseName.includes('?')) baseName = baseName.split('?')[0];
+  return baseName.replace(/\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$/i, '').toLowerCase().trim();
+}
+
+/**
+ * Find image URL from projectImages matching a field value
+ */
+function findImageUrl(
+  fieldValue: string,
+  projectImages: { name: string; url: string }[]
+): string | null {
+  if (!projectImages?.length) return null;
+  const normalizedValue = normalizeForMatch(fieldValue);
+  const matchingImage = projectImages.find(img => 
+    normalizeForMatch(img.name) === normalizedValue
+  );
+  return matchingImage?.url || null;
+}
+
+/**
  * Prefetch all images for a set of records for smooth VDP navigation
+ * Uses priority loading: first 3 records loaded immediately, rest in background
  */
 export async function prefetchImagesForRecords(
   records: VariableData[],
@@ -55,25 +86,88 @@ export async function prefetchImagesForRecords(
 ): Promise<void> {
   if (!projectImages?.length || !records?.length) return;
   
-  const urlsToPrefetch = new Set<string>();
+  // Collect all unique image URLs
+  const allUrls: string[] = [];
   
-  // Also prefetch all project images directly
+  for (const record of records) {
+    for (const [, value] of Object.entries(record)) {
+      if (typeof value === 'string') {
+        const url = findImageUrl(value, projectImages);
+        if (url && !allUrls.includes(url)) {
+          allUrls.push(url);
+        }
+      }
+    }
+  }
+  
+  // Also include all project images directly
   for (const img of projectImages) {
-    if (img.url) urlsToPrefetch.add(img.url);
+    if (img.url && !allUrls.includes(img.url)) {
+      allUrls.push(img.url);
+    }
   }
   
-  console.log(`🖼️ Prefetching ${urlsToPrefetch.size} images for VDP cache...`);
+  if (allUrls.length === 0) return;
   
-  // Prefetch all in parallel (but limit concurrency to avoid overwhelming browser)
-  const urls = [...urlsToPrefetch];
-  const BATCH_SIZE = 5;
+  console.log(`🖼️ Prefetching ${allUrls.length} images for VDP cache...`);
   
-  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
-    const batch = urls.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(prefetchImage));
+  // Priority: First 5 images loaded immediately (for first few records)
+  const priorityUrls = allUrls.slice(0, 5);
+  priorityImageUrls = new Set(priorityUrls);
+  
+  // Load priority images immediately
+  await Promise.all(priorityUrls.map(prefetchImage));
+  console.log(`✅ Priority images loaded: ${priorityUrls.length}`);
+  
+  // Background load: remaining images in larger batches (non-blocking)
+  const remainingUrls = allUrls.slice(5);
+  if (remainingUrls.length > 0) {
+    // Fire and forget - don't await
+    (async () => {
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < remainingUrls.length; i += BATCH_SIZE) {
+        const batch = remainingUrls.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(prefetchImage));
+      }
+      console.log(`✅ Background images loaded: ${remainingUrls.length}`);
+    })();
+  }
+}
+
+/**
+ * Warm cache for adjacent records (prev, current, next)
+ * Call this when navigating between records for smoother transitions
+ */
+export async function warmCacheForAdjacentRecords(
+  currentIndex: number,
+  records: VariableData[],
+  projectImages?: { name: string; url: string }[]
+): Promise<void> {
+  if (!projectImages?.length || !records?.length) return;
+  
+  // Get indices for current, previous, and next records
+  const indicesToWarm = [currentIndex - 1, currentIndex, currentIndex + 1]
+    .filter(i => i >= 0 && i < records.length);
+  
+  const recordsToWarm = indicesToWarm.map(i => records[i]);
+  
+  // Collect URLs for these specific records
+  const urlsToWarm: string[] = [];
+  for (const record of recordsToWarm) {
+    for (const [, value] of Object.entries(record)) {
+      if (typeof value === 'string') {
+        const url = findImageUrl(value, projectImages);
+        if (url && !urlsToWarm.includes(url)) {
+          urlsToWarm.push(url);
+        }
+      }
+    }
   }
   
-  console.log(`✅ Prefetched ${imageCache.size} images into cache`);
+  // Prefetch these images immediately (they're needed soon)
+  if (urlsToWarm.length > 0) {
+    await Promise.all(urlsToWarm.map(prefetchImage));
+  }
 }
 
 /**
@@ -235,16 +329,7 @@ export async function resolveVariables(
   await updateImageBlocks(engine, data, projectImages);
 }
 
-/**
- * Normalize image name for matching (handles paths, extensions, etc.)
- */
-function normalizeForMatch(name: string): string {
-  let baseName = name;
-  if (name.includes('\\')) baseName = name.split('\\').pop() || name;
-  else if (name.includes('/')) baseName = name.split('/').pop() || name;
-  if (baseName.includes('?')) baseName = baseName.split('?')[0];
-  return baseName.replace(/\.(png|jpg|jpeg|gif|webp|svg|bmp|tiff?)$/i, '').toLowerCase().trim();
-}
+// normalizeForMatch is defined at the top of this file
 
 /**
  * Update all VDP image blocks with resolved image URLs

@@ -2,10 +2,10 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Save, Loader2, FileDown, ImageIcon, Upload } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, FileDown, ImageIcon, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import CreativeEditorWrapper, { CesdkEditorHandle } from '@/components/cesdk/CreativeEditorWrapper';
+import CreativeEditorWrapper, { CesdkEditorHandle, RecordNavigationState } from '@/components/cesdk/CreativeEditorWrapper';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
 import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
@@ -23,6 +23,9 @@ export default function TemplateEditor() {
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [isEditorReady, setIsEditorReady] = useState(false);
   const [currentMergeJobId, setCurrentMergeJobId] = useState<string | null>(null);
+  
+  // Record navigation state from CreativeEditorWrapper
+  const [recordNavState, setRecordNavState] = useState<RecordNavigationState | null>(null);
   
   // Ref to store CE.SDK handle for imperative save
   const editorHandleRef = useRef<CesdkEditorHandle | null>(null);
@@ -541,6 +544,35 @@ export default function TemplateEditor() {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Record Navigation - only when multiple records */}
+          {recordNavState && recordNavState.totalRecords > 1 && (
+            <div className="hidden sm:flex items-center gap-1 bg-muted/50 rounded-md px-2 py-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={recordNavState.goToPrevious}
+                disabled={recordNavState.currentIndex === 0}
+                title="Previous record"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-xs font-medium tabular-nums min-w-[72px] text-center">
+                Record {recordNavState.currentIndex + 1} of {recordNavState.totalRecords}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={recordNavState.goToNext}
+                disabled={recordNavState.currentIndex === recordNavState.totalRecords - 1}
+                title="Next record"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          
           {/* Page Size Controls - only for non-label projects */}
           {!isLabelProject && template.width_mm && template.height_mm ? (
             <PageSizeControls
@@ -633,6 +665,7 @@ export default function TemplateEditor() {
           onSave={handleSave}
           onSceneChange={handleSceneChange}
           onReady={handleEditorReady}
+          onRecordNavigationChange={setRecordNavState}
           labelWidth={
             !isLabelProject && printSettings.enablePrintMarks
               ? (template.width_mm || 100) + printSettings.bleedMm * 2

@@ -605,36 +605,7 @@ export default function TemplateEditor() {
         </div>
       </header>
 
-      {/* Record Navigation Bar - Centered with colored highlight */}
-      {recordNavState && recordNavState.totalRecords > 1 && (
-        <div className="flex h-10 shrink-0 items-center justify-center border-b bg-card/50">
-          <div className="flex items-center gap-2 bg-primary/10 rounded-full px-4 py-1.5 border border-primary/20">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 hover:bg-primary/20"
-              onClick={recordNavState.goToPrevious}
-              disabled={recordNavState.currentIndex === 0}
-              title="Previous record"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-semibold text-primary tabular-nums min-w-[100px] text-center">
-              Record {recordNavState.currentIndex + 1} of {recordNavState.totalRecords}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 hover:bg-primary/20"
-              onClick={recordNavState.goToNext}
-              disabled={recordNavState.currentIndex === recordNavState.totalRecords - 1}
-              title="Next record"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Record Navigation is now rendered inside CreativeEditorWrapper overlaid on the CE.SDK nav bar */}
 
       {/* Image Upload Prompt Banner */}
       {showImageUploadPrompt && (

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import CreativeEditorSDK, { Configuration, AssetSource, AssetResult, AssetsQueryResult } from '@cesdk/cesdk-js';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { createBarcodeAssetSource } from './barcodeAssetSource';
 import { createSequenceAssetSource, SequenceConfig, parseSequenceMetadata, formatSequenceNumber, createSequenceBlockName } from './sequenceAssetSource';
 import { createImageAssetSource } from './imageAssetSource';
@@ -755,7 +755,7 @@ export function CreativeEditorWrapper({
               },
               dock: {
                 iconSize: 'normal',
-                hideLabels: true, // Use icons with tooltips to prevent label truncation
+                hideLabels: true, // Icons only - CE.SDK shows tooltips by default when hideLabels is true
               },
               libraries: {
                 insert: {
@@ -1752,6 +1752,33 @@ export function CreativeEditorWrapper({
       )}
       
       <div ref={containerRef} className="h-full w-full" />
+      
+      {/* Record Navigation Overlay - Centered in CE.SDK navigation bar */}
+      {!isLoading && totalRecords > 1 && (
+        <div className="cesdk-record-nav absolute left-1/2 top-1 z-20 -translate-x-1/2">
+          <div className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/15 px-3 py-1 shadow-sm backdrop-blur-sm">
+            <button
+              onClick={goToPreviousRecord}
+              disabled={currentRecordIndex === 0}
+              className="flex h-6 w-6 items-center justify-center rounded-full text-primary transition-colors hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Previous record"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="min-w-[90px] text-center text-xs font-semibold tabular-nums text-primary">
+              Record {currentRecordIndex + 1} of {totalRecords}
+            </span>
+            <button
+              onClick={goToNextRecord}
+              disabled={currentRecordIndex === totalRecords - 1}
+              className="flex h-6 w-6 items-center justify-center rounded-full text-primary transition-colors hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Next record"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* Barcode/QR Configuration Panel */}
       <BarcodeConfigPanel

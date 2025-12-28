@@ -6,7 +6,7 @@ import { createSequenceAssetSource, SequenceConfig, parseSequenceMetadata, forma
 import { createImageAssetSource } from './imageAssetSource';
 import { SequenceConfigDialog } from '@/components/canvas/SequenceConfigDialog';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
-import { prefetchImagesForRecords, VariableData } from '@/lib/cesdk/variableResolver';
+import { prefetchImagesForRecords, warmCacheForAdjacentRecords, VariableData } from '@/lib/cesdk/variableResolver';
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
 import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
@@ -755,7 +755,7 @@ export function CreativeEditorWrapper({
               },
               dock: {
                 iconSize: 'normal',
-                hideLabels: true, // Icons only - CE.SDK shows tooltips by default when hideLabels is true
+                hideLabels: false, // Show labels - CSS forces wider dock to prevent truncation
               },
               libraries: {
                 insert: {
@@ -1719,14 +1719,20 @@ export function CreativeEditorWrapper({
     );
   }
 
-  // Record navigation handlers
+  // Record navigation handlers - with cache warming for adjacent records
   const goToPreviousRecord = useCallback(() => {
-    setCurrentRecordIndex(prev => Math.max(0, prev - 1));
-  }, []);
+    const newIndex = Math.max(0, currentRecordIndex - 1);
+    setCurrentRecordIndex(newIndex);
+    // Warm cache for adjacent records (fire and forget)
+    warmCacheForAdjacentRecords(newIndex, allSampleData, projectImages);
+  }, [currentRecordIndex, allSampleData, projectImages]);
 
   const goToNextRecord = useCallback(() => {
-    setCurrentRecordIndex(prev => Math.min(totalRecords - 1, prev + 1));
-  }, [totalRecords]);
+    const newIndex = Math.min(totalRecords - 1, currentRecordIndex + 1);
+    setCurrentRecordIndex(newIndex);
+    // Warm cache for adjacent records (fire and forget)
+    warmCacheForAdjacentRecords(newIndex, allSampleData, projectImages);
+  }, [totalRecords, currentRecordIndex, allSampleData, projectImages]);
 
   // Notify parent of record navigation state changes
   useEffect(() => {

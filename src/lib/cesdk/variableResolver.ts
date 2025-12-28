@@ -10,9 +10,28 @@ export interface VariableData {
 // Cache image URLs as blob URLs for faster VDP preview navigation
 const imageCache = new Map<string, string>(); // Original URL -> Blob URL
 const pendingFetches = new Map<string, Promise<string>>(); // Prevent duplicate fetches
+const cacheAccessOrder: string[] = []; // Track access order for LRU eviction
+
+// Cache configuration
+const MAX_CACHE_SIZE = 50; // Limit cache to prevent memory issues
 
 // Track which images are priority (current record) vs background
 let priorityImageUrls = new Set<string>();
+
+/**
+ * Evict oldest entries if cache exceeds limit (LRU strategy)
+ */
+function evictIfNeeded(): void {
+  while (imageCache.size >= MAX_CACHE_SIZE && cacheAccessOrder.length > 0) {
+    const oldestUrl = cacheAccessOrder.shift();
+    if (oldestUrl && imageCache.has(oldestUrl)) {
+      const blobUrl = imageCache.get(oldestUrl)!;
+      URL.revokeObjectURL(blobUrl); // Free memory
+      imageCache.delete(oldestUrl);
+      console.log(`🗑️ Cache evicted: ${oldestUrl.substring(0, 40)}...`);
+    }
+  }
+}
 
 /**
  * Prefetch an image and cache it as a blob URL for instant access
@@ -21,6 +40,11 @@ let priorityImageUrls = new Set<string>();
 export async function prefetchImage(url: string): Promise<string> {
   // Return cached blob URL if available
   if (imageCache.has(url)) {
+    console.log(`🎯 Cache HIT: ${url.substring(0, 50)}...`);
+    // Move to end of access order (most recently used)
+    const idx = cacheAccessOrder.indexOf(url);
+    if (idx > -1) cacheAccessOrder.splice(idx, 1);
+    cacheAccessOrder.push(url);
     return imageCache.get(url)!;
   }
   
@@ -29,6 +53,8 @@ export async function prefetchImage(url: string): Promise<string> {
     return pendingFetches.get(url)!;
   }
   
+  console.log(`📥 Cache MISS, fetching: ${url.substring(0, 50)}...`);
+  
   // Start new fetch
   const fetchPromise = (async () => {
     try {
@@ -36,7 +62,12 @@ export async function prefetchImage(url: string): Promise<string> {
       if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
+      
+      // Evict old entries if needed before adding new one
+      evictIfNeeded();
+      
       imageCache.set(url, blobUrl);
+      cacheAccessOrder.push(url);
       return blobUrl;
     } catch (e) {
       console.warn('Failed to prefetch image:', url, e);
@@ -111,8 +142,8 @@ export async function prefetchImagesForRecords(
   
   console.log(`🖼️ Prefetching ${allUrls.length} images for VDP cache...`);
   
-  // Priority: First 5 images loaded immediately (for first few records)
-  const priorityUrls = allUrls.slice(0, 5);
+  // Priority: First 10 images loaded immediately (covers more initial records)
+  const priorityUrls = allUrls.slice(0, 10);
   priorityImageUrls = new Set(priorityUrls);
   
   // Load priority images immediately
@@ -120,7 +151,7 @@ export async function prefetchImagesForRecords(
   console.log(`✅ Priority images loaded: ${priorityUrls.length}`);
   
   // Background load: remaining images in larger batches (non-blocking)
-  const remainingUrls = allUrls.slice(5);
+  const remainingUrls = allUrls.slice(10);
   if (remainingUrls.length > 0) {
     // Fire and forget - don't await
     (async () => {

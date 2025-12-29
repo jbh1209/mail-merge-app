@@ -1143,6 +1143,47 @@ export function CreativeEditorWrapper({
 
         setIsLoading(false);
         
+        // ============ DOCK TOOLTIP PATCHING ============
+        // CE.SDK hideLabels:true removes labels but also tooltips
+        // We patch dock buttons with title attributes for native browser tooltips
+        const patchDockTooltips = () => {
+          const dockButtons = container.querySelectorAll('[data-cy*="dock"][data-cy*="panelButton"], [data-cy*="dock"] button, [role="button"]');
+          dockButtons.forEach((btn) => {
+            const el = btn as HTMLElement;
+            // Skip if already patched
+            if (el.getAttribute('data-tooltip-patched')) return;
+            
+            // Find the best label source
+            let label = el.getAttribute('aria-label') 
+              || el.getAttribute('title')
+              || el.querySelector('[aria-label]')?.getAttribute('aria-label')
+              || el.textContent?.trim();
+            
+            // Clean up label (remove extra whitespace, limit length)
+            if (label) {
+              label = label.replace(/\s+/g, ' ').trim().slice(0, 50);
+              if (label.length > 0) {
+                el.setAttribute('title', label);
+                el.setAttribute('data-tooltip', label);
+                el.setAttribute('data-tooltip-patched', 'true');
+              }
+            }
+          });
+        };
+        
+        // Initial patch after a short delay (DOM needs to settle)
+        setTimeout(patchDockTooltips, 500);
+        setTimeout(patchDockTooltips, 1500); // Second pass catches late-rendered items
+        
+        // Watch for DOM changes and re-patch (handles panel switches)
+        const tooltipObserver = new MutationObserver(() => {
+          patchDockTooltips();
+        });
+        tooltipObserver.observe(container, { childList: true, subtree: true });
+        
+        // Store observer for cleanup
+        (cesdk as any).__tooltipObserver = tooltipObserver;
+        
         // Expose handle with save method to parent
         onReady?.({
           cesdk,
@@ -1172,6 +1213,10 @@ export function CreativeEditorWrapper({
     initEditor();
 
     return () => {
+      // Clean up tooltip observer
+      if (editorRef.current && (editorRef.current as any).__tooltipObserver) {
+        (editorRef.current as any).__tooltipObserver.disconnect();
+      }
       // Clean up page check interval
       if (pageCheckIntervalRef.current) {
         clearInterval(pageCheckIntervalRef.current);
@@ -1349,18 +1394,22 @@ export function CreativeEditorWrapper({
             console.warn('Could not set locked property:', e);
           }
 
-          // Make trim guide non-interactive - purely visual reference (belt and suspenders)
+          // Make trim guide non-interactive - purely visual reference
+          // NOTE: Do NOT disable lifecycle/destroy - we need to be able to clean it up
           engine.block.setScopeEnabled(trimGuide, 'editor/select', false);
           engine.block.setScopeEnabled(trimGuide, 'layer/move', false);
           engine.block.setScopeEnabled(trimGuide, 'layer/resize', false);
           engine.block.setScopeEnabled(trimGuide, 'layer/rotate', false);
-          engine.block.setScopeEnabled(trimGuide, 'lifecycle/destroy', false);
           engine.block.setScopeEnabled(trimGuide, 'lifecycle/duplicate', false);
+          // lifecycle/destroy left enabled for cleanup
+
+          // CRITICAL: Explicitly set visible=true to ensure guide shows
+          engine.block.setVisible(trimGuide, true);
 
           // Ensure it's above artwork
           engine.block.bringToFront(trimGuide);
           
-          console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed`);
+          console.log(`✂️ Created trim guide: ${trimWidth}mm × ${trimHeight}mm with ${bleed}mm bleed, visible=true`);
         }
         // If trimGuideMm is null, we already cleaned up all guides above
         

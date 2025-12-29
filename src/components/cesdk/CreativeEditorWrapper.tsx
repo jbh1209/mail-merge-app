@@ -6,7 +6,7 @@ import { createSequenceAssetSource, SequenceConfig, parseSequenceMetadata, forma
 import { createImageAssetSource } from './imageAssetSource';
 import { SequenceConfigDialog } from '@/components/canvas/SequenceConfigDialog';
 import { exportDesign, ExportOptions, getPrintReadyExportOptions } from '@/lib/cesdk/exportUtils';
-import { prefetchImagesForRecords, warmCacheForAdjacentRecords, VariableData } from '@/lib/cesdk/variableResolver';
+import { prefetchImagesForRecords, warmCacheForAdjacentRecords, prefetchImage, VariableData } from '@/lib/cesdk/variableResolver';
 import { generateBarcodeDataUrl, generateQRCodeDataUrl } from '@/lib/barcode-svg-utils';
 import { BarcodeConfigPanel, BarcodeConfig } from './BarcodeConfigPanel';
 import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-labels';
@@ -755,7 +755,7 @@ export function CreativeEditorWrapper({
               },
               dock: {
                 iconSize: 'normal',
-                hideLabels: false, // Show labels - CSS forces wider dock to prevent truncation
+                hideLabels: true,
               },
               libraries: {
                 insert: {
@@ -1259,7 +1259,7 @@ export function CreativeEditorWrapper({
       return;
     }
     
-    // Small delay to ensure editor is fully ready after dimension changes
+    // Increased delay to ensure editor is fully ready after dimension changes
     const timeoutId = setTimeout(() => {
       if (!editorRef.current) return;
       if (trimGuideCreatingRef.current) return;
@@ -1298,20 +1298,17 @@ export function CreativeEditorWrapper({
         if (trimGuideMm) {
           const { width: trimWidth, height: trimHeight, bleedMm: bleed } = trimGuideMm;
           
-          // CRITICAL FIX: Verify page dimensions are correct before creating guide
-          // If page is still at old dimensions (before bleed was added), skip and let the effect re-run
+          // Log current page dimensions for debugging
           const currentPageWidth = engine.block.getWidth(page);
           const currentPageHeight = engine.block.getHeight(page);
           const expectedWidth = trimWidth + (bleed * 2);
           const expectedHeight = trimHeight + (bleed * 2);
           
-          // Use a small tolerance for floating point comparison (0.1mm)
-          const tolerance = 0.1;
-          if (Math.abs(currentPageWidth - expectedWidth) > tolerance || 
-              Math.abs(currentPageHeight - expectedHeight) > tolerance) {
-            console.log(`✂️ Page dimensions not ready: ${currentPageWidth.toFixed(1)}×${currentPageHeight.toFixed(1)}mm, expected ${expectedWidth.toFixed(1)}×${expectedHeight.toFixed(1)}mm - will retry when dimensions update`);
-            trimGuideCreatingRef.current = false;
-            return; // The effect will re-run when labelWidth/labelHeight update
+          // Log dimension info but don't block trim guide creation
+          // The guide will still be useful even if dimensions are slightly off
+          if (Math.abs(currentPageWidth - expectedWidth) > 0.1 || 
+              Math.abs(currentPageHeight - expectedHeight) > 0.1) {
+            console.warn(`✂️ Dimension mismatch (creating anyway): Page ${currentPageWidth.toFixed(1)}×${currentPageHeight.toFixed(1)}mm, expected ${expectedWidth.toFixed(1)}×${expectedHeight.toFixed(1)}mm`);
           }
           
           console.log(`✂️ Trim guide config: ${trimWidth}mm × ${trimHeight}mm, bleed: ${bleed}mm`);
@@ -1397,11 +1394,12 @@ export function CreativeEditorWrapper({
   useEffect(() => {
     if (!editorRef.current) return;
 
-    const engine = editorRef.current.engine;
-    
-    // Find all text blocks and update with current record's data
-    try {
-      const textBlocks = engine.block.findByType('//ly.img.ubq/text');
+    const updateRecordPreview = async () => {
+      const engine = editorRef.current!.engine;
+      
+      // Find all text blocks and update with current record's data
+      try {
+        const textBlocks = engine.block.findByType('//ly.img.ubq/text');
       textBlocks.forEach((blockId) => {
         const blockName = engine.block.getName(blockId);
         
@@ -1478,7 +1476,7 @@ export function CreativeEditorWrapper({
         urlPreview: img.url?.substring(0, 60) + '...'
       })));
       
-      graphicBlocks.forEach((blockId) => {
+      for (const blockId of graphicBlocks) {
         const blockName = engine.block.getName(blockId);
         
         if (blockName?.startsWith('vdp:image:')) {
@@ -1506,10 +1504,12 @@ export function CreativeEditorWrapper({
             if (matchingImage) {
               console.log('✅ Found matching image:', matchingImage.name, '->', matchingImage.url?.substring(0, 80));
               try {
+                // Use cached blob URL for faster navigation
+                const cachedUrl = await prefetchImage(matchingImage.url);
                 const fill = engine.block.getFill(blockId);
                 if (fill && engine.block.isValid(fill)) {
-                  engine.block.setString(fill, 'fill/image/imageFileURI', matchingImage.url);
-                  console.log('✅ Updated image block fill');
+                  engine.block.setString(fill, 'fill/image/imageFileURI', cachedUrl);
+                  console.log('✅ Updated image block fill with cached URL');
                 }
               } catch (imgErr) {
                 console.warn(`Failed to update image block ${fieldName}:`, imgErr);
@@ -1521,10 +1521,13 @@ export function CreativeEditorWrapper({
             console.log('⚠️ No fieldValue or no projectImages:', { fieldValue, imageCount: projectImages.length });
           }
         }
-      });
-    } catch (e) {
-      console.warn('Failed to update record preview:', e);
-    }
+      }
+      } catch (e) {
+        console.warn('Failed to update record preview:', e);
+      }
+    };
+    
+    updateRecordPreview();
   }, [currentRecordIndex, currentSampleData, projectImages]);
 
   // DEDICATED EFFECT: Resolve VDP images when projectImages becomes available
@@ -1532,75 +1535,81 @@ export function CreativeEditorWrapper({
   useEffect(() => {
     if (!editorRef.current || isLoading) return;
     
-    console.log('🖼️ [VDP Image Resolution] Effect triggered');
-    console.log('📦 projectImages count:', projectImages.length);
-    
-    if (projectImages.length === 0) {
-      console.log('⏳ Waiting for projectImages to load...');
-      return;
-    }
-    
-    // Prefetch all project images into cache for fast VDP navigation
-    prefetchImagesForRecords(allSampleData || [], projectImages);
-    
-    console.log('📦 Available projectImages:', projectImages.map(img => ({
-      name: img.name,
-      normalized: normalizeForImageMatch(img.name),
-      urlExists: !!img.url
-    })));
-    
-    const engine = editorRef.current.engine;
-    const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
-    
-    console.log('🔍 Scanning', graphicBlocks.length, 'graphic blocks for VDP image blocks...');
-    
-    let resolvedCount = 0;
-    let notFoundCount = 0;
-    
-    graphicBlocks.forEach((blockId) => {
-      const blockName = engine.block.getName(blockId);
+    const resolveVdpImages = async () => {
+      console.log('🖼️ [VDP Image Resolution] Effect triggered');
+      console.log('📦 projectImages count:', projectImages.length);
       
-      if (blockName?.startsWith('vdp:image:')) {
-        const fieldName = blockName.replace('vdp:image:', '');
-        const fieldValue = currentSampleData[fieldName];
+      if (projectImages.length === 0) {
+        console.log('⏳ Waiting for projectImages to load...');
+        return;
+      }
+      
+      // Prefetch all project images into cache for fast VDP navigation
+      prefetchImagesForRecords(allSampleData || [], projectImages);
+      
+      console.log('📦 Available projectImages:', projectImages.map(img => ({
+        name: img.name,
+        normalized: normalizeForImageMatch(img.name),
+        urlExists: !!img.url
+      })));
+      
+      const engine = editorRef.current!.engine;
+      const graphicBlocks = engine.block.findByType('//ly.img.ubq/graphic');
+      
+      console.log('🔍 Scanning', graphicBlocks.length, 'graphic blocks for VDP image blocks...');
+      
+      let resolvedCount = 0;
+      let notFoundCount = 0;
+      
+      for (const blockId of graphicBlocks) {
+        const blockName = engine.block.getName(blockId);
         
-        console.log('🔍 Found VDP image block:', { blockName, fieldName, fieldValue });
-        
-        if (fieldValue) {
-          const normalizedValue = normalizeForImageMatch(String(fieldValue));
+        if (blockName?.startsWith('vdp:image:')) {
+          const fieldName = blockName.replace('vdp:image:', '');
+          const fieldValue = currentSampleData[fieldName];
           
-          console.log('🔍 Attempting to match:', {
-            originalValue: fieldValue,
-            normalizedValue,
-            against: projectImages.map(img => normalizeForImageMatch(img.name))
-          });
+          console.log('🔍 Found VDP image block:', { blockName, fieldName, fieldValue });
           
-          const matchingImage = projectImages.find(img => 
-            normalizeForImageMatch(img.name) === normalizedValue
-          );
-          
-          if (matchingImage?.url) {
-            try {
-              const fill = engine.block.getFill(blockId);
-              if (fill && engine.block.isValid(fill)) {
-                engine.block.setString(fill, 'fill/image/imageFileURI', matchingImage.url);
-                console.log('✅ [VDP Image Resolution] Resolved:', fieldName, '->', matchingImage.name);
-                resolvedCount++;
+          if (fieldValue) {
+            const normalizedValue = normalizeForImageMatch(String(fieldValue));
+            
+            console.log('🔍 Attempting to match:', {
+              originalValue: fieldValue,
+              normalizedValue,
+              against: projectImages.map(img => normalizeForImageMatch(img.name))
+            });
+            
+            const matchingImage = projectImages.find(img => 
+              normalizeForImageMatch(img.name) === normalizedValue
+            );
+            
+            if (matchingImage?.url) {
+              try {
+                // Use cached blob URL for faster VDP navigation
+                const cachedUrl = await prefetchImage(matchingImage.url);
+                const fill = engine.block.getFill(blockId);
+                if (fill && engine.block.isValid(fill)) {
+                  engine.block.setString(fill, 'fill/image/imageFileURI', cachedUrl);
+                  console.log('✅ [VDP Image Resolution] Resolved with cached URL:', fieldName, '->', matchingImage.name);
+                  resolvedCount++;
+                }
+              } catch (e) {
+                console.warn('❌ Failed to set image fill:', e);
               }
-            } catch (e) {
-              console.warn('❌ Failed to set image fill:', e);
+            } else {
+              console.warn('❌ [VDP Image Resolution] No match found for:', { fieldName, fieldValue, normalizedValue });
+              notFoundCount++;
             }
           } else {
-            console.warn('❌ [VDP Image Resolution] No match found for:', { fieldName, fieldValue, normalizedValue });
-            notFoundCount++;
+            console.warn('⚠️ [VDP Image Resolution] No field value for:', fieldName);
           }
-        } else {
-          console.warn('⚠️ [VDP Image Resolution] No field value for:', fieldName);
         }
       }
-    });
+      
+      console.log('📊 [VDP Image Resolution] Summary:', { resolved: resolvedCount, notFound: notFoundCount, totalBlocks: graphicBlocks.length });
+    };
     
-    console.log('📊 [VDP Image Resolution] Summary:', { resolved: resolvedCount, notFound: notFoundCount, totalBlocks: graphicBlocks.length });
+    resolveVdpImages();
   }, [projectImages, isLoading, currentSampleData]);
 
   // Handle barcode/QR config changes

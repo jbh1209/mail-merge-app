@@ -200,22 +200,26 @@ async function exportLabelPdfs(
   const engine = cesdk.engine;
   const pdfBlobs: Blob[] = [];
   
-  // CRITICAL: Hide trim guide BEFORE saving archive (so it stays hidden on reload)
+  // Store original scene FIRST (preserving trim guide visibility state)
+  const originalArchiveBlob = await engine.scene.saveToArchive();
+  
+  // Track which trim guides were visible so we can restore them later
+  const trimGuideIds: number[] = [];
+  
+  // THEN hide trim guides for export only (not persisted in archive)
   try {
     const allBlocks = engine.block.findByType('//ly.img.ubq/graphic');
     for (const blockId of allBlocks) {
       const name = engine.block.getName(blockId);
       if (name === '__trim_guide__') {
+        trimGuideIds.push(blockId);
         engine.block.setVisible(blockId, false);
-        console.log('🔲 Hidden trim guide before archive save');
+        console.log('🔲 Temporarily hidden trim guide for export:', blockId);
       }
     }
   } catch (e) {
     console.warn('Could not hide trim guides:', e);
   }
-  
-  // Store original scene as archive (NOW includes hidden trim guide state)
-  const originalArchiveBlob = await engine.scene.saveToArchive();
   
   // Time tracking for ETA estimates
   const exportStartTime = Date.now();
@@ -278,8 +282,23 @@ async function exportLabelPdfs(
     const totalTime = ((Date.now() - exportStartTime) / 1000).toFixed(1);
     console.log(`✅ Exported ${pdfBlobs.length} ${docType}s in ${totalTime}s`);
   } finally {
-    // Restore original scene after all exports
+    // Restore original scene after all exports (this restores trim guide visibility)
     await loadFromArchiveBlob(engine, originalArchiveBlob);
+    
+    // Ensure trim guides are visible again after restore
+    // (The archive had them visible, but let's be explicit)
+    try {
+      const allBlocks = engine.block.findByType('//ly.img.ubq/graphic');
+      for (const blockId of allBlocks) {
+        const name = engine.block.getName(blockId);
+        if (name === '__trim_guide__') {
+          engine.block.setVisible(blockId, true);
+          console.log('✅ Restored trim guide visibility:', blockId);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not restore trim guide visibility:', e);
+    }
   }
   
   // Convert to ArrayBuffers

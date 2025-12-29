@@ -201,22 +201,4 @@ All colors MUST be HSL.
   }
 }
 
-/* CE.SDK dock - force wider dock to prevent label truncation */
-[data-ubq-dock] {
-  width: 72px !important;
-  min-width: 72px !important;
-}
-
-[data-ubq-dock] [data-ubq-entry] {
-  width: 100% !important;
-}
-
-/* Smaller font for dock labels to fit in wider dock */
-[data-ubq-dock] [data-ubq-entry-label],
-[data-ubq-dock] [class*="Label"] {
-  font-size: 9px !important;
-  line-height: 1.2 !important;
-  word-break: break-word !important;
-  text-align: center !important;
-  max-width: 64px !important;
-}
+/* CE.SDK dock - icon-only mode is enabled via config */

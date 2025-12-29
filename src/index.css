@@ -201,4 +201,44 @@ All colors MUST be HSL.
   }
 }
 
-/* CE.SDK dock - icon-only mode is enabled via config */
+/* CE.SDK dock - icon-only mode with CSS tooltips
+   CE.SDK dock items use data-cy and aria attributes for identification
+   We create CSS-based tooltips that appear on hover */
+[data-cy="ly.img.cesdk.dock.panelButton"] {
+  position: relative;
+}
+
+/* Tooltip appears on hover using ::after pseudo-element */
+[data-cy="ly.img.cesdk.dock.panelButton"]::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 8px;
+  padding: 6px 10px;
+  background: hsl(215 25% 12% / 0.95);
+  color: hsl(0 0% 100%);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  z-index: 9999;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Show tooltip on hover */
+[data-cy="ly.img.cesdk.dock.panelButton"]:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Dark mode tooltip styling */
+.dark [data-cy="ly.img.cesdk.dock.panelButton"]::after {
+  background: hsl(0 0% 100% / 0.95);
+  color: hsl(215 25% 12%);
+}

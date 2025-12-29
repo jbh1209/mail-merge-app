@@ -1259,7 +1259,7 @@ export function CreativeEditorWrapper({
       return;
     }
     
-    // Increased delay to ensure editor is fully ready after dimension changes
+    // Increased delay (300ms) to ensure editor is fully ready after dimension changes
     const timeoutId = setTimeout(() => {
       if (!editorRef.current) return;
       if (trimGuideCreatingRef.current) return;
@@ -1369,7 +1369,7 @@ export function CreativeEditorWrapper({
       } finally {
         trimGuideCreatingRef.current = false;
       }
-    }, 100);
+    }, 300); // 300ms delay for reliable dimension changes
     
     return () => {
       clearTimeout(timeoutId);

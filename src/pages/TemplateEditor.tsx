@@ -19,7 +19,9 @@ import { PrintSettings, getDefaultPrintSettings } from '@/types/print-settings';
 
 // Feature flag: use Polotno editor instead of CE.SDK
 // Set VITE_USE_POLOTNO_EDITOR=true in environment to enable
-const USE_POLOTNO_EDITOR = import.meta.env.VITE_USE_POLOTNO_EDITOR === 'true';
+// Polotno is now the default editor
+// Set VITE_USE_CESDK_EDITOR=true in environment to use CE.SDK instead
+const USE_POLOTNO_EDITOR = import.meta.env.VITE_USE_CESDK_EDITOR !== 'true';
 
 // Unified editor handle type
 type EditorHandle = CesdkEditorHandle | PolotnoEditorHandle;

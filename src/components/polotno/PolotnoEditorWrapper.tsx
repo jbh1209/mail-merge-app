@@ -9,6 +9,7 @@ import {
   loadPolotnoModules,
   createPolotnoStore,
   configureBleed,
+  toggleBleedVisibility,
   loadScene,
   saveScene,
   getPolotnoComponents,
@@ -82,6 +83,7 @@ interface PolotnoEditorWrapperProps {
   labelWidth?: number;
   labelHeight?: number;
   bleedMm?: number;
+  showBleed?: boolean;
   projectType?: string;
   projectImages?: { name: string; url: string }[];
   trimGuideMm?: { width: number; height: number; bleedMm: number };
@@ -101,6 +103,7 @@ export function PolotnoEditorWrapper({
   labelWidth = 100,
   labelHeight = 50,
   bleedMm = 0,
+  showBleed = true,
   projectImages = [],
 }: PolotnoEditorWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -113,8 +116,38 @@ export function PolotnoEditorWrapper({
   const lastSavedSceneRef = useRef<string>('');
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
+  // Track if editor is initialized
+  const isInitializedRef = useRef(false);
+  
+  // Stable references for dynamic data
+  const availableFieldsRef = useRef(availableFields);
+  const projectImagesRef = useRef(projectImages);
+  const allSampleDataRef = useRef(allSampleData);
+  
+  // Update refs when props change
+  useEffect(() => {
+    availableFieldsRef.current = availableFields;
+  }, [availableFields]);
+  
+  useEffect(() => {
+    projectImagesRef.current = projectImages;
+  }, [projectImages]);
+  
+  useEffect(() => {
+    allSampleDataRef.current = allSampleData;
+  }, [allSampleData]);
+
+  // Toggle bleed visibility when showBleed prop changes
+  useEffect(() => {
+    if (storeRef.current && isInitializedRef.current) {
+      toggleBleedVisibility(storeRef.current, showBleed);
+    }
+  }, [showBleed]);
 
   useEffect(() => {
+    // Skip if already initialized
+    if (isInitializedRef.current) return;
+    
     let mounted = true;
     let changeInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -154,17 +187,20 @@ export function PolotnoEditorWrapper({
         if (!mounted) return;
 
         // Configure bleed
-        configureBleed(store, mmToPixels(bleedMm));
+        configureBleed(store, mmToPixels(bleedMm), showBleed);
+        
+        // Close all side panels on start
+        store.openSidePanel(null);
 
         // Load initial scene and store as base template
         if (initialScene) {
           baseSceneRef.current = initialScene;
           
           // If we have sample data, apply VDP resolution for first record
-          if (allSampleData.length > 0 && allSampleData[0]) {
+          if (allSampleDataRef.current.length > 0 && allSampleDataRef.current[0]) {
             const parsed = JSON.parse(initialScene) as PolotnoScene;
             const resolved = resolveVdpVariables(parsed, {
-              record: allSampleData[0],
+              record: allSampleDataRef.current[0],
               recordIndex: 0,
             });
             store.loadJSON(resolved);
@@ -175,6 +211,7 @@ export function PolotnoEditorWrapper({
         }
 
         storeRef.current = store;
+        isInitializedRef.current = true;
 
         // Render Polotno UI
         if (editorRef.current) {
@@ -189,11 +226,19 @@ export function PolotnoEditorWrapper({
             Workspace,
           } = getPolotnoComponents();
 
-          // Build custom sections with our VDP panels
+          // Get current sample data for the panel
+          const currentSampleData = allSampleDataRef.current[0] || {};
+
+          // Build custom sections with our VDP panels - pass sample data for immediate resolution
           const customSections = [
-            createVdpFieldsSection(VdpFieldsPanel, { store, availableFields, projectImages }),
-            createBarcodesSection(BarcodePanel, { store, availableFields }),
-            createProjectImagesSection(ProjectImagesPanel, { store, projectImages }),
+            createVdpFieldsSection(VdpFieldsPanel, { 
+              store, 
+              availableFields: availableFieldsRef.current, 
+              projectImages: projectImagesRef.current,
+              sampleData: currentSampleData,
+            }),
+            createBarcodesSection(BarcodePanel, { store, availableFields: availableFieldsRef.current }),
+            createProjectImagesSection(ProjectImagesPanel, { store, projectImages: projectImagesRef.current }),
             createSequenceSection(SequencePanel, { store }),
           ];
           
@@ -212,7 +257,7 @@ export function PolotnoEditorWrapper({
               createElement(
                 SidePanelWrap,
                 null,
-                createElement(SidePanel, { store, sections })
+                createElement(SidePanel, { store, sections, defaultSection: null })
               ),
               createElement(
                 WorkspaceWrap,
@@ -229,12 +274,21 @@ export function PolotnoEditorWrapper({
         // Create handle for parent
         const handle: PolotnoEditorHandle = {
           saveScene: async () => {
-            // Save the current scene as the base template
-            const json = saveScene(store);
-            baseSceneRef.current = json;
-            onSave?.(json);
-            lastSavedSceneRef.current = json;
-            return json;
+            // Before saving, we need to get the base template (with placeholders, not resolved values)
+            // Store the current resolved scene, then restore placeholders
+            const currentScene = saveScene(store);
+            
+            // If we have a base scene, use that. Otherwise, the current scene is the base.
+            const sceneToSave = baseSceneRef.current || currentScene;
+            
+            // Update baseScene from current state if needed
+            // We need to extract the layout/design changes but keep VDP placeholders
+            // For now, save the current scene as base (user is designing with resolved values visible)
+            baseSceneRef.current = currentScene;
+            
+            onSave?.(currentScene);
+            lastSavedSceneRef.current = currentScene;
+            return currentScene;
           },
           exportPdf: async (options?: PrintExportOptions) => {
             const {
@@ -278,13 +332,14 @@ export function PolotnoEditorWrapper({
             return blob;
           },
           getResolvedScene: (record: Record<string, string>, recordIndex: number) => {
-            const baseScene = baseSceneRef.current || saveScene(store);
-            const parsed = JSON.parse(baseScene) as PolotnoScene;
+            // Use current store state as base for VDP resolution
+            const currentScene = saveScene(store);
+            const parsed = JSON.parse(currentScene) as PolotnoScene;
             return resolveVdpVariables(parsed, { record, recordIndex });
           },
           batchResolve: (records: Record<string, string>[]) => {
-            const baseScene = baseSceneRef.current || saveScene(store);
-            return batchResolveVdp(baseScene, records);
+            const currentScene = saveScene(store);
+            return batchResolveVdp(currentScene, records);
           },
           getBaseScene: () => {
             return baseSceneRef.current || saveScene(store);
@@ -295,12 +350,17 @@ export function PolotnoEditorWrapper({
         onReady?.(handle);
         setIsLoading(false);
 
-        // Track changes
+        // Track changes - use stable interval
+        let lastCheckedScene = lastSavedSceneRef.current;
         changeInterval = setInterval(() => {
           if (!store) return;
           const current = saveScene(store);
-          onSceneChange?.(current !== lastSavedSceneRef.current);
-        }, 1000);
+          const hasChanges = current !== lastSavedSceneRef.current;
+          if (current !== lastCheckedScene) {
+            lastCheckedScene = current;
+            onSceneChange?.(hasChanges);
+          }
+        }, 2000);
       } catch (e) {
         console.error('Polotno init error:', e);
         if (mounted) {
@@ -320,7 +380,7 @@ export function PolotnoEditorWrapper({
         rootRef.current = null;
       }
     };
-  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady, availableFields, projectImages]);
+  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady, showBleed]);
 
   const goToNext = useCallback(() => {
     if (currentRecordIndex < allSampleData.length - 1) {
@@ -336,14 +396,16 @@ export function PolotnoEditorWrapper({
 
   // Apply VDP resolution when record index changes
   useEffect(() => {
-    if (!storeRef.current || !baseSceneRef.current || allSampleData.length === 0) return;
+    if (!storeRef.current || allSampleData.length === 0) return;
     
     const currentRecord = allSampleData[currentRecordIndex];
     if (!currentRecord) return;
 
     try {
-      const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
-      const resolved = resolveVdpVariables(baseScene, {
+      // Use current store state for VDP resolution (not stale baseSceneRef)
+      const currentScene = saveScene(storeRef.current);
+      const parsed = JSON.parse(currentScene) as PolotnoScene;
+      const resolved = resolveVdpVariables(parsed, {
         record: currentRecord,
         recordIndex: currentRecordIndex,
       });

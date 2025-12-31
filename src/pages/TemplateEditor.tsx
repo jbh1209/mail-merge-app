@@ -644,7 +644,7 @@ export default function TemplateEditor() {
       <main className="flex-1 overflow-hidden">
         {USE_POLOTNO_EDITOR ? (
           <PolotnoEditorWrapper
-            key={`polotno-${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
+            key={`polotno-${templateId}`}
             availableFields={validFields}
             sampleData={sampleData}
             allSampleData={validRecords}
@@ -667,6 +667,7 @@ export default function TemplateEditor() {
                 : (template.height_mm || 50)
             }
             bleedMm={template.bleed_mm || 0}
+            showBleed={printSettings.enablePrintMarks}
             projectType={project?.project_type || 'label'}
             projectImages={projectImages}
             trimGuideMm={

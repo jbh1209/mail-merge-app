@@ -14,6 +14,20 @@ import {
   getPolotnoComponents,
 } from '@/vendor/polotno-runtime.js';
 
+import {
+  createVdpFieldsSection,
+  createBarcodesSection,
+  createProjectImagesSection,
+  createSequenceSection,
+  buildCustomSections,
+} from '@/vendor/polotno-sections.js';
+
+// Import React panel components (no polotno imports, pure React)
+import { VdpFieldsPanel } from './panels/VdpFieldsPanel';
+import { BarcodePanel } from './panels/BarcodePanel';
+import { ProjectImagesPanel } from './panels/ProjectImagesPanel';
+import { SequencePanel } from './panels/SequencePanel';
+
 // Ref handle exposed to parent for imperative actions
 export interface PolotnoEditorHandle {
   saveScene: () => Promise<string>;
@@ -48,6 +62,7 @@ interface PolotnoEditorWrapperProps {
 const mmToPixels = (mm: number, dpi = 300) => (mm / 25.4) * dpi;
 
 export function PolotnoEditorWrapper({
+  availableFields = [],
   allSampleData = [],
   initialScene,
   onSave,
@@ -57,6 +72,7 @@ export function PolotnoEditorWrapper({
   labelWidth = 100,
   labelHeight = 50,
   bleedMm = 0,
+  projectImages = [],
 }: PolotnoEditorWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const storeRef = useRef<any>(null);
@@ -117,9 +133,18 @@ export function PolotnoEditorWrapper({
             PagesTimeline,
             ZoomButtons,
             SidePanel,
-            DEFAULT_SECTIONS,
             Workspace,
           } = getPolotnoComponents();
+
+          // Build custom sections with our VDP panels
+          const customSections = [
+            createVdpFieldsSection(VdpFieldsPanel, { store, availableFields, projectImages }),
+            createBarcodesSection(BarcodePanel, { store, availableFields }),
+            createProjectImagesSection(ProjectImagesPanel, { store, projectImages }),
+            createSequenceSection(SequencePanel, { store }),
+          ];
+          
+          const sections = buildCustomSections(customSections);
 
           // Cleanup previous root if exists
           if (rootRef.current) {
@@ -134,7 +159,7 @@ export function PolotnoEditorWrapper({
               createElement(
                 SidePanelWrap,
                 null,
-                createElement(SidePanel, { store, sections: DEFAULT_SECTIONS })
+                createElement(SidePanel, { store, sections })
               ),
               createElement(
                 WorkspaceWrap,
@@ -187,7 +212,7 @@ export function PolotnoEditorWrapper({
         rootRef.current = null;
       }
     };
-  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady]);
+  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady, availableFields, projectImages]);
 
   const goToNext = useCallback(() => {
     if (currentRecordIndex < allSampleData.length - 1) {

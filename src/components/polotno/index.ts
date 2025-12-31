@@ -5,11 +5,8 @@
 export { PolotnoEditorWrapper } from './PolotnoEditorWrapper';
 export type { PolotnoEditorHandle, RecordNavigationState } from './PolotnoEditorWrapper';
 
-// Phase 2: Custom panels (to be added)
-// export { VdpFieldsPanel, VdpFieldsSection } from './panels/VdpFieldsPanel';
-// export { BarcodePanel, BarcodeSection } from './panels/BarcodePanel';
-// export { ProjectImagesPanel, ProjectImagesSection } from './panels/ProjectImagesPanel';
-// export { SequencePanel, SequenceSection } from './panels/SequencePanel';
-
-// Phase 5: Export components (to be added)
-// export { PolotnoPdfGenerator } from './PolotnoPdfGenerator';
+// Custom panels (React components, no polotno imports)
+export { VdpFieldsPanel } from './panels/VdpFieldsPanel';
+export { BarcodePanel } from './panels/BarcodePanel';
+export { ProjectImagesPanel } from './panels/ProjectImagesPanel';
+export { SequencePanel } from './panels/SequencePanel';

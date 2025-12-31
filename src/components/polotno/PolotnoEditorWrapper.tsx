@@ -120,9 +120,19 @@ export function PolotnoEditorWrapper({
 
     const init = async () => {
       try {
-        const apiKey = import.meta.env.VITE_POLOTNO_API_KEY;
-        if (!apiKey) {
-          setError('Polotno API key not configured');
+        // Fetch API key from edge function
+        const keyResponse = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-polotno-key`
+        );
+        
+        if (!keyResponse.ok) {
+          throw new Error('Failed to fetch Polotno API key');
+        }
+        
+        const { apiKey, error: keyError } = await keyResponse.json();
+        
+        if (keyError || !apiKey) {
+          setError(keyError || 'Polotno API key not configured');
           setIsLoading(false);
           return;
         }

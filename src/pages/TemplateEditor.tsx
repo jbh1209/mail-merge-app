@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import CreativeEditorWrapper, { CesdkEditorHandle, RecordNavigationState } from '@/components/cesdk/CreativeEditorWrapper';
 import { PolotnoEditorWrapper, PolotnoEditorHandle, RecordNavigationState as PolotnoRecordNavState } from '@/components/polotno';
+import { PolotnoPdfGenerator } from '@/components/polotno/PolotnoPdfGenerator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
 import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
@@ -723,28 +724,49 @@ export default function TemplateEditor() {
                 />
               )}
               
-              <CesdkPdfGenerator
-                cesdk={!USE_POLOTNO_EDITOR && editorHandleRef.current && 'cesdk' in editorHandleRef.current ? editorHandleRef.current.cesdk : null}
-                mergeJobId={currentMergeJobId}
-                dataRecords={validRecords}
-                projectType={project?.project_type || 'label'}
-                projectImages={projectImages}
-                templateConfig={{
-                  widthMm: template.width_mm || 100,
-                  heightMm: template.height_mm || 50,
-                  // Non-label projects are full page (certificates, cards, etc.)
-                  isFullPage: project?.project_type !== 'label',
-                  averyPartNumber: (template as any).avery_part_number || (template.design_config as any)?.averyCode,
-                }}
-                printSettings={project?.project_type !== 'label' ? printSettings : undefined}
-                onComplete={(result) => {
-                  // Don't auto-close - let user download first
-                  toast.success(`Generated ${result.pageCount} pages`);
-                }}
-                onError={(error) => {
-                  toast.error(error);
-                }}
-              />
+              {USE_POLOTNO_EDITOR ? (
+                <PolotnoPdfGenerator
+                  editorHandle={editorHandleRef.current as PolotnoEditorHandle | null}
+                  mergeJobId={currentMergeJobId}
+                  dataRecords={validRecords}
+                  projectType={project?.project_type || 'label'}
+                  projectImages={projectImages}
+                  templateConfig={{
+                    widthMm: template.width_mm || 100,
+                    heightMm: template.height_mm || 50,
+                    isFullPage: project?.project_type !== 'label',
+                    averyPartNumber: (template as any).avery_part_number || (template.design_config as any)?.averyCode,
+                  }}
+                  printSettings={project?.project_type !== 'label' ? printSettings : undefined}
+                  onComplete={(result) => {
+                    toast.success(`Generated ${result.pageCount} pages`);
+                  }}
+                  onError={(error) => {
+                    toast.error(error);
+                  }}
+                />
+              ) : (
+                <CesdkPdfGenerator
+                  cesdk={editorHandleRef.current && 'cesdk' in editorHandleRef.current ? editorHandleRef.current.cesdk : null}
+                  mergeJobId={currentMergeJobId}
+                  dataRecords={validRecords}
+                  projectType={project?.project_type || 'label'}
+                  projectImages={projectImages}
+                  templateConfig={{
+                    widthMm: template.width_mm || 100,
+                    heightMm: template.height_mm || 50,
+                    isFullPage: project?.project_type !== 'label',
+                    averyPartNumber: (template as any).avery_part_number || (template.design_config as any)?.averyCode,
+                  }}
+                  printSettings={project?.project_type !== 'label' ? printSettings : undefined}
+                  onComplete={(result) => {
+                    toast.success(`Generated ${result.pageCount} pages`);
+                  }}
+                  onError={(error) => {
+                    toast.error(error);
+                  }}
+                />
+              )}
             </>
           )}
         </DialogContent>

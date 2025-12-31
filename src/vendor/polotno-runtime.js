@@ -131,3 +131,43 @@ export function getSectionTab() {
   }
   return polotnoModules.SectionTab;
 }
+
+/**
+ * Create a custom section definition for the side panel.
+ * @param {string} name - Section identifier
+ * @param {React.ComponentType} TabComponent - Component to render in the tab
+ * @param {React.ComponentType} PanelComponent - Component to render in the panel
+ */
+export function createCustomSection(name, TabComponent, PanelComponent) {
+  if (!polotnoModules) {
+    throw new Error('Polotno modules not loaded. Call loadPolotnoModules() first.');
+  }
+  const { SectionTab } = polotnoModules;
+  
+  return {
+    name,
+    Tab: (props) => {
+      const React = require('react');
+      return React.createElement(SectionTab, { name, ...props }, 
+        React.createElement(TabComponent));
+    },
+    Panel: PanelComponent,
+  };
+}
+
+/**
+ * Build sections array with custom VDP sections prepended to defaults.
+ * @param {Array} customSections - Array of custom section objects
+ */
+export function buildSectionsWithCustom(customSections) {
+  if (!polotnoModules) {
+    throw new Error('Polotno modules not loaded. Call loadPolotnoModules() first.');
+  }
+  
+  // Filter default sections to only include useful ones
+  const defaultSections = polotnoModules.DEFAULT_SECTIONS.filter(
+    section => ['text', 'photos', 'elements', 'upload', 'background', 'layers'].includes(section.name)
+  );
+  
+  return [...customSections, ...defaultSections];
+}

@@ -81,12 +81,76 @@ export async function createPolotnoStore(options) {
 
 /**
  * Configure bleed settings on a store.
+ * @param {object} store - Polotno store instance
+ * @param {number} bleedPx - Bleed size in pixels
+ * @param {boolean} showBleed - Whether to show bleed visualization in editor
  */
-export function configureBleed(store, bleedPx) {
+export function configureBleed(store, bleedPx, showBleed = true) {
   if (bleedPx > 0 && store.activePage) {
     store.activePage.set({ bleed: bleedPx });
-    store.toggleBleed(true);
+    if (showBleed) {
+      store.toggleBleed(true);
+    }
   }
+}
+
+/**
+ * Toggle bleed visualization on/off in the editor.
+ * @param {object} store - Polotno store instance
+ * @param {boolean} show - Whether to show bleed
+ */
+export function toggleBleedVisibility(store, show) {
+  store.toggleBleed(show);
+}
+
+/**
+ * Export the store as a PDF with print features (bleed, crop marks).
+ * @param {object} store - Polotno store instance
+ * @param {object} options - Export options
+ * @param {boolean} options.includeBleed - Include bleed area in export
+ * @param {number} options.cropMarkSize - Size of crop marks in pixels (0 = no marks)
+ * @param {number} options.pixelRatio - Quality multiplier (1-3)
+ * @param {string} options.fileName - Output filename
+ * @returns {Promise<Blob>} PDF blob
+ */
+export async function exportToPdf(store, options = {}) {
+  const {
+    includeBleed = true,
+    cropMarkSize = 0,
+    pixelRatio = 2,
+    fileName = 'output.pdf',
+  } = options;
+
+  // Polotno's saveAsPDF returns a blob
+  const blob = await store.saveAsPDF({
+    includeBleed,
+    cropMarkSize,
+    pixelRatio,
+    fileName,
+    dpi: 300,
+  });
+
+  return blob;
+}
+
+/**
+ * Calculate bleed size in pixels from mm, using DPI.
+ * @param {number} mm - Size in millimeters
+ * @param {number} dpi - Dots per inch (default 300)
+ * @returns {number} Size in pixels
+ */
+export function mmToPixels(mm, dpi = 300) {
+  return (mm / 25.4) * dpi;
+}
+
+/**
+ * Calculate crop mark size in pixels from mm.
+ * @param {number} mm - Crop mark size in mm (typically 3mm)
+ * @param {number} dpi - Dots per inch (default 300)
+ * @returns {number} Size in pixels
+ */
+export function cropMarkMmToPixels(mm, dpi = 300) {
+  return mmToPixels(mm, dpi);
 }
 
 /**

@@ -3,7 +3,11 @@
 // ============================================================================
 
 export { PolotnoEditorWrapper } from './PolotnoEditorWrapper';
-export type { PolotnoEditorHandle, RecordNavigationState } from './PolotnoEditorWrapper';
+export type { 
+  PolotnoEditorHandle, 
+  RecordNavigationState, 
+  PrintExportOptions 
+} from './PolotnoEditorWrapper';
 
 // Custom panels (React components, no polotno imports)
 export { VdpFieldsPanel } from './panels/VdpFieldsPanel';

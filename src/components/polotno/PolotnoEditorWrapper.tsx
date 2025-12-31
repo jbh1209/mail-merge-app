@@ -12,6 +12,9 @@ import {
   loadScene,
   saveScene,
   getPolotnoComponents,
+  exportToPdf,
+  mmToPixels as runtimeMmToPixels,
+  cropMarkMmToPixels,
 } from '@/vendor/polotno-runtime.js';
 
 import {
@@ -31,7 +34,17 @@ import { SequencePanel } from './panels/SequencePanel';
 // Ref handle exposed to parent for imperative actions
 export interface PolotnoEditorHandle {
   saveScene: () => Promise<string>;
+  exportPdf: (options?: PrintExportOptions) => Promise<Blob>;
   store: any;
+}
+
+// Print export options for PDF generation
+export interface PrintExportOptions {
+  includeBleed?: boolean;
+  includeCropMarks?: boolean;
+  cropMarkSizeMm?: number;
+  pixelRatio?: number;
+  fileName?: string;
 }
 
 // Record navigation state exposed to parent
@@ -59,7 +72,8 @@ interface PolotnoEditorWrapperProps {
   trimGuideMm?: { width: number; height: number; bleedMm: number };
 }
 
-const mmToPixels = (mm: number, dpi = 300) => (mm / 25.4) * dpi;
+// Use runtime's mmToPixels for consistency
+const mmToPixels = (mm: number, dpi = 300) => runtimeMmToPixels(mm, dpi);
 
 export function PolotnoEditorWrapper({
   availableFields = [],
@@ -180,6 +194,22 @@ export function PolotnoEditorWrapper({
             onSave?.(json);
             lastSavedSceneRef.current = json;
             return json;
+          },
+          exportPdf: async (options?: PrintExportOptions) => {
+            const {
+              includeBleed = true,
+              includeCropMarks = false,
+              cropMarkSizeMm = 3,
+              pixelRatio = 2,
+              fileName = 'output.pdf',
+            } = options || {};
+
+            return exportToPdf(store, {
+              includeBleed,
+              cropMarkSize: includeCropMarks ? cropMarkMmToPixels(cropMarkSizeMm) : 0,
+              pixelRatio,
+              fileName,
+            });
           },
           store,
         };

@@ -41,6 +41,8 @@ export interface PolotnoEditorHandle {
   saveScene: () => Promise<string>;
   /** Export current view as PDF */
   exportPdf: (options?: PrintExportOptions) => Promise<Blob>;
+  /** Export a specific resolved scene as PDF (for batch export) */
+  exportResolvedPdf: (scene: PolotnoScene, options?: PrintExportOptions) => Promise<Blob>;
   /** Get resolved scene for a specific record */
   getResolvedScene: (record: Record<string, string>, recordIndex: number) => PolotnoScene;
   /** Batch resolve all records for export */
@@ -239,6 +241,31 @@ export function PolotnoEditorWrapper({
               pixelRatio,
               fileName,
             });
+          },
+          exportResolvedPdf: async (scene: PolotnoScene, options?: PrintExportOptions) => {
+            // Load the resolved scene into store temporarily
+            const currentScene = saveScene(store);
+            store.loadJSON(scene);
+            
+            const {
+              includeBleed = true,
+              includeCropMarks = false,
+              cropMarkSizeMm = 3,
+              pixelRatio = 2,
+              fileName = 'output.pdf',
+            } = options || {};
+
+            const blob = await exportToPdf(store, {
+              includeBleed,
+              cropMarkSize: includeCropMarks ? cropMarkMmToPixels(cropMarkSizeMm) : 0,
+              pixelRatio,
+              fileName,
+            });
+            
+            // Restore original scene
+            loadScene(store, currentScene);
+            
+            return blob;
           },
           getResolvedScene: (record: Record<string, string>, recordIndex: number) => {
             const baseScene = baseSceneRef.current || saveScene(store);

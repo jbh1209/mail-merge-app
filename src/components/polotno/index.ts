@@ -37,6 +37,9 @@ export type {
   PrintConfig,
 } from '@/lib/polotno/pdfBatchExporter';
 
+// PDF Generator Component
+export { PolotnoPdfGenerator } from './PolotnoPdfGenerator';
+
 // Types
 export type { 
   PolotnoScene, 

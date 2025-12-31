@@ -1,7 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, createElement } from 'react';
+import { createRoot, Root } from 'react-dom/client';
 import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+// Import from JS bridge - TypeScript will treat these as `any`, avoiding type resolution
+import {
+  loadPolotnoModules,
+  createPolotnoStore,
+  configureBleed,
+  loadScene,
+  saveScene,
+  getPolotnoComponents,
+} from '@/vendor/polotno-runtime.js';
 
 // Ref handle exposed to parent for imperative actions
 export interface PolotnoEditorHandle {
@@ -46,11 +57,11 @@ export function PolotnoEditorWrapper({
   labelWidth = 100,
   labelHeight = 50,
   bleedMm = 0,
-  projectImages = [],
 }: PolotnoEditorWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const storeRef = useRef<any>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<Root | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
@@ -58,7 +69,7 @@ export function PolotnoEditorWrapper({
 
   useEffect(() => {
     let mounted = true;
-    let store: any = null;
+    let changeInterval: ReturnType<typeof setInterval> | null = null;
 
     const init = async () => {
       try {
@@ -69,71 +80,78 @@ export function PolotnoEditorWrapper({
           return;
         }
 
-        // Dynamic imports to avoid TypeScript complexity
-        const polotnoStore = await import('polotno/model/store');
-        const polotno = await import('polotno');
-        const toolbar = await import('polotno/toolbar/toolbar');
-        const timeline = await import('polotno/pages-timeline');
-        const zoom = await import('polotno/toolbar/zoom-buttons');
-        const sidePanel = await import('polotno/side-panel');
-        const workspace = await import('polotno/canvas/workspace');
-        const React = await import('react');
-        const ReactDOM = await import('react-dom/client');
-
-        // Blueprint CSS
-        await import('@blueprintjs/core/lib/css/blueprint.css');
+        // Load Polotno modules via JS bridge
+        await loadPolotnoModules();
 
         if (!mounted) return;
 
-        store = polotnoStore.createStore({ key: apiKey, showCredit: false });
-        store.setUnit({ unit: 'mm', dpi: 300 });
-        store.setSize(mmToPixels(labelWidth), mmToPixels(labelHeight));
-        
-        if (store.pages.length === 0) store.addPage();
-        if (bleedMm > 0) {
-          store.activePage?.set({ bleed: mmToPixels(bleedMm) });
-          store.toggleBleed(true);
-        }
+        // Create store via bridge
+        const store = await createPolotnoStore({
+          apiKey,
+          unit: 'mm',
+          dpi: 300,
+          width: mmToPixels(labelWidth),
+          height: mmToPixels(labelHeight),
+        });
 
+        if (!mounted) return;
+
+        // Configure bleed
+        configureBleed(store, mmToPixels(bleedMm));
+
+        // Load initial scene
         if (initialScene) {
-          try {
-            store.loadJSON(JSON.parse(initialScene));
-            lastSavedSceneRef.current = initialScene;
-          } catch (e) {
-            console.warn('Could not load initial scene:', e);
-          }
+          loadScene(store, initialScene);
+          lastSavedSceneRef.current = initialScene;
         }
 
         storeRef.current = store;
 
         // Render Polotno UI
         if (editorRef.current) {
-          const { PolotnoContainer, SidePanelWrap, WorkspaceWrap } = polotno;
-          const { Toolbar } = toolbar;
-          const { PagesTimeline } = timeline;
-          const { ZoomButtons } = zoom;
-          const { SidePanel, DEFAULT_SECTIONS } = sidePanel;
-          const { Workspace } = workspace;
+          const {
+            PolotnoContainer,
+            SidePanelWrap,
+            WorkspaceWrap,
+            Toolbar,
+            PagesTimeline,
+            ZoomButtons,
+            SidePanel,
+            DEFAULT_SECTIONS,
+            Workspace,
+          } = getPolotnoComponents();
 
-          const root = ReactDOM.createRoot(editorRef.current);
-          root.render(
-            React.createElement(PolotnoContainer, { style: { width: '100%', height: '100%' } },
-              React.createElement(SidePanelWrap, null,
-                React.createElement(SidePanel, { store, sections: DEFAULT_SECTIONS })
+          // Cleanup previous root if exists
+          if (rootRef.current) {
+            rootRef.current.unmount();
+          }
+
+          rootRef.current = createRoot(editorRef.current);
+          rootRef.current.render(
+            createElement(
+              PolotnoContainer,
+              { style: { width: '100%', height: '100%' } },
+              createElement(
+                SidePanelWrap,
+                null,
+                createElement(SidePanel, { store, sections: DEFAULT_SECTIONS })
               ),
-              React.createElement(WorkspaceWrap, null,
-                React.createElement(Toolbar, { store }),
-                React.createElement(Workspace, { store, backgroundColor: '#f0f0f0' }),
-                React.createElement(ZoomButtons, { store }),
-                React.createElement(PagesTimeline, { store })
+              createElement(
+                WorkspaceWrap,
+                null,
+                createElement(Toolbar, { store }),
+                createElement(Workspace, { store, backgroundColor: '#f0f0f0' }),
+                createElement(ZoomButtons, { store }),
+                createElement(PagesTimeline, { store })
               )
             )
           );
         }
 
+        // Create handle for parent
         const handle: PolotnoEditorHandle = {
           saveScene: async () => {
-            const json = JSON.stringify(store.toJSON());
+            const json = saveScene(store);
             onSave?.(json);
             lastSavedSceneRef.current = json;
             return json;
@@ -145,30 +163,42 @@ export function PolotnoEditorWrapper({
         setIsLoading(false);
 
         // Track changes
-        const interval = setInterval(() => {
+        changeInterval = setInterval(() => {
           if (!store) return;
-          const current = JSON.stringify(store.toJSON());
+          const current = saveScene(store);
           onSceneChange?.(current !== lastSavedSceneRef.current);
         }, 1000);
-
-        return () => clearInterval(interval);
       } catch (e) {
         console.error('Polotno init error:', e);
-        setError('Failed to initialize editor');
-        setIsLoading(false);
+        if (mounted) {
+          setError('Failed to initialize editor');
+          setIsLoading(false);
+        }
       }
     };
 
     init();
-    return () => { mounted = false; };
+
+    return () => {
+      mounted = false;
+      if (changeInterval) clearInterval(changeInterval);
+      if (rootRef.current) {
+        rootRef.current.unmount();
+        rootRef.current = null;
+      }
+    };
   }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady]);
 
   const goToNext = useCallback(() => {
-    if (currentRecordIndex < allSampleData.length - 1) setCurrentRecordIndex(i => i + 1);
+    if (currentRecordIndex < allSampleData.length - 1) {
+      setCurrentRecordIndex((i) => i + 1);
+    }
   }, [currentRecordIndex, allSampleData.length]);
 
   const goToPrev = useCallback(() => {
-    if (currentRecordIndex > 0) setCurrentRecordIndex(i => i - 1);
+    if (currentRecordIndex > 0) {
+      setCurrentRecordIndex((i) => i - 1);
+    }
   }, [currentRecordIndex]);
 
   useEffect(() => {
@@ -176,7 +206,7 @@ export function PolotnoEditorWrapper({
       onRecordNavigationChange({
         currentIndex: currentRecordIndex,
         totalRecords: allSampleData.length,
-        goToNext: goToNext,
+        goToNext,
         goToPrevious: goToPrev,
       });
     }
@@ -203,11 +233,25 @@ export function PolotnoEditorWrapper({
     <div ref={containerRef} className="relative h-full w-full">
       {allSampleData.length > 1 && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToPrev} disabled={currentRecordIndex === 0}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={goToPrev}
+            disabled={currentRecordIndex === 0}
+          >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-xs font-medium tabular-nums">Record {currentRecordIndex + 1} / {allSampleData.length}</span>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToNext} disabled={currentRecordIndex === allSampleData.length - 1}>
+          <span className="text-xs font-medium tabular-nums">
+            Record {currentRecordIndex + 1} / {allSampleData.length}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={goToNext}
+            disabled={currentRecordIndex === allSampleData.length - 1}
+          >
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>

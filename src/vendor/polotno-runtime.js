@@ -48,6 +48,7 @@ export async function loadPolotnoModules() {
     PagesTimeline: timeline.PagesTimeline,
     ZoomButtons: zoom.ZoomButtons,
     SidePanel: sidePanel.SidePanel,
+    SectionTab: sidePanel.SectionTab,
     DEFAULT_SECTIONS: sidePanel.DEFAULT_SECTIONS,
     Workspace: workspace.Workspace,
   };
@@ -119,4 +120,14 @@ export function getPolotnoComponents() {
     throw new Error('Polotno modules not loaded. Call loadPolotnoModules() first.');
   }
   return polotnoModules;
+}
+
+/**
+ * Get the SectionTab component for custom panels.
+ */
+export function getSectionTab() {
+  if (!polotnoModules) {
+    throw new Error('Polotno modules not loaded. Call loadPolotnoModules() first.');
+  }
+  return polotnoModules.SectionTab;
 }

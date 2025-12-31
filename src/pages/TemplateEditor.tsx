@@ -6,6 +6,7 @@ import { ArrowLeft, Save, Loader2, FileDown, ImageIcon, Upload, ChevronLeft, Che
 import { toast } from 'sonner';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import CreativeEditorWrapper, { CesdkEditorHandle, RecordNavigationState } from '@/components/cesdk/CreativeEditorWrapper';
+import { PolotnoEditorWrapper, PolotnoEditorHandle, RecordNavigationState as PolotnoRecordNavState } from '@/components/polotno';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CesdkPdfGenerator } from '@/components/CesdkPdfGenerator';
 import { PageSizeControls } from '@/components/cesdk/PageSizeControls';
@@ -14,6 +15,14 @@ import { isLikelyImageField, detectImageColumnsFromValues } from '@/lib/avery-la
 import { useRegionPreference, TemplateRegion } from '@/hooks/useRegionPreference';
 import { PrintSettingsPanel } from '@/components/PrintSettingsPanel';
 import { PrintSettings, getDefaultPrintSettings } from '@/types/print-settings';
+
+// Feature flag: use Polotno editor instead of CE.SDK
+// Set VITE_USE_POLOTNO_EDITOR=true in environment to enable
+const USE_POLOTNO_EDITOR = import.meta.env.VITE_USE_POLOTNO_EDITOR === 'true';
+
+// Unified editor handle type
+type EditorHandle = CesdkEditorHandle | PolotnoEditorHandle;
+
 export default function TemplateEditor() {
   const { projectId, templateId } = useParams<{ projectId: string; templateId: string }>();
   const navigate = useNavigate();
@@ -27,8 +36,8 @@ export default function TemplateEditor() {
   // Record navigation state from CreativeEditorWrapper
   const [recordNavState, setRecordNavState] = useState<RecordNavigationState | null>(null);
   
-  // Ref to store CE.SDK handle for imperative save
-  const editorHandleRef = useRef<CesdkEditorHandle | null>(null);
+  // Ref to store editor handle for imperative save (works with both CE.SDK and Polotno)
+  const editorHandleRef = useRef<EditorHandle | null>(null);
 
   // Fetch template details
   const { data: template, isLoading: templateLoading } = useQuery({
@@ -630,37 +639,72 @@ export default function TemplateEditor() {
 
       {/* Editor */}
       <main className="flex-1 overflow-hidden">
-        <CreativeEditorWrapper
-          key={`${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
-          availableFields={validFields}
-          sampleData={sampleData}
-          allSampleData={validRecords}
-          initialScene={initialScene}
-          onSave={handleSave}
-          onSceneChange={handleSceneChange}
-          onReady={handleEditorReady}
-          onRecordNavigationChange={setRecordNavState}
-          labelWidth={
-            !isLabelProject && printSettings.enablePrintMarks
-              ? (template.width_mm || 100) + printSettings.bleedMm * 2
-              : (template.width_mm || 100)
-          }
-          labelHeight={
-            !isLabelProject && printSettings.enablePrintMarks
-              ? (template.height_mm || 50) + printSettings.bleedMm * 2
-              : (template.height_mm || 50)
-          }
-          bleedMm={template.bleed_mm || 0}
-          whiteUnderlayer={(template.design_config as { whiteUnderlayer?: boolean } | null)?.whiteUnderlayer ?? false}
-          templateType={template.template_type || 'address_label'}
-          projectType={project?.project_type || 'label'}
-          projectImages={projectImages}
-          trimGuideMm={
-            !isLabelProject && printSettings.enablePrintMarks
-              ? { width: template.width_mm || 100, height: template.height_mm || 50, bleedMm: printSettings.bleedMm }
-              : undefined
-          }
-        />
+        {USE_POLOTNO_EDITOR ? (
+          <PolotnoEditorWrapper
+            key={`polotno-${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
+            availableFields={validFields}
+            sampleData={sampleData}
+            allSampleData={validRecords}
+            initialScene={initialScene}
+            onSave={handleSave}
+            onSceneChange={handleSceneChange}
+            onReady={(handle) => {
+              editorHandleRef.current = handle;
+              setIsEditorReady(true);
+            }}
+            onRecordNavigationChange={setRecordNavState}
+            labelWidth={
+              !isLabelProject && printSettings.enablePrintMarks
+                ? (template.width_mm || 100) + printSettings.bleedMm * 2
+                : (template.width_mm || 100)
+            }
+            labelHeight={
+              !isLabelProject && printSettings.enablePrintMarks
+                ? (template.height_mm || 50) + printSettings.bleedMm * 2
+                : (template.height_mm || 50)
+            }
+            bleedMm={template.bleed_mm || 0}
+            projectType={project?.project_type || 'label'}
+            projectImages={projectImages}
+            trimGuideMm={
+              !isLabelProject && printSettings.enablePrintMarks
+                ? { width: template.width_mm || 100, height: template.height_mm || 50, bleedMm: printSettings.bleedMm }
+                : undefined
+            }
+          />
+        ) : (
+          <CreativeEditorWrapper
+            key={`cesdk-${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
+            availableFields={validFields}
+            sampleData={sampleData}
+            allSampleData={validRecords}
+            initialScene={initialScene}
+            onSave={handleSave}
+            onSceneChange={handleSceneChange}
+            onReady={handleEditorReady}
+            onRecordNavigationChange={setRecordNavState}
+            labelWidth={
+              !isLabelProject && printSettings.enablePrintMarks
+                ? (template.width_mm || 100) + printSettings.bleedMm * 2
+                : (template.width_mm || 100)
+            }
+            labelHeight={
+              !isLabelProject && printSettings.enablePrintMarks
+                ? (template.height_mm || 50) + printSettings.bleedMm * 2
+                : (template.height_mm || 50)
+            }
+            bleedMm={template.bleed_mm || 0}
+            whiteUnderlayer={(template.design_config as { whiteUnderlayer?: boolean } | null)?.whiteUnderlayer ?? false}
+            templateType={template.template_type || 'address_label'}
+            projectType={project?.project_type || 'label'}
+            projectImages={projectImages}
+            trimGuideMm={
+              !isLabelProject && printSettings.enablePrintMarks
+                ? { width: template.width_mm || 100, height: template.height_mm || 50, bleedMm: printSettings.bleedMm }
+                : undefined
+            }
+          />
+        )}
       </main>
 
       {/* PDF Generation Dialog */}
@@ -680,7 +724,7 @@ export default function TemplateEditor() {
               )}
               
               <CesdkPdfGenerator
-                cesdk={editorHandleRef.current?.cesdk || null}
+                cesdk={!USE_POLOTNO_EDITOR && editorHandleRef.current && 'cesdk' in editorHandleRef.current ? editorHandleRef.current.cesdk : null}
                 mergeJobId={currentMergeJobId}
                 dataRecords={validRecords}
                 projectType={project?.project_type || 'label'}

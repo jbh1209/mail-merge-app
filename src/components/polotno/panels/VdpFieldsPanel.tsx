@@ -9,9 +9,10 @@ interface VdpFieldsPanelProps {
   store: any;
   availableFields: string[];
   projectImages?: { name: string; url: string }[];
+  sampleData?: Record<string, string>;
 }
 
-export function VdpFieldsPanel({ store, availableFields, projectImages = [] }: VdpFieldsPanelProps) {
+export function VdpFieldsPanel({ store, availableFields, projectImages = [], sampleData = {} }: VdpFieldsPanelProps) {
   const textFields = availableFields.filter(f => !isLikelyImageField(f));
   const imageFields = availableFields.filter(f => isLikelyImageField(f));
 
@@ -19,18 +20,22 @@ export function VdpFieldsPanel({ store, availableFields, projectImages = [] }: V
     const page = store.activePage;
     if (!page) return;
 
+    // Use resolved value from sample data if available, otherwise show placeholder
+    const displayText = sampleData[fieldName] || `{{${fieldName}}}`;
+
     page.addElement({
       type: 'text',
       x: page.width / 2 - 100,
       y: page.height / 2 - 20,
       width: 200,
       height: 40,
-      text: `{{${fieldName}}}`,
+      text: displayText,
       fontSize: 24,
       fontFamily: 'Roboto',
       align: 'center',
       custom: {
         variable: fieldName,
+        isVdpField: true,
       },
     });
   };
@@ -39,15 +44,25 @@ export function VdpFieldsPanel({ store, availableFields, projectImages = [] }: V
     const page = store.activePage;
     if (!page) return;
 
+    // Try to find a matching image from project images or sample data
+    const sampleImageUrl = sampleData[fieldName];
+    const matchedImage = projectImages.find(img => 
+      img.name.toLowerCase().includes(fieldName.toLowerCase()) ||
+      fieldName.toLowerCase().includes(img.name.split('.')[0].toLowerCase())
+    );
+    
+    const srcUrl = imageUrl || matchedImage?.url || sampleImageUrl || 'https://via.placeholder.com/100';
+
     page.addElement({
       type: 'image',
       x: page.width / 2 - 50,
       y: page.height / 2 - 50,
       width: 100,
       height: 100,
-      src: imageUrl || 'https://via.placeholder.com/100',
+      src: srcUrl,
       custom: {
         variable: fieldName,
+        isVdpField: true,
       },
     });
   };

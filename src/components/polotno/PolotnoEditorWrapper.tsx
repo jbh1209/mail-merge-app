@@ -31,11 +31,24 @@ import { BarcodePanel } from './panels/BarcodePanel';
 import { ProjectImagesPanel } from './panels/ProjectImagesPanel';
 import { SequencePanel } from './panels/SequencePanel';
 
+// VDP variable resolution
+import { applyVdpToStore, resolveVdpVariables, batchResolveVdp } from '@/lib/polotno/vdpResolver';
+import type { PolotnoScene } from '@/lib/polotno/types';
+
 // Ref handle exposed to parent for imperative actions
 export interface PolotnoEditorHandle {
+  /** Save the base template scene (without VDP values) */
   saveScene: () => Promise<string>;
+  /** Export current view as PDF */
   exportPdf: (options?: PrintExportOptions) => Promise<Blob>;
+  /** Get resolved scene for a specific record */
+  getResolvedScene: (record: Record<string, string>, recordIndex: number) => PolotnoScene;
+  /** Batch resolve all records for export */
+  batchResolve: (records: Record<string, string>[]) => PolotnoScene[];
+  /** Raw Polotno store instance */
   store: any;
+  /** Get the base template scene (without VDP resolution) */
+  getBaseScene: () => string;
 }
 
 // Print export options for PDF generation
@@ -96,6 +109,8 @@ export function PolotnoEditorWrapper({
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
   const lastSavedSceneRef = useRef<string>('');
+  // Base template scene (without VDP resolution) - used for preview switching
+  const baseSceneRef = useRef<string>('');
 
   useEffect(() => {
     let mounted = true;
@@ -129,9 +144,21 @@ export function PolotnoEditorWrapper({
         // Configure bleed
         configureBleed(store, mmToPixels(bleedMm));
 
-        // Load initial scene
+        // Load initial scene and store as base template
         if (initialScene) {
-          loadScene(store, initialScene);
+          baseSceneRef.current = initialScene;
+          
+          // If we have sample data, apply VDP resolution for first record
+          if (allSampleData.length > 0 && allSampleData[0]) {
+            const parsed = JSON.parse(initialScene) as PolotnoScene;
+            const resolved = resolveVdpVariables(parsed, {
+              record: allSampleData[0],
+              recordIndex: 0,
+            });
+            store.loadJSON(resolved);
+          } else {
+            loadScene(store, initialScene);
+          }
           lastSavedSceneRef.current = initialScene;
         }
 
@@ -190,7 +217,9 @@ export function PolotnoEditorWrapper({
         // Create handle for parent
         const handle: PolotnoEditorHandle = {
           saveScene: async () => {
+            // Save the current scene as the base template
             const json = saveScene(store);
+            baseSceneRef.current = json;
             onSave?.(json);
             lastSavedSceneRef.current = json;
             return json;
@@ -210,6 +239,18 @@ export function PolotnoEditorWrapper({
               pixelRatio,
               fileName,
             });
+          },
+          getResolvedScene: (record: Record<string, string>, recordIndex: number) => {
+            const baseScene = baseSceneRef.current || saveScene(store);
+            const parsed = JSON.parse(baseScene) as PolotnoScene;
+            return resolveVdpVariables(parsed, { record, recordIndex });
+          },
+          batchResolve: (records: Record<string, string>[]) => {
+            const baseScene = baseSceneRef.current || saveScene(store);
+            return batchResolveVdp(baseScene, records);
+          },
+          getBaseScene: () => {
+            return baseSceneRef.current || saveScene(store);
           },
           store,
         };
@@ -255,6 +296,25 @@ export function PolotnoEditorWrapper({
       setCurrentRecordIndex((i) => i - 1);
     }
   }, [currentRecordIndex]);
+
+  // Apply VDP resolution when record index changes
+  useEffect(() => {
+    if (!storeRef.current || !baseSceneRef.current || allSampleData.length === 0) return;
+    
+    const currentRecord = allSampleData[currentRecordIndex];
+    if (!currentRecord) return;
+
+    try {
+      const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
+      const resolved = resolveVdpVariables(baseScene, {
+        record: currentRecord,
+        recordIndex: currentRecordIndex,
+      });
+      storeRef.current.loadJSON(resolved);
+    } catch (err) {
+      console.warn('VDP resolution error:', err);
+    }
+  }, [currentRecordIndex, allSampleData]);
 
   useEffect(() => {
     if (onRecordNavigationChange && allSampleData.length > 0) {

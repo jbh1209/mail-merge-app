@@ -422,14 +422,8 @@ export default function TemplateEditor() {
     setHasUnsavedChanges(hasChanges);
   }, []);
 
-  // Store editor handle when ready (stable callback for both CE.SDK and Polotno)
-  const handleEditorReady = useCallback((handle: EditorHandle) => {
-    editorHandleRef.current = handle;
-    setIsEditorReady(true);
-  }, []);
-  
-  // Stable callback for Polotno - same as handleEditorReady but typed for Polotno
-  const handlePolotnoReady = useCallback((handle: PolotnoEditorHandle) => {
+  // Store editor handle when ready
+  const handleEditorReady = useCallback((handle: CesdkEditorHandle) => {
     editorHandleRef.current = handle;
     setIsEditorReady(true);
   }, []);
@@ -650,14 +644,17 @@ export default function TemplateEditor() {
       <main className="flex-1 overflow-hidden">
         {USE_POLOTNO_EDITOR ? (
           <PolotnoEditorWrapper
-            key={`polotno-${templateId}`}
+            key={`polotno-${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
             availableFields={validFields}
             sampleData={sampleData}
             allSampleData={validRecords}
             initialScene={initialScene}
             onSave={handleSave}
             onSceneChange={handleSceneChange}
-            onReady={handlePolotnoReady}
+            onReady={(handle) => {
+              editorHandleRef.current = handle;
+              setIsEditorReady(true);
+            }}
             onRecordNavigationChange={setRecordNavState}
             labelWidth={
               !isLabelProject && printSettings.enablePrintMarks
@@ -670,7 +667,6 @@ export default function TemplateEditor() {
                 : (template.height_mm || 50)
             }
             bleedMm={template.bleed_mm || 0}
-            showBleed={printSettings.enablePrintMarks}
             projectType={project?.project_type || 'label'}
             projectImages={projectImages}
             trimGuideMm={

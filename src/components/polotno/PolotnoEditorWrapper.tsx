@@ -219,8 +219,8 @@ export function PolotnoEditorWrapper({
         // Configure bleed
         configureBleed(store, mmToPixels(config.bleedMm), config.showBleed);
         
-        // Close all side panels on start
-        store.openSidePanel(null);
+        // Close all side panels on start (safely - method may not exist in all versions)
+        store.openSidePanel?.(null);
 
         // Load initial scene and store as base template
         if (config.initialScene) {
@@ -395,7 +395,7 @@ export function PolotnoEditorWrapper({
       } catch (e) {
         console.error('Polotno init error:', e);
         if (mounted) {
-          setError('Failed to initialize editor');
+          setError(e instanceof Error ? e.message : 'Failed to initialize editor');
           setIsLoading(false);
         }
       }

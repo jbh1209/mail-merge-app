@@ -119,10 +119,15 @@ export function PolotnoEditorWrapper({
   // Track if editor is initialized
   const isInitializedRef = useRef(false);
   
-  // Stable references for dynamic data
+  // Stable references for dynamic data (prevents re-init on prop changes)
   const availableFieldsRef = useRef(availableFields);
   const projectImagesRef = useRef(projectImages);
   const allSampleDataRef = useRef(allSampleData);
+  
+  // Stable references for callbacks (prevents re-init on parent re-renders)
+  const onSaveRef = useRef(onSave);
+  const onSceneChangeRef = useRef(onSceneChange);
+  const onReadyRef = useRef(onReady);
   
   // Update refs when props change
   useEffect(() => {
@@ -136,6 +141,19 @@ export function PolotnoEditorWrapper({
   useEffect(() => {
     allSampleDataRef.current = allSampleData;
   }, [allSampleData]);
+  
+  // Keep callback refs up to date
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+  
+  useEffect(() => {
+    onSceneChangeRef.current = onSceneChange;
+  }, [onSceneChange]);
+  
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
 
   // Toggle bleed visibility when showBleed prop changes
   useEffect(() => {
@@ -286,7 +304,7 @@ export function PolotnoEditorWrapper({
             // For now, save the current scene as base (user is designing with resolved values visible)
             baseSceneRef.current = currentScene;
             
-            onSave?.(currentScene);
+            onSaveRef.current?.(currentScene);
             lastSavedSceneRef.current = currentScene;
             return currentScene;
           },
@@ -347,7 +365,7 @@ export function PolotnoEditorWrapper({
           store,
         };
 
-        onReady?.(handle);
+        onReadyRef.current?.(handle);
         setIsLoading(false);
 
         // Track changes - use stable interval
@@ -358,7 +376,7 @@ export function PolotnoEditorWrapper({
           const hasChanges = current !== lastSavedSceneRef.current;
           if (current !== lastCheckedScene) {
             lastCheckedScene = current;
-            onSceneChange?.(hasChanges);
+            onSceneChangeRef.current?.(hasChanges);
           }
         }, 2000);
       } catch (e) {
@@ -380,7 +398,8 @@ export function PolotnoEditorWrapper({
         rootRef.current = null;
       }
     };
-  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady, showBleed]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labelWidth, labelHeight, bleedMm, initialScene, showBleed]);
 
   const goToNext = useCallback(() => {
     if (currentRecordIndex < allSampleData.length - 1) {

@@ -422,8 +422,14 @@ export default function TemplateEditor() {
     setHasUnsavedChanges(hasChanges);
   }, []);
 
-  // Store editor handle when ready
-  const handleEditorReady = useCallback((handle: CesdkEditorHandle) => {
+  // Store editor handle when ready (stable callback for both CE.SDK and Polotno)
+  const handleEditorReady = useCallback((handle: EditorHandle) => {
+    editorHandleRef.current = handle;
+    setIsEditorReady(true);
+  }, []);
+  
+  // Stable callback for Polotno - same as handleEditorReady but typed for Polotno
+  const handlePolotnoReady = useCallback((handle: PolotnoEditorHandle) => {
     editorHandleRef.current = handle;
     setIsEditorReady(true);
   }, []);
@@ -651,10 +657,7 @@ export default function TemplateEditor() {
             initialScene={initialScene}
             onSave={handleSave}
             onSceneChange={handleSceneChange}
-            onReady={(handle) => {
-              editorHandleRef.current = handle;
-              setIsEditorReady(true);
-            }}
+            onReady={handlePolotnoReady}
             onRecordNavigationChange={setRecordNavState}
             labelWidth={
               !isLabelProject && printSettings.enablePrintMarks

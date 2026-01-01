@@ -162,15 +162,24 @@ export function PolotnoEditorWrapper({
     }
   }, [showBleed]);
 
+  // Refs for initial config (captured at mount time)
+  const initialConfigRef = useRef({
+    labelWidth,
+    labelHeight,
+    bleedMm,
+    initialScene,
+    showBleed,
+  });
+
+  // Main initialization effect - runs ONCE on mount only
   useEffect(() => {
-    // Skip if already initialized
-    if (isInitializedRef.current) return;
-    
     let mounted = true;
     let changeInterval: ReturnType<typeof setInterval> | null = null;
 
     const init = async () => {
       try {
+        console.log('[Polotno] INIT start');
+        
         // Fetch API key from edge function
         const keyResponse = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-polotno-key`
@@ -193,39 +202,42 @@ export function PolotnoEditorWrapper({
 
         if (!mounted) return;
 
+        // Use initial config from ref (stable values from mount time)
+        const config = initialConfigRef.current;
+
         // Create store via bridge
         const store = await createPolotnoStore({
           apiKey,
           unit: 'mm',
           dpi: 300,
-          width: mmToPixels(labelWidth),
-          height: mmToPixels(labelHeight),
+          width: mmToPixels(config.labelWidth),
+          height: mmToPixels(config.labelHeight),
         });
 
         if (!mounted) return;
 
         // Configure bleed
-        configureBleed(store, mmToPixels(bleedMm), showBleed);
+        configureBleed(store, mmToPixels(config.bleedMm), config.showBleed);
         
         // Close all side panels on start
         store.openSidePanel(null);
 
         // Load initial scene and store as base template
-        if (initialScene) {
-          baseSceneRef.current = initialScene;
+        if (config.initialScene) {
+          baseSceneRef.current = config.initialScene;
           
           // If we have sample data, apply VDP resolution for first record
           if (allSampleDataRef.current.length > 0 && allSampleDataRef.current[0]) {
-            const parsed = JSON.parse(initialScene) as PolotnoScene;
+            const parsed = JSON.parse(config.initialScene) as PolotnoScene;
             const resolved = resolveVdpVariables(parsed, {
               record: allSampleDataRef.current[0],
               recordIndex: 0,
             });
             store.loadJSON(resolved);
           } else {
-            loadScene(store, initialScene);
+            loadScene(store, config.initialScene);
           }
-          lastSavedSceneRef.current = initialScene;
+          lastSavedSceneRef.current = config.initialScene;
         }
 
         storeRef.current = store;
@@ -367,6 +379,7 @@ export function PolotnoEditorWrapper({
 
         onReadyRef.current?.(handle);
         setIsLoading(false);
+        console.log('[Polotno] INIT complete');
 
         // Track changes - use stable interval
         let lastCheckedScene = lastSavedSceneRef.current;
@@ -391,6 +404,7 @@ export function PolotnoEditorWrapper({
     init();
 
     return () => {
+      console.log('[Polotno] CLEANUP (component unmount)');
       mounted = false;
       if (changeInterval) clearInterval(changeInterval);
       if (rootRef.current) {
@@ -398,8 +412,9 @@ export function PolotnoEditorWrapper({
         rootRef.current = null;
       }
     };
+  // Empty deps - init runs ONCE on mount, cleanup runs ONCE on unmount
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [labelWidth, labelHeight, bleedMm, initialScene, showBleed]);
+  }, []);
 
   const goToNext = useCallback(() => {
     if (currentRecordIndex < allSampleData.length - 1) {

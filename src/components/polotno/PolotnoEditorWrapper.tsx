@@ -32,8 +32,14 @@ import { ProjectImagesPanel } from './panels/ProjectImagesPanel';
 import { SequencePanel } from './panels/SequencePanel';
 
 // VDP variable resolution
-import { applyVdpToStore, resolveVdpVariables, batchResolveVdp } from '@/lib/polotno/vdpResolver';
+import { resolveVdpVariables, batchResolveVdp } from '@/lib/polotno/vdpResolver';
 import type { PolotnoScene } from '@/lib/polotno/types';
+
+// Supabase client for edge function calls
+import { supabase } from '@/integrations/supabase/client';
+
+// Layout engine
+import { executeLayout, DEFAULT_LAYOUT_CONFIG } from '@/lib/layout-engine';
 
 // Ref handle exposed to parent for imperative actions
 export interface PolotnoEditorHandle {
@@ -90,6 +96,202 @@ interface PolotnoEditorWrapperProps {
 // Use runtime's mmToPixels for consistency
 const mmToPixels = (mm: number, dpi = 300) => runtimeMmToPixels(mm, dpi);
 
+/**
+ * Detect if a field is likely an image field based on its name or sample values
+ */
+function detectImageColumnsFromValues(
+  fields: string[],
+  sampleRows: Record<string, string>[]
+): string[] {
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'];
+  const imageFields: string[] = [];
+  
+  for (const field of fields) {
+    // Check by name patterns
+    const lowerName = field.toLowerCase();
+    if (lowerName.includes('image') || lowerName.includes('photo') || 
+        lowerName.includes('logo') || lowerName.includes('picture') ||
+        lowerName.includes('img') || lowerName.includes('avatar')) {
+      imageFields.push(field);
+      continue;
+    }
+    
+    // Check sample values for file extensions
+    for (const row of sampleRows) {
+      const value = String(row[field] || '').toLowerCase();
+      if (imageExtensions.some(ext => value.endsWith(ext)) || 
+          value.startsWith('http') && imageExtensions.some(ext => value.includes(ext))) {
+        imageFields.push(field);
+        break;
+      }
+    }
+  }
+  
+  return imageFields;
+}
+
+/**
+ * AI-assisted layout generation for Polotno
+ * Calls the generate-layout edge function and executes the layout engine
+ */
+async function generateInitialLayoutPolotno(
+  store: any,
+  fields: string[],
+  sampleData: Record<string, string>,
+  allSampleData: Record<string, string>[],
+  widthMm: number,
+  heightMm: number,
+  templateType: string,
+  setLayoutStatus: (status: string | null) => void,
+  projectImages: { name: string; url: string }[] = []
+): Promise<string | null> {
+  if (fields.length === 0 || Object.keys(sampleData).length === 0) {
+    console.log('⏭️ Skipping auto-layout: no fields or sample data');
+    return null;
+  }
+
+  setLayoutStatus('Generating smart layout...');
+  console.log('🎨 AUTO-TRIGGERING HYBRID AI LAYOUT FOR NEW POLOTNO DESIGN');
+
+  // Detect image fields using value-based detection
+  const sampleRows = allSampleData.length > 0 ? allSampleData : [sampleData];
+  const imageFieldsDetected = detectImageColumnsFromValues(fields, sampleRows);
+  console.log('🖼️ Detected image fields:', imageFieldsDetected);
+  
+  // Filter out image fields from layout generation - they will be handled separately
+  const textFields = fields.filter(f => !imageFieldsDetected.includes(f));
+
+  try {
+    // Step 1: Call hybrid layout generator
+    const { data: hybridData, error: hybridError } = await supabase.functions.invoke('generate-layout', {
+      body: {
+        fieldNames: textFields.length > 0 ? textFields : fields,
+        sampleData: [sampleData],
+        templateSize: { width: widthMm, height: heightMm },
+        templateType: templateType || 'address_label',
+      },
+    });
+
+    if (hybridError) {
+      console.warn('⚠️ Hybrid layout API error:', hybridError);
+      setLayoutStatus(null);
+      return null;
+    }
+
+    if (!hybridData?.designStrategy) {
+      console.warn('⚠️ No design strategy returned from hybrid layout');
+      setLayoutStatus(null);
+      return null;
+    }
+
+    console.log('📐 Hybrid design strategy received:', hybridData.designStrategy.strategy);
+
+    // Step 2: Execute layout using the deterministic layout engine
+    const layoutConfig = {
+      ...DEFAULT_LAYOUT_CONFIG,
+      templateSize: { width: widthMm, height: heightMm },
+    };
+
+    const layoutResult = executeLayout(hybridData.designStrategy, layoutConfig, sampleData);
+    console.log('📏 Layout engine result:', layoutResult.fields.length, 'fields');
+
+    // Get the active page
+    const page = store.activePage;
+    if (!page) {
+      console.warn('⚠️ No active page available for layout');
+      setLayoutStatus(null);
+      return null;
+    }
+
+    // Step 3: Create text elements from layout result
+    for (const field of layoutResult.fields) {
+      try {
+        // Handle combined address blocks (fieldType: 'address_block')
+        let textContent: string;
+
+        if (field.fieldType === 'address_block' && field.combinedFields && field.combinedFields.length > 0) {
+          // Combined address block: use {{field}} syntax joined by newlines
+          textContent = field.combinedFields.map(f => `{{${f}}}`).join('\\n');
+          console.log('📦 Creating combined address block with fields:', field.combinedFields);
+        } else {
+          // Individual field - use {{fieldName}} placeholder syntax
+          textContent = `{{${field.templateField}}}`;
+        }
+
+        // Add text element to the page
+        page.addElement({
+          type: 'text',
+          x: mmToPixels(field.x),
+          y: mmToPixels(field.y),
+          width: mmToPixels(field.width),
+          height: mmToPixels(field.height),
+          text: textContent,
+          fontSize: field.fontSize || 12,
+          fontFamily: 'Roboto',
+          fontWeight: field.fontWeight === 'bold' ? 'bold' : 'normal',
+          align: field.textAlign || 'left',
+          custom: {
+            variable: field.templateField,
+            combinedFields: field.combinedFields,
+            fieldType: field.fieldType,
+            autoFit: field.autoFit,
+          },
+        });
+
+        console.log(`✅ Created Polotno text element: ${field.templateField}`);
+      } catch (blockError) {
+        console.error(`❌ Failed to create element for ${field.templateField}:`, blockError);
+      }
+    }
+
+    // Step 4: Create VDP image elements for detected image fields
+    if (imageFieldsDetected.length > 0 && projectImages.length > 0) {
+      console.log('🖼️ Creating VDP image elements for:', imageFieldsDetected);
+      
+      // Position images in remaining space (e.g., right side or bottom)
+      const imageAreaX = widthMm * 0.7; // 70% from left
+      const imageAreaWidth = widthMm * 0.25;
+      const imageHeight = heightMm * 0.4;
+      
+      imageFieldsDetected.forEach((imageField, index) => {
+        // Find matching project image
+        const sampleValue = sampleData[imageField];
+        const matchedImage = projectImages.find(img => 
+          img.name === sampleValue || 
+          img.url.includes(sampleValue) ||
+          sampleValue?.includes(img.name)
+        );
+        
+        page.addElement({
+          type: 'image',
+          x: mmToPixels(imageAreaX),
+          y: mmToPixels(heightMm * 0.1 + index * (imageHeight + 2)),
+          width: mmToPixels(imageAreaWidth),
+          height: mmToPixels(imageHeight),
+          src: matchedImage?.url || '',
+          custom: {
+            variable: imageField,
+          },
+        });
+        
+        console.log(`✅ Created Polotno image element: ${imageField}`);
+      });
+    }
+
+    setLayoutStatus(null);
+    
+    // Save the base scene (with placeholders) and return it
+    const baseScene = saveScene(store);
+    console.log('💾 Base scene saved with', layoutResult.fields.length, 'text elements');
+    
+    return baseScene;
+  } catch (error) {
+    console.error('❌ Layout generation error:', error);
+    setLayoutStatus(null);
+    return null;
+  }
+}
+
 export function PolotnoEditorWrapper({
   availableFields = [],
   allSampleData = [],
@@ -101,6 +303,7 @@ export function PolotnoEditorWrapper({
   labelWidth = 100,
   labelHeight = 50,
   bleedMm = 0,
+  projectType = 'label',
   projectImages = [],
 }: PolotnoEditorWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,8 +313,7 @@ export function PolotnoEditorWrapper({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
-  const [isEditorReady, setIsEditorReady] = useState(false);
-  const [showEmptyGuide, setShowEmptyGuide] = useState(false);
+  const [layoutStatus, setLayoutStatus] = useState<string | null>(null);
   const lastSavedSceneRef = useRef<string>('');
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
@@ -158,8 +360,9 @@ export function PolotnoEditorWrapper({
         // Configure bleed
         configureBleed(store, mmToPixels(bleedMm));
 
-        // Load initial scene and store as base template
+        // Load initial scene OR generate AI layout
         if (initialScene) {
+          // Existing scene - load it
           baseSceneRef.current = initialScene;
           
           // If we have sample data, apply VDP resolution for first record
@@ -174,6 +377,36 @@ export function PolotnoEditorWrapper({
             loadScene(store, initialScene);
           }
           lastSavedSceneRef.current = initialScene;
+        } else if (availableFields.length > 0 && allSampleData.length > 0) {
+          // NEW TEMPLATE with data - generate AI-assisted layout
+          console.log('🚀 New template with data detected - triggering AI layout generation');
+          
+          const firstRecord = allSampleData[0] || {};
+          const generatedScene = await generateInitialLayoutPolotno(
+            store,
+            availableFields,
+            firstRecord,
+            allSampleData,
+            labelWidth,
+            labelHeight,
+            projectType,
+            setLayoutStatus,
+            projectImages
+          );
+          
+          if (generatedScene) {
+            baseSceneRef.current = generatedScene;
+            
+            // Apply VDP resolution to show first record's actual values
+            const parsed = JSON.parse(generatedScene) as PolotnoScene;
+            const resolved = resolveVdpVariables(parsed, {
+              record: firstRecord,
+              recordIndex: 0,
+            });
+            store.loadJSON(resolved);
+            lastSavedSceneRef.current = generatedScene;
+            console.log('✅ AI layout applied and VDP resolved for first record');
+          }
         }
 
         storeRef.current = store;
@@ -227,8 +460,10 @@ export function PolotnoEditorWrapper({
             )
           );
           
-          // Close the sidebar by default (prevents auto-open of first section)
-          store.openSidePanel('');
+          // Close the sidebar after a short delay to ensure Polotno UI has mounted
+          setTimeout(() => {
+            store.openSidePanel('');
+          }, 150);
         }
 
         // Create handle for parent
@@ -299,12 +534,6 @@ export function PolotnoEditorWrapper({
 
         onReady?.(handle);
         setIsLoading(false);
-        setIsEditorReady(true);
-        
-        // Show empty guide if no initial scene and we have data fields
-        if (!initialScene && availableFields.length > 0) {
-          setShowEmptyGuide(true);
-        }
 
         // Track changes
         changeInterval = setInterval(() => {
@@ -331,7 +560,7 @@ export function PolotnoEditorWrapper({
         rootRef.current = null;
       }
     };
-  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady, availableFields, projectImages]);
+  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady, availableFields, projectImages, allSampleData, projectType]);
 
   const goToNext = useCallback(() => {
     if (currentRecordIndex < allSampleData.length - 1) {
@@ -375,11 +604,13 @@ export function PolotnoEditorWrapper({
     }
   }, [currentRecordIndex, allSampleData.length, goToNext, goToPrev, onRecordNavigationChange]);
 
-  if (isLoading) {
+  if (isLoading || layoutStatus) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-2 text-sm text-muted-foreground">Loading editor...</p>
+        <p className="ml-2 text-sm text-muted-foreground">
+          {layoutStatus || 'Loading editor...'}
+        </p>
       </div>
     );
   }
@@ -394,24 +625,6 @@ export function PolotnoEditorWrapper({
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
-      {/* Empty state guide for new templates */}
-      {isEditorReady && showEmptyGuide && (
-        <div 
-          className="absolute inset-0 flex items-center justify-center bg-black/20 z-40 cursor-pointer"
-          onClick={() => setShowEmptyGuide(false)}
-        >
-          <div className="bg-card p-6 rounded-lg shadow-lg max-w-sm text-center border" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-semibold mb-2">Start designing your template</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Click the sidebar icons to add data fields, barcodes, images, or text elements to your design.
-            </p>
-            <Button variant="default" size="sm" onClick={() => setShowEmptyGuide(false)}>
-              Got it
-            </Button>
-          </div>
-        </div>
-      )}
-      
       {allSampleData.length > 1 && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
           <Button

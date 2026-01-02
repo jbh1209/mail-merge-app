@@ -353,6 +353,9 @@ export function PolotnoEditorWrapper({
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
   const [layoutStatus, setLayoutStatus] = useState<string | null>(null);
+  
+  // Bootstrap stage for debugging - shows where we are in the initialization process
+  const [bootstrapStage, setBootstrapStage] = useState<string>('init');
   const lastSavedSceneRef = useRef<string>('');
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
@@ -374,12 +377,24 @@ export function PolotnoEditorWrapper({
 
     const bootstrap = async () => {
       console.log('🚀 Phase A: Bootstrapping Polotno editor...');
+      setBootstrapStage('fetch_key');
       
       try {
+        // HARD GUARD: Check mount point exists before anything else
+        if (!editorRef.current) {
+          console.error('❌ Editor mount point (editorRef) is null at bootstrap start');
+          setError('Editor mount point not available. Please refresh the page.');
+          setBootstrapStage('error');
+          setIsLoading(false);
+          return;
+        }
+        
         // Fetch API key from edge function
         const keyResponse = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-polotno-key`
         );
+        
+        if (!mounted) return;
         
         if (!keyResponse.ok) {
           throw new Error('Failed to fetch Polotno API key');
@@ -389,14 +404,19 @@ export function PolotnoEditorWrapper({
         
         if (keyError || !apiKey) {
           setError(keyError || 'Polotno API key not configured');
+          setBootstrapStage('error');
           setIsLoading(false);
           return;
         }
+
+        if (!mounted) return;
+        setBootstrapStage('load_modules');
 
         // Load Polotno modules via JS bridge
         await loadPolotnoModules();
 
         if (!mounted) return;
+        setBootstrapStage('create_store');
 
         // Create store via bridge
         const store = await createPolotnoStore({
@@ -413,11 +433,21 @@ export function PolotnoEditorWrapper({
         configureBleed(store, mmToPixels(bleedMm));
         
         storeRef.current = store;
-        editorBootstrappedRef.current = true;
         console.log('✅ Polotno store created');
+        
+        // HARD GUARD: Re-check mount point before rendering UI
+        if (!editorRef.current) {
+          console.error('❌ Editor mount point became null before UI render');
+          setError('Editor mount point lost. Please refresh the page.');
+          setBootstrapStage('error');
+          setIsLoading(false);
+          return;
+        }
+        
+        setBootstrapStage('render_ui');
 
-        // Render Polotno UI
-        if (editorRef.current) {
+        // Render Polotno UI inside try/catch
+        try {
           const {
             PolotnoContainer,
             SidePanelWrap,
@@ -465,14 +495,48 @@ export function PolotnoEditorWrapper({
             )
           );
           
-          // Close the sidebar after UI mounts
-          requestAnimationFrame(() => {
-            setTimeout(() => {
-              store.openSidePanel('');
-            }, 200);
+          console.log('✅ Polotno UI render() called');
+          
+          // Verify DOM was actually populated after React commits
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                if (!mounted) {
+                  resolve();
+                  return;
+                }
+                
+                const childCount = editorRef.current?.childElementCount || 0;
+                console.log(`🔍 DOM verification: editorRef has ${childCount} child elements`);
+                
+                if (childCount === 0) {
+                  console.error('❌ Polotno rendered 0 DOM nodes - React render may have failed silently');
+                  setError('Editor rendered empty. This may be a Polotno module issue. Please refresh.');
+                  setBootstrapStage('error');
+                  setIsLoading(false);
+                  resolve();
+                  return;
+                }
+                
+                // Close the sidebar after UI mounts
+                store.openSidePanel('');
+                console.log('✅ Polotno UI verified with', childCount, 'DOM nodes');
+                resolve();
+              }, 100);
+            });
           });
           
-          console.log('✅ Polotno UI rendered');
+          // Check if we had an error during verification
+          if (!mounted) return;
+          
+        } catch (renderError) {
+          console.error('❌ Polotno UI render error:', renderError);
+          if (mounted) {
+            setError('Failed to render editor UI: ' + String(renderError));
+            setBootstrapStage('error');
+            setIsLoading(false);
+          }
+          return;
         }
 
         // Create handle for parent
@@ -537,6 +601,10 @@ export function PolotnoEditorWrapper({
           store,
         };
 
+        // Mark bootstrap as complete ONLY after UI is verified
+        editorBootstrappedRef.current = true;
+        setBootstrapStage('ready');
+        
         onReady?.(handle);
         setIsLoading(false);
         console.log('✅ Phase A complete - editor ready');
@@ -550,7 +618,8 @@ export function PolotnoEditorWrapper({
       } catch (e) {
         console.error('❌ Polotno bootstrap error:', e);
         if (mounted) {
-          setError('Failed to initialize editor');
+          setError('Failed to initialize editor: ' + String(e));
+          setBootstrapStage('error');
           setIsLoading(false);
         }
       }
@@ -742,18 +811,34 @@ export function PolotnoEditorWrapper({
   
   // Only show loading spinner during initial bootstrap
   if (isLoading) {
+    // Human-readable stage names
+    const stageLabels: Record<string, string> = {
+      init: 'Initializing...',
+      fetch_key: 'Fetching API key...',
+      load_modules: 'Loading editor modules...',
+      create_store: 'Creating editor store...',
+      render_ui: 'Rendering editor UI...',
+      ready: 'Ready',
+      error: 'Error',
+    };
+    
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-2 text-sm text-muted-foreground">Loading editor...</p>
+        <p className="text-sm text-muted-foreground">
+          {stageLabels[bootstrapStage] || 'Loading editor...'}
+        </p>
+        <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background">
-        <p className="text-sm text-destructive">{error}</p>
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background">
+        <p className="text-sm font-medium text-destructive">Editor Error</p>
+        <p className="text-sm text-muted-foreground max-w-md text-center">{error}</p>
+        <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
       </div>
     );
   }

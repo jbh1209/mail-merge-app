@@ -644,7 +644,7 @@ export default function TemplateEditor() {
       <main className="flex-1 overflow-hidden">
         {USE_POLOTNO_EDITOR ? (
           <PolotnoEditorWrapper
-            key={`polotno-${templateId}-${validFields.length}-${template.width_mm}-${template.height_mm}-${projectImages.length}`}
+            key={`polotno-${templateId}`}
             availableFields={validFields}
             sampleData={sampleData}
             allSampleData={validRecords}

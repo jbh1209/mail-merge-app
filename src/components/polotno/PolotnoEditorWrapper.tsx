@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useCallback, createElement } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // Import from JS bridge - TypeScript will treat these as `any`, avoiding type resolution
@@ -325,6 +325,19 @@ async function generateInitialLayoutPolotno(
   }
 }
 
+// Bootstrap stages for debugging
+type BootstrapStage = 'waiting_for_mount' | 'fetch_key' | 'load_modules' | 'create_store' | 'render_ui' | 'ready' | 'error';
+
+const STAGE_LABELS: Record<BootstrapStage, string> = {
+  waiting_for_mount: 'Waiting for editor mount...',
+  fetch_key: 'Fetching API key...',
+  load_modules: 'Loading editor modules...',
+  create_store: 'Creating editor store...',
+  render_ui: 'Rendering editor UI...',
+  ready: 'Ready',
+  error: 'Error',
+};
+
 export function PolotnoEditorWrapper({
   availableFields = [],
   allSampleData = [],
@@ -339,86 +352,90 @@ export function PolotnoEditorWrapper({
   projectType = 'label',
   projectImages = [],
 }: PolotnoEditorWrapperProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  // ============================================================================
+  // PHASE 0: Always render mount div - use callback ref to detect when it exists
+  // ============================================================================
+  const [mountEl, setMountEl] = useState<HTMLDivElement | null>(null);
+  
   const storeRef = useRef<any>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<Root | null>(null);
   
   // Phase control refs
-  const editorBootstrappedRef = useRef(false);
+  const bootstrapInFlightRef = useRef(false);
   const layoutGeneratedRef = useRef(false);
   const layoutInFlightRef = useRef(false);
   
-  const [isLoading, setIsLoading] = useState(true);
+  const [bootstrapStage, setBootstrapStage] = useState<BootstrapStage>('waiting_for_mount');
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
   const [layoutStatus, setLayoutStatus] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   
-  // Bootstrap stage for debugging - shows where we are in the initialization process
-  const [bootstrapStage, setBootstrapStage] = useState<string>('init');
   const lastSavedSceneRef = useRef<string>('');
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
+  const handleRef = useRef<PolotnoEditorHandle | null>(null);
 
   // ============================================================================
-  // PHASE A: Editor Bootstrap (runs once per mount)
-  // Creates store, renders UI, sets isLoading=false
-  // Does NOT depend on data props (availableFields, allSampleData, projectImages)
+  // PHASE 1: Bootstrap only when mount element is available (via callback ref)
   // ============================================================================
   useEffect(() => {
-    let mounted = true;
-    let changeInterval: ReturnType<typeof setInterval> | null = null;
-
-    // Skip if already bootstrapped
-    if (editorBootstrappedRef.current) {
-      console.log('⚠️ Editor already bootstrapped, skipping');
+    // Guard: Need mount element
+    if (!mountEl) {
+      console.log('⏳ Waiting for mount element...');
       return;
     }
-
+    
+    // Guard: Already bootstrapping or bootstrapped
+    if (bootstrapInFlightRef.current) {
+      console.log('⏳ Bootstrap already in flight, skipping');
+      return;
+    }
+    
+    // Guard: Already ready (unless retrying)
+    if (bootstrapStage === 'ready' && handleRef.current) {
+      console.log('✅ Already ready, skipping bootstrap');
+      return;
+    }
+    
+    let cancelled = false;
+    let changeInterval: ReturnType<typeof setInterval> | null = null;
+    
     const bootstrap = async () => {
-      console.log('🚀 Phase A: Bootstrapping Polotno editor...');
-      setBootstrapStage('fetch_key');
+      bootstrapInFlightRef.current = true;
+      console.log('🚀 Bootstrap starting with mount element available');
       
       try {
-        // HARD GUARD: Check mount point exists before anything else
-        if (!editorRef.current) {
-          console.error('❌ Editor mount point (editorRef) is null at bootstrap start');
-          setError('Editor mount point not available. Please refresh the page.');
-          setBootstrapStage('error');
-          setIsLoading(false);
-          return;
-        }
+        // ---- FETCH KEY ----
+        setBootstrapStage('fetch_key');
         
-        // Fetch API key from edge function
         const keyResponse = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-polotno-key`
         );
         
-        if (!mounted) return;
+        if (cancelled) return;
         
         if (!keyResponse.ok) {
-          throw new Error('Failed to fetch Polotno API key');
+          throw new Error(`Failed to fetch Polotno API key (status: ${keyResponse.status})`);
         }
         
         const { apiKey, error: keyError } = await keyResponse.json();
         
         if (keyError || !apiKey) {
-          setError(keyError || 'Polotno API key not configured');
-          setBootstrapStage('error');
-          setIsLoading(false);
-          return;
+          throw new Error(keyError || 'Polotno API key not configured');
         }
 
-        if (!mounted) return;
+        if (cancelled) return;
+        
+        // ---- LOAD MODULES ----
         setBootstrapStage('load_modules');
-
-        // Load Polotno modules via JS bridge
         await loadPolotnoModules();
-
-        if (!mounted) return;
+        
+        if (cancelled) return;
+        
+        // ---- CREATE STORE ----
         setBootstrapStage('create_store');
-
-        // Create store via bridge
+        
         const store = await createPolotnoStore({
           apiKey,
           unit: 'mm',
@@ -427,119 +444,103 @@ export function PolotnoEditorWrapper({
           height: mmToPixels(labelHeight),
         });
 
-        if (!mounted) return;
+        if (cancelled) return;
 
         // Configure bleed
         configureBleed(store, mmToPixels(bleedMm));
-        
         storeRef.current = store;
         console.log('✅ Polotno store created');
         
-        // HARD GUARD: Re-check mount point before rendering UI
-        if (!editorRef.current) {
-          console.error('❌ Editor mount point became null before UI render');
-          setError('Editor mount point lost. Please refresh the page.');
-          setBootstrapStage('error');
-          setIsLoading(false);
-          return;
+        // ---- RENDER UI ----
+        setBootstrapStage('render_ui');
+        
+        // Double-check mount element still exists
+        if (!mountEl) {
+          throw new Error('Mount element disappeared before UI render');
         }
         
-        setBootstrapStage('render_ui');
+        const {
+          PolotnoContainer,
+          SidePanelWrap,
+          WorkspaceWrap,
+          Toolbar,
+          PagesTimeline,
+          ZoomButtons,
+          SidePanel,
+          Workspace,
+        } = getPolotnoComponents();
 
-        // Render Polotno UI inside try/catch
-        try {
-          const {
-            PolotnoContainer,
-            SidePanelWrap,
-            WorkspaceWrap,
-            Toolbar,
-            PagesTimeline,
-            ZoomButtons,
-            SidePanel,
-            Workspace,
-          } = getPolotnoComponents();
+        // Build custom sections with our VDP panels
+        const customSections = [
+          createVdpFieldsSection(VdpFieldsPanel, { store, availableFields, projectImages }),
+          createBarcodesSection(BarcodePanel, { store, availableFields }),
+          createProjectImagesSection(ProjectImagesPanel, { store, projectImages }),
+          createSequenceSection(SequencePanel, { store }),
+        ];
+        
+        const sections = buildCustomSections(customSections);
 
-          // Build custom sections with our VDP panels
-          const customSections = [
-            createVdpFieldsSection(VdpFieldsPanel, { store, availableFields, projectImages }),
-            createBarcodesSection(BarcodePanel, { store, availableFields }),
-            createProjectImagesSection(ProjectImagesPanel, { store, projectImages }),
-            createSequenceSection(SequencePanel, { store }),
-          ];
-          
-          const sections = buildCustomSections(customSections);
-
-          // Cleanup previous root if exists
-          if (rootRef.current) {
+        // Cleanup previous root if exists
+        if (rootRef.current) {
+          try {
             rootRef.current.unmount();
+          } catch (e) {
+            console.warn('Previous root unmount failed:', e);
           }
-
-          rootRef.current = createRoot(editorRef.current);
-          rootRef.current.render(
-            createElement(
-              PolotnoContainer,
-              { style: { width: '100%', height: '100%' } },
-              createElement(
-                SidePanelWrap,
-                null,
-                createElement(SidePanel, { store, sections })
-              ),
-              createElement(
-                WorkspaceWrap,
-                null,
-                createElement(Toolbar, { store }),
-                createElement(Workspace, { store, backgroundColor: '#f0f0f0' }),
-                createElement(ZoomButtons, { store }),
-                createElement(PagesTimeline, { store })
-              )
-            )
-          );
-          
-          console.log('✅ Polotno UI render() called');
-          
-          // Verify DOM was actually populated after React commits
-          await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => {
-              setTimeout(() => {
-                if (!mounted) {
-                  resolve();
-                  return;
-                }
-                
-                const childCount = editorRef.current?.childElementCount || 0;
-                console.log(`🔍 DOM verification: editorRef has ${childCount} child elements`);
-                
-                if (childCount === 0) {
-                  console.error('❌ Polotno rendered 0 DOM nodes - React render may have failed silently');
-                  setError('Editor rendered empty. This may be a Polotno module issue. Please refresh.');
-                  setBootstrapStage('error');
-                  setIsLoading(false);
-                  resolve();
-                  return;
-                }
-                
-                // Close the sidebar after UI mounts
-                store.openSidePanel('');
-                console.log('✅ Polotno UI verified with', childCount, 'DOM nodes');
-                resolve();
-              }, 100);
-            });
-          });
-          
-          // Check if we had an error during verification
-          if (!mounted) return;
-          
-        } catch (renderError) {
-          console.error('❌ Polotno UI render error:', renderError);
-          if (mounted) {
-            setError('Failed to render editor UI: ' + String(renderError));
-            setBootstrapStage('error');
-            setIsLoading(false);
-          }
-          return;
+          rootRef.current = null;
         }
 
-        // Create handle for parent
+        rootRef.current = createRoot(mountEl);
+        rootRef.current.render(
+          createElement(
+            PolotnoContainer,
+            { style: { width: '100%', height: '100%' } },
+            createElement(
+              SidePanelWrap,
+              null,
+              createElement(SidePanel, { store, sections })
+            ),
+            createElement(
+              WorkspaceWrap,
+              null,
+              createElement(Toolbar, { store }),
+              createElement(Workspace, { store, backgroundColor: '#f0f0f0' }),
+              createElement(ZoomButtons, { store }),
+              createElement(PagesTimeline, { store })
+            )
+          )
+        );
+        
+        console.log('✅ Polotno UI render() called');
+        
+        // ---- VERIFY UI MOUNTED ----
+        await new Promise<void>((resolve, reject) => {
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              if (cancelled) {
+                resolve();
+                return;
+              }
+              
+              const childCount = mountEl?.childElementCount || 0;
+              console.log(`🔍 DOM verification: mount has ${childCount} child elements`);
+              
+              if (childCount === 0) {
+                reject(new Error('Polotno rendered 0 DOM nodes - render failed silently'));
+                return;
+              }
+              
+              // Close the sidebar after UI mounts
+              store.openSidePanel('');
+              console.log('✅ Polotno UI verified with', childCount, 'DOM nodes');
+              resolve();
+            }, 150);
+          });
+        });
+        
+        if (cancelled) return;
+
+        // ---- CREATE HANDLE ----
         const handle: PolotnoEditorHandle = {
           saveScene: async () => {
             const json = saveScene(store);
@@ -566,7 +567,7 @@ export function PolotnoEditorWrapper({
           },
           exportResolvedPdf: async (scene: PolotnoScene, options?: PrintExportOptions) => {
             const currentScene = saveScene(store);
-            store.loadJSON(scene);
+            await store.loadJSON(scene);
             
             const {
               includeBleed = true,
@@ -583,7 +584,7 @@ export function PolotnoEditorWrapper({
               fileName,
             });
             
-            loadScene(store, currentScene);
+            await loadScene(store, currentScene);
             return blob;
           },
           getResolvedScene: (record: Record<string, string>, recordIndex: number) => {
@@ -601,13 +602,12 @@ export function PolotnoEditorWrapper({
           store,
         };
 
-        // Mark bootstrap as complete ONLY after UI is verified
-        editorBootstrappedRef.current = true;
+        handleRef.current = handle;
         setBootstrapStage('ready');
+        setError(null);
         
         onReady?.(handle);
-        setIsLoading(false);
-        console.log('✅ Phase A complete - editor ready');
+        console.log('✅ Bootstrap complete - editor ready');
 
         // Track changes
         changeInterval = setInterval(() => {
@@ -615,27 +615,40 @@ export function PolotnoEditorWrapper({
           const current = saveScene(store);
           onSceneChange?.(current !== lastSavedSceneRef.current);
         }, 1000);
+        
       } catch (e) {
         console.error('❌ Polotno bootstrap error:', e);
-        if (mounted) {
-          setError('Failed to initialize editor: ' + String(e));
+        if (!cancelled) {
+          setError(String(e instanceof Error ? e.message : e));
           setBootstrapStage('error');
-          setIsLoading(false);
         }
+      } finally {
+        bootstrapInFlightRef.current = false;
       }
     };
 
     bootstrap();
 
     return () => {
-      mounted = false;
+      cancelled = true;
       if (changeInterval) clearInterval(changeInterval);
+      // Don't unmount root here - we want it to persist
+    };
+  }, [mountEl, labelWidth, labelHeight, bleedMm, onSave, onSceneChange, onReady, retryCount, availableFields, projectImages]);
+
+  // Cleanup root on component unmount
+  useEffect(() => {
+    return () => {
       if (rootRef.current) {
-        rootRef.current.unmount();
+        try {
+          rootRef.current.unmount();
+        } catch (e) {
+          console.warn('Root unmount on cleanup failed:', e);
+        }
         rootRef.current = null;
       }
     };
-  }, [labelWidth, labelHeight, bleedMm, onSave, onSceneChange, onReady]);
+  }, []);
 
   // ============================================================================
   // PHASE B1: Load Initial Scene (when we have an existing template)
@@ -643,7 +656,7 @@ export function PolotnoEditorWrapper({
   // ============================================================================
   useEffect(() => {
     const store = storeRef.current;
-    if (!store || !initialScene || !editorBootstrappedRef.current) return;
+    if (!store || !initialScene || bootstrapStage !== 'ready') return;
     
     // Skip if we already loaded this scene
     if (baseSceneRef.current === initialScene) return;
@@ -673,7 +686,7 @@ export function PolotnoEditorWrapper({
     } catch (err) {
       console.error('❌ Failed to load initial scene:', err);
     }
-  }, [initialScene, allSampleData]);
+  }, [initialScene, allSampleData, bootstrapStage]);
 
   // ============================================================================
   // PHASE B2: Generate AI Layout (for new templates without initialScene)
@@ -682,8 +695,8 @@ export function PolotnoEditorWrapper({
   useEffect(() => {
     const store = storeRef.current;
     
-    // Guards: need store, no initial scene, have data, not already generated
-    if (!store || !editorBootstrappedRef.current) return;
+    // Guards: need store and ready state
+    if (!store || bootstrapStage !== 'ready') return;
     if (initialScene) return; // Phase B1 handles this
     if (layoutGeneratedRef.current) return;
     if (layoutInFlightRef.current) return;
@@ -758,7 +771,7 @@ export function PolotnoEditorWrapper({
     };
     
     generateLayout();
-  }, [initialScene, availableFields, allSampleData, labelWidth, labelHeight, projectType, projectImages]);
+  }, [initialScene, availableFields, allSampleData, labelWidth, labelHeight, projectType, projectImages, bootstrapStage]);
 
   // ============================================================================
   // Record Navigation
@@ -806,48 +819,71 @@ export function PolotnoEditorWrapper({
   }, [currentRecordIndex, allSampleData.length, goToNext, goToPrev, onRecordNavigationChange]);
 
   // ============================================================================
-  // Render
+  // Retry handler
   // ============================================================================
-  
-  // Only show loading spinner during initial bootstrap
-  if (isLoading) {
-    // Human-readable stage names
-    const stageLabels: Record<string, string> = {
-      init: 'Initializing...',
-      fetch_key: 'Fetching API key...',
-      load_modules: 'Loading editor modules...',
-      create_store: 'Creating editor store...',
-      render_ui: 'Rendering editor UI...',
-      ready: 'Ready',
-      error: 'Error',
-    };
+  const handleRetry = useCallback(() => {
+    // Reset state for retry
+    setError(null);
+    setBootstrapStage('waiting_for_mount');
+    bootstrapInFlightRef.current = false;
     
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">
-          {stageLabels[bootstrapStage] || 'Loading editor...'}
-        </p>
-        <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
-      </div>
-    );
-  }
+    // Cleanup old root
+    if (rootRef.current) {
+      try {
+        rootRef.current.unmount();
+      } catch (e) {
+        console.warn('Retry cleanup failed:', e);
+      }
+      rootRef.current = null;
+    }
+    storeRef.current = null;
+    handleRef.current = null;
+    
+    // Increment retry count to trigger useEffect
+    setRetryCount(c => c + 1);
+  }, []);
 
-  if (error) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background">
-        <p className="text-sm font-medium text-destructive">Editor Error</p>
-        <p className="text-sm text-muted-foreground max-w-md text-center">{error}</p>
-        <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
-      </div>
-    );
-  }
-
+  // ============================================================================
+  // Render - ALWAYS render mount div, with overlays on top
+  // ============================================================================
+  const isLoading = bootstrapStage !== 'ready' && bootstrapStage !== 'error';
+  
   return (
-    <div ref={containerRef} className="relative h-full w-full">
-      {/* Layout generation overlay (non-blocking) */}
-      {layoutStatus && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+    <div className="relative h-full w-full">
+      {/* ALWAYS PRESENT: The mount point for Polotno UI */}
+      <div 
+        ref={setMountEl} 
+        className="h-full w-full"
+        style={{ visibility: isLoading || error ? 'hidden' : 'visible' }}
+      />
+      
+      {/* Loading overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">
+            {STAGE_LABELS[bootstrapStage]}
+          </p>
+          <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
+        </div>
+      )}
+      
+      {/* Error overlay */}
+      {error && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background">
+          <p className="text-sm font-medium text-destructive">Editor Error</p>
+          <p className="text-sm text-muted-foreground max-w-md text-center">{error}</p>
+          <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
+          <Button variant="outline" size="sm" onClick={handleRetry} className="mt-2">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      )}
+      
+      {/* Layout generation overlay (non-blocking, shown after bootstrap) */}
+      {bootstrapStage === 'ready' && layoutStatus && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex items-center gap-2 bg-card rounded-lg border shadow-lg px-4 py-3">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">{layoutStatus}</p>
@@ -855,8 +891,9 @@ export function PolotnoEditorWrapper({
         </div>
       )}
       
-      {allSampleData.length > 1 && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
+      {/* Record navigation (shown after bootstrap with multiple records) */}
+      {bootstrapStage === 'ready' && allSampleData.length > 1 && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
           <Button
             variant="ghost"
             size="icon"
@@ -880,7 +917,6 @@ export function PolotnoEditorWrapper({
           </Button>
         </div>
       )}
-      <div ref={editorRef} className="h-full w-full" />
     </div>
   );
 }

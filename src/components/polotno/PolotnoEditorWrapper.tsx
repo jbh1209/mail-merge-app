@@ -210,8 +210,8 @@ async function generateInitialLayoutPolotno(
         let textContent: string;
 
         if (field.fieldType === 'address_block' && field.combinedFields && field.combinedFields.length > 0) {
-          // Combined address block: use {{field}} syntax joined by newlines
-          textContent = field.combinedFields.map(f => `{{${f}}}`).join('\\n');
+          // Combined address block: use {{field}} syntax joined by actual newlines
+          textContent = field.combinedFields.map(f => `{{${f}}}`).join('\n');
           console.log('📦 Creating combined address block with fields:', field.combinedFields);
         } else {
           // Individual field - use {{fieldName}} placeholder syntax
@@ -242,6 +242,12 @@ async function generateInitialLayoutPolotno(
       } catch (blockError) {
         console.error(`❌ Failed to create element for ${field.templateField}:`, blockError);
       }
+    }
+
+    // Verify element creation
+    console.log(`📊 Page now has ${page.children?.length || 0} elements after text layout`);
+    if (!page.children || page.children.length === 0) {
+      console.warn('⚠️ No elements were added to the page!');
     }
 
     // Step 4: Create VDP image elements for detected image fields
@@ -310,6 +316,7 @@ export function PolotnoEditorWrapper({
   const storeRef = useRef<any>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<Root | null>(null);
+  const hasInitializedRef = useRef(false); // Prevent multiple re-initializations
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
@@ -323,6 +330,13 @@ export function PolotnoEditorWrapper({
     let changeInterval: ReturnType<typeof setInterval> | null = null;
 
     const init = async () => {
+      // Prevent multiple re-initializations
+      if (hasInitializedRef.current) {
+        console.log('⚠️ Polotno already initialized, skipping re-init');
+        return;
+      }
+      hasInitializedRef.current = true;
+
       try {
         // Fetch API key from edge function
         const keyResponse = await fetch(
@@ -398,15 +412,35 @@ export function PolotnoEditorWrapper({
             baseSceneRef.current = generatedScene;
             
             // Apply VDP resolution to show first record's actual values
-            const parsed = JSON.parse(generatedScene) as PolotnoScene;
-            const resolved = resolveVdpVariables(parsed, {
-              record: firstRecord,
-              recordIndex: 0,
-            });
-            store.loadJSON(resolved);
-            lastSavedSceneRef.current = generatedScene;
-            console.log('✅ AI layout applied and VDP resolved for first record');
+            try {
+              console.log('🔄 Applying VDP resolution to first record...');
+              const parsed = JSON.parse(generatedScene) as PolotnoScene;
+              console.log('📄 Parsed scene:', parsed.pages?.[0]?.children?.length, 'elements');
+              
+              const resolved = resolveVdpVariables(parsed, {
+                record: firstRecord,
+                recordIndex: 0,
+              });
+              console.log('✅ VDP resolved, loading into store...');
+              
+              store.loadJSON(resolved);
+              lastSavedSceneRef.current = generatedScene;
+              console.log('✅ AI layout applied and VDP resolved for first record');
+            } catch (vdpError) {
+              console.error('❌ VDP resolution error:', vdpError);
+              // Fallback: just load the base scene without resolution
+              try {
+                store.loadJSON(JSON.parse(generatedScene));
+                lastSavedSceneRef.current = generatedScene;
+                console.log('⚠️ Loaded base scene without VDP resolution as fallback');
+              } catch (loadError) {
+                console.error('❌ Scene load error:', loadError);
+              }
+            }
           }
+          
+          // Always clear layout status after layout generation attempt
+          setLayoutStatus(null);
         }
 
         storeRef.current = store;
@@ -461,9 +495,11 @@ export function PolotnoEditorWrapper({
           );
           
           // Close the sidebar after a short delay to ensure Polotno UI has mounted
-          setTimeout(() => {
-            store.openSidePanel('');
-          }, 150);
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              store.openSidePanel('');
+            }, 200);
+          });
         }
 
         // Create handle for parent

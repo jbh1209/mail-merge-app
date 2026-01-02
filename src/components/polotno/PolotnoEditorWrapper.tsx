@@ -110,6 +110,8 @@ export function PolotnoEditorWrapper({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
+  const [isEditorReady, setIsEditorReady] = useState(false);
+  const [showEmptyGuide, setShowEmptyGuide] = useState(false);
   const lastSavedSceneRef = useRef<string>('');
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
@@ -224,6 +226,9 @@ export function PolotnoEditorWrapper({
               )
             )
           );
+          
+          // Close the sidebar by default (prevents auto-open of first section)
+          store.openSidePanel('');
         }
 
         // Create handle for parent
@@ -294,6 +299,12 @@ export function PolotnoEditorWrapper({
 
         onReady?.(handle);
         setIsLoading(false);
+        setIsEditorReady(true);
+        
+        // Show empty guide if no initial scene and we have data fields
+        if (!initialScene && availableFields.length > 0) {
+          setShowEmptyGuide(true);
+        }
 
         // Track changes
         changeInterval = setInterval(() => {
@@ -383,6 +394,24 @@ export function PolotnoEditorWrapper({
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
+      {/* Empty state guide for new templates */}
+      {isEditorReady && showEmptyGuide && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-black/20 z-40 cursor-pointer"
+          onClick={() => setShowEmptyGuide(false)}
+        >
+          <div className="bg-card p-6 rounded-lg shadow-lg max-w-sm text-center border" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-semibold mb-2">Start designing your template</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Click the sidebar icons to add data fields, barcodes, images, or text elements to your design.
+            </p>
+            <Button variant="default" size="sm" onClick={() => setShowEmptyGuide(false)}>
+              Got it
+            </Button>
+          </div>
+        </div>
+      )}
+      
       {allSampleData.length > 1 && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
           <Button

@@ -96,6 +96,9 @@ interface PolotnoEditorWrapperProps {
 // Use runtime's mmToPixels for consistency
 const mmToPixels = (mm: number, dpi = 300) => runtimeMmToPixels(mm, dpi);
 
+// Convert pt to px for font sizes (layout engine returns pt, Polotno uses px)
+const ptToPx = (pt: number): number => pt * (96 / 72); // 96 DPI screen / 72 pt per inch
+
 /**
  * Detect if a field is likely an image field based on its name or sample values
  */
@@ -142,7 +145,6 @@ async function generateInitialLayoutPolotno(
   widthMm: number,
   heightMm: number,
   templateType: string,
-  setLayoutStatus: (status: string | null) => void,
   projectImages: { name: string; url: string }[] = []
 ): Promise<string | null> {
   if (fields.length === 0 || Object.keys(sampleData).length === 0) {
@@ -150,7 +152,6 @@ async function generateInitialLayoutPolotno(
     return null;
   }
 
-  setLayoutStatus('Generating smart layout...');
   console.log('🎨 AUTO-TRIGGERING HYBRID AI LAYOUT FOR NEW POLOTNO DESIGN');
 
   // Detect image fields using value-based detection
@@ -174,13 +175,11 @@ async function generateInitialLayoutPolotno(
 
     if (hybridError) {
       console.warn('⚠️ Hybrid layout API error:', hybridError);
-      setLayoutStatus(null);
       return null;
     }
 
     if (!hybridData?.designStrategy) {
       console.warn('⚠️ No design strategy returned from hybrid layout');
-      setLayoutStatus(null);
       return null;
     }
 
@@ -199,7 +198,6 @@ async function generateInitialLayoutPolotno(
     const page = store.activePage;
     if (!page) {
       console.warn('⚠️ No active page available for layout');
-      setLayoutStatus(null);
       return null;
     }
 
@@ -218,6 +216,9 @@ async function generateInitialLayoutPolotno(
           textContent = `{{${field.templateField}}}`;
         }
 
+        // Convert pt to px for fontSize (layout engine returns pt)
+        const fontSizePx = ptToPx(field.fontSize || 12);
+
         // Add text element to the page
         page.addElement({
           type: 'text',
@@ -226,7 +227,7 @@ async function generateInitialLayoutPolotno(
           width: mmToPixels(field.width),
           height: mmToPixels(field.height),
           text: textContent,
-          fontSize: field.fontSize || 12,
+          fontSize: fontSizePx,
           fontFamily: 'Roboto',
           fontWeight: field.fontWeight === 'bold' ? 'bold' : 'normal',
           align: field.textAlign || 'left',
@@ -238,7 +239,7 @@ async function generateInitialLayoutPolotno(
           },
         });
 
-        console.log(`✅ Created Polotno text element: ${field.templateField}`);
+        console.log(`✅ Created Polotno text element: ${field.templateField} (fontSize: ${fontSizePx}px)`);
       } catch (blockError) {
         console.error(`❌ Failed to create element for ${field.templateField}:`, blockError);
       }
@@ -246,12 +247,9 @@ async function generateInitialLayoutPolotno(
 
     // Verify element creation
     console.log(`📊 Page now has ${page.children?.length || 0} elements after text layout`);
-    if (!page.children || page.children.length === 0) {
-      console.warn('⚠️ No elements were added to the page!');
-    }
 
     // Step 4: Create VDP image elements for detected image fields
-    if (imageFieldsDetected.length > 0 && projectImages.length > 0) {
+    if (imageFieldsDetected.length > 0) {
       console.log('🖼️ Creating VDP image elements for:', imageFieldsDetected);
       
       // Position images in remaining space (e.g., right side or bottom)
@@ -260,7 +258,7 @@ async function generateInitialLayoutPolotno(
       const imageHeight = heightMm * 0.4;
       
       imageFieldsDetected.forEach((imageField, index) => {
-        // Find matching project image
+        // Find matching project image or use record value
         const sampleValue = sampleData[imageField];
         const matchedImage = projectImages.find(img => 
           img.name === sampleValue || 
@@ -268,13 +266,19 @@ async function generateInitialLayoutPolotno(
           sampleValue?.includes(img.name)
         );
         
+        // Use matched image URL, or if the sample value is a URL, use it directly
+        let imageSrc = matchedImage?.url || '';
+        if (!imageSrc && sampleValue && (sampleValue.startsWith('http') || sampleValue.startsWith('/'))) {
+          imageSrc = sampleValue;
+        }
+        
         page.addElement({
           type: 'image',
           x: mmToPixels(imageAreaX),
           y: mmToPixels(heightMm * 0.1 + index * (imageHeight + 2)),
           width: mmToPixels(imageAreaWidth),
           height: mmToPixels(imageHeight),
-          src: matchedImage?.url || '',
+          src: imageSrc,
           custom: {
             variable: imageField,
           },
@@ -283,8 +287,6 @@ async function generateInitialLayoutPolotno(
         console.log(`✅ Created Polotno image element: ${imageField}`);
       });
     }
-
-    setLayoutStatus(null);
     
     // Save the base scene (with placeholders) and return it
     const baseScene = saveScene(store);
@@ -293,7 +295,6 @@ async function generateInitialLayoutPolotno(
     return baseScene;
   } catch (error) {
     console.error('❌ Layout generation error:', error);
-    setLayoutStatus(null);
     return null;
   }
 }
@@ -316,7 +317,12 @@ export function PolotnoEditorWrapper({
   const storeRef = useRef<any>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<Root | null>(null);
-  const hasInitializedRef = useRef(false); // Prevent multiple re-initializations
+  
+  // Phase control refs
+  const editorBootstrappedRef = useRef(false);
+  const layoutGeneratedRef = useRef(false);
+  const layoutInFlightRef = useRef(false);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
@@ -325,18 +331,24 @@ export function PolotnoEditorWrapper({
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
 
+  // ============================================================================
+  // PHASE A: Editor Bootstrap (runs once per mount)
+  // Creates store, renders UI, sets isLoading=false
+  // Does NOT depend on data props (availableFields, allSampleData, projectImages)
+  // ============================================================================
   useEffect(() => {
     let mounted = true;
     let changeInterval: ReturnType<typeof setInterval> | null = null;
 
-    const init = async () => {
-      // Prevent multiple re-initializations
-      if (hasInitializedRef.current) {
-        console.log('⚠️ Polotno already initialized, skipping re-init');
-        return;
-      }
-      hasInitializedRef.current = true;
+    // Skip if already bootstrapped
+    if (editorBootstrappedRef.current) {
+      console.log('⚠️ Editor already bootstrapped, skipping');
+      return;
+    }
 
+    const bootstrap = async () => {
+      console.log('🚀 Phase A: Bootstrapping Polotno editor...');
+      
       try {
         // Fetch API key from edge function
         const keyResponse = await fetch(
@@ -373,77 +385,10 @@ export function PolotnoEditorWrapper({
 
         // Configure bleed
         configureBleed(store, mmToPixels(bleedMm));
-
-        // Load initial scene OR generate AI layout
-        if (initialScene) {
-          // Existing scene - load it
-          baseSceneRef.current = initialScene;
-          
-          // If we have sample data, apply VDP resolution for first record
-          if (allSampleData.length > 0 && allSampleData[0]) {
-            const parsed = JSON.parse(initialScene) as PolotnoScene;
-            const resolved = resolveVdpVariables(parsed, {
-              record: allSampleData[0],
-              recordIndex: 0,
-            });
-            store.loadJSON(resolved);
-          } else {
-            loadScene(store, initialScene);
-          }
-          lastSavedSceneRef.current = initialScene;
-        } else if (availableFields.length > 0 && allSampleData.length > 0) {
-          // NEW TEMPLATE with data - generate AI-assisted layout
-          console.log('🚀 New template with data detected - triggering AI layout generation');
-          
-          const firstRecord = allSampleData[0] || {};
-          const generatedScene = await generateInitialLayoutPolotno(
-            store,
-            availableFields,
-            firstRecord,
-            allSampleData,
-            labelWidth,
-            labelHeight,
-            projectType,
-            setLayoutStatus,
-            projectImages
-          );
-          
-          if (generatedScene) {
-            baseSceneRef.current = generatedScene;
-            
-            // Apply VDP resolution to show first record's actual values
-            try {
-              console.log('🔄 Applying VDP resolution to first record...');
-              const parsed = JSON.parse(generatedScene) as PolotnoScene;
-              console.log('📄 Parsed scene:', parsed.pages?.[0]?.children?.length, 'elements');
-              
-              const resolved = resolveVdpVariables(parsed, {
-                record: firstRecord,
-                recordIndex: 0,
-              });
-              console.log('✅ VDP resolved, loading into store...');
-              
-              store.loadJSON(resolved);
-              lastSavedSceneRef.current = generatedScene;
-              console.log('✅ AI layout applied and VDP resolved for first record');
-            } catch (vdpError) {
-              console.error('❌ VDP resolution error:', vdpError);
-              // Fallback: just load the base scene without resolution
-              try {
-                store.loadJSON(JSON.parse(generatedScene));
-                lastSavedSceneRef.current = generatedScene;
-                console.log('⚠️ Loaded base scene without VDP resolution as fallback');
-              } catch (loadError) {
-                console.error('❌ Scene load error:', loadError);
-              }
-            }
-          }
-          
-          // Always clear layout status after layout generation attempt
-          setLayoutStatus(null);
-        }
-
+        
         storeRef.current = store;
+        editorBootstrappedRef.current = true;
+        console.log('✅ Polotno store created');
 
         // Render Polotno UI
         if (editorRef.current) {
@@ -494,18 +439,19 @@ export function PolotnoEditorWrapper({
             )
           );
           
-          // Close the sidebar after a short delay to ensure Polotno UI has mounted
+          // Close the sidebar after UI mounts
           requestAnimationFrame(() => {
             setTimeout(() => {
               store.openSidePanel('');
             }, 200);
           });
+          
+          console.log('✅ Polotno UI rendered');
         }
 
         // Create handle for parent
         const handle: PolotnoEditorHandle = {
           saveScene: async () => {
-            // Save the current scene as the base template
             const json = saveScene(store);
             baseSceneRef.current = json;
             onSave?.(json);
@@ -529,7 +475,6 @@ export function PolotnoEditorWrapper({
             });
           },
           exportResolvedPdf: async (scene: PolotnoScene, options?: PrintExportOptions) => {
-            // Load the resolved scene into store temporarily
             const currentScene = saveScene(store);
             store.loadJSON(scene);
             
@@ -548,9 +493,7 @@ export function PolotnoEditorWrapper({
               fileName,
             });
             
-            // Restore original scene
             loadScene(store, currentScene);
-            
             return blob;
           },
           getResolvedScene: (record: Record<string, string>, recordIndex: number) => {
@@ -570,6 +513,7 @@ export function PolotnoEditorWrapper({
 
         onReady?.(handle);
         setIsLoading(false);
+        console.log('✅ Phase A complete - editor ready');
 
         // Track changes
         changeInterval = setInterval(() => {
@@ -578,7 +522,7 @@ export function PolotnoEditorWrapper({
           onSceneChange?.(current !== lastSavedSceneRef.current);
         }, 1000);
       } catch (e) {
-        console.error('Polotno init error:', e);
+        console.error('❌ Polotno bootstrap error:', e);
         if (mounted) {
           setError('Failed to initialize editor');
           setIsLoading(false);
@@ -586,7 +530,7 @@ export function PolotnoEditorWrapper({
       }
     };
 
-    init();
+    bootstrap();
 
     return () => {
       mounted = false;
@@ -596,8 +540,125 @@ export function PolotnoEditorWrapper({
         rootRef.current = null;
       }
     };
-  }, [labelWidth, labelHeight, bleedMm, initialScene, onSave, onSceneChange, onReady, availableFields, projectImages, allSampleData, projectType]);
+  }, [labelWidth, labelHeight, bleedMm, onSave, onSceneChange, onReady]);
 
+  // ============================================================================
+  // PHASE B1: Load Initial Scene (when we have an existing template)
+  // Runs after bootstrap, when initialScene is provided
+  // ============================================================================
+  useEffect(() => {
+    const store = storeRef.current;
+    if (!store || !initialScene || !editorBootstrappedRef.current) return;
+    
+    // Skip if we already loaded this scene
+    if (baseSceneRef.current === initialScene) return;
+    
+    console.log('📂 Phase B1: Loading existing scene...');
+    
+    try {
+      baseSceneRef.current = initialScene;
+      lastSavedSceneRef.current = initialScene;
+      
+      // If we have sample data, apply VDP resolution for first record
+      if (allSampleData.length > 0 && allSampleData[0]) {
+        const parsed = JSON.parse(initialScene) as PolotnoScene;
+        const resolved = resolveVdpVariables(parsed, {
+          record: allSampleData[0],
+          recordIndex: 0,
+        });
+        store.loadJSON(resolved);
+        console.log('✅ Loaded scene with VDP resolution for first record');
+      } else {
+        loadScene(store, initialScene);
+        console.log('✅ Loaded scene without VDP resolution');
+      }
+      
+      // Mark layout as "generated" so Phase B2 doesn't run
+      layoutGeneratedRef.current = true;
+    } catch (err) {
+      console.error('❌ Failed to load initial scene:', err);
+    }
+  }, [initialScene, allSampleData]);
+
+  // ============================================================================
+  // PHASE B2: Generate AI Layout (for new templates without initialScene)
+  // Runs after bootstrap when we have fields + data but no initial scene
+  // ============================================================================
+  useEffect(() => {
+    const store = storeRef.current;
+    
+    // Guards: need store, no initial scene, have data, not already generated
+    if (!store || !editorBootstrappedRef.current) return;
+    if (initialScene) return; // Phase B1 handles this
+    if (layoutGeneratedRef.current) return;
+    if (layoutInFlightRef.current) return;
+    if (availableFields.length === 0 || allSampleData.length === 0) return;
+    
+    const generateLayout = async () => {
+      layoutInFlightRef.current = true;
+      setLayoutStatus('Generating smart layout...');
+      console.log('🎨 Phase B2: Generating AI-assisted layout...');
+      
+      try {
+        const firstRecord = allSampleData[0] || {};
+        
+        const generatedScene = await generateInitialLayoutPolotno(
+          store,
+          availableFields,
+          firstRecord,
+          allSampleData,
+          labelWidth,
+          labelHeight,
+          projectType,
+          projectImages
+        );
+        
+        if (generatedScene) {
+          baseSceneRef.current = generatedScene;
+          lastSavedSceneRef.current = generatedScene;
+          
+          // Apply VDP resolution to show first record's actual values
+          try {
+            console.log('🔄 Applying VDP resolution to first record...');
+            const parsed = JSON.parse(generatedScene) as PolotnoScene;
+            console.log('📄 Parsed scene:', parsed.pages?.[0]?.children?.length, 'elements');
+            
+            const resolved = resolveVdpVariables(parsed, {
+              record: firstRecord,
+              recordIndex: 0,
+            });
+            
+            store.loadJSON(resolved);
+            console.log('✅ AI layout applied and VDP resolved for first record');
+          } catch (vdpError) {
+            console.error('❌ VDP resolution error:', vdpError);
+            // Fallback: just load the base scene without resolution
+            try {
+              store.loadJSON(JSON.parse(generatedScene));
+              console.log('⚠️ Loaded base scene without VDP resolution as fallback');
+            } catch (loadError) {
+              console.error('❌ Scene load error:', loadError);
+            }
+          }
+        } else {
+          console.log('⚠️ No layout generated (empty or failed)');
+        }
+        
+        layoutGeneratedRef.current = true;
+      } catch (err) {
+        console.error('❌ Layout generation failed:', err);
+      } finally {
+        setLayoutStatus(null);
+        layoutInFlightRef.current = false;
+      }
+    };
+    
+    generateLayout();
+  }, [initialScene, availableFields, allSampleData, labelWidth, labelHeight, projectType, projectImages]);
+
+  // ============================================================================
+  // Record Navigation
+  // ============================================================================
   const goToNext = useCallback(() => {
     if (currentRecordIndex < allSampleData.length - 1) {
       setCurrentRecordIndex((i) => i + 1);
@@ -640,13 +701,16 @@ export function PolotnoEditorWrapper({
     }
   }, [currentRecordIndex, allSampleData.length, goToNext, goToPrev, onRecordNavigationChange]);
 
-  if (isLoading || layoutStatus) {
+  // ============================================================================
+  // Render
+  // ============================================================================
+  
+  // Only show loading spinner during initial bootstrap
+  if (isLoading) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="ml-2 text-sm text-muted-foreground">
-          {layoutStatus || 'Loading editor...'}
-        </p>
+        <p className="ml-2 text-sm text-muted-foreground">Loading editor...</p>
       </div>
     );
   }
@@ -661,6 +725,16 @@ export function PolotnoEditorWrapper({
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
+      {/* Layout generation overlay (non-blocking) */}
+      {layoutStatus && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex items-center gap-2 bg-card rounded-lg border shadow-lg px-4 py-3">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">{layoutStatus}</p>
+          </div>
+        </div>
+      )}
+      
       {allSampleData.length > 1 && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
           <Button

@@ -288,9 +288,35 @@ async function generateInitialLayoutPolotno(
       });
     }
     
+    // Wait for MobX to propagate element additions before serializing
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Verify elements exist before saving
+    const childCount = page.children?.length || 0;
+    console.log(`📊 Page has ${childCount} elements after MobX sync`);
+    
+    if (childCount === 0) {
+      console.warn('⚠️ No elements in page after layout - something went wrong');
+      return null;
+    }
+    
     // Save the base scene (with placeholders) and return it
     const baseScene = saveScene(store);
-    console.log('💾 Base scene saved with', layoutResult.fields.length, 'text elements');
+    
+    // Verify the scene contains elements
+    try {
+      const parsed = JSON.parse(baseScene);
+      const sceneChildCount = parsed.pages?.[0]?.children?.length || 0;
+      console.log(`💾 Saved scene has ${sceneChildCount} elements (expected ${childCount})`);
+      
+      if (sceneChildCount === 0) {
+        console.error('❌ Scene serialized with 0 elements despite page having elements!');
+        return null;
+      }
+    } catch (parseError) {
+      console.error('❌ Failed to parse saved scene:', parseError);
+      return null;
+    }
     
     return baseScene;
   } catch (error) {
@@ -621,27 +647,36 @@ export function PolotnoEditorWrapper({
           try {
             console.log('🔄 Applying VDP resolution to first record...');
             const parsed = JSON.parse(generatedScene) as PolotnoScene;
-            console.log('📄 Parsed scene:', parsed.pages?.[0]?.children?.length, 'elements');
+            const elementCount = parsed.pages?.[0]?.children?.length || 0;
+            console.log('📄 Base scene structure:', {
+              width: parsed.width,
+              height: parsed.height,
+              pages: parsed.pages?.length,
+              elements: elementCount,
+            });
+            
+            if (elementCount === 0) {
+              console.warn('⚠️ Base scene has 0 elements - elements should already be in the store from addElement calls');
+              // Don't call loadJSON with empty scene - keep what's already rendered
+              return;
+            }
             
             const resolved = resolveVdpVariables(parsed, {
               record: firstRecord,
               recordIndex: 0,
             });
             
-            store.loadJSON(resolved);
+            console.log('📄 Resolved scene elements:', resolved.pages?.[0]?.children?.length);
+            
+            await store.loadJSON(resolved);
             console.log('✅ AI layout applied and VDP resolved for first record');
           } catch (vdpError) {
             console.error('❌ VDP resolution error:', vdpError);
-            // Fallback: just load the base scene without resolution
-            try {
-              store.loadJSON(JSON.parse(generatedScene));
-              console.log('⚠️ Loaded base scene without VDP resolution as fallback');
-            } catch (loadError) {
-              console.error('❌ Scene load error:', loadError);
-            }
+            // Don't reload with fallback - elements are already in the store from addElement
+            console.log('ℹ️ Keeping elements as-is without VDP resolution');
           }
         } else {
-          console.log('⚠️ No layout generated (empty or failed)');
+          console.log('⚠️ No layout generated (empty or failed) - elements may already be visible from addElement calls');
         }
         
         layoutGeneratedRef.current = true;

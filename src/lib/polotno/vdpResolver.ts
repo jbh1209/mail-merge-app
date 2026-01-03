@@ -123,31 +123,12 @@ export async function prefetchImagesForRecords(
     }
   }
   
-  if (allUrls.length === 0) return;
-  
-  console.log(`🖼️ [Polotno] Prefetching ${allUrls.length} images for VDP cache...`);
-  
-  // Priority load first 10
-  const priorityUrls = allUrls.slice(0, 10);
-  await Promise.all(priorityUrls.map(prefetchImage));
-  console.log(`✅ [Polotno] Priority images loaded: ${priorityUrls.length}`);
-  
-  // Background load rest (non-blocking)
-  const remainingUrls = allUrls.slice(10);
-  if (remainingUrls.length > 0) {
-    (async () => {
-      const BATCH_SIZE = 10;
-      for (let i = 0; i < remainingUrls.length; i += BATCH_SIZE) {
-        const batch = remainingUrls.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map(prefetchImage));
-      }
-      console.log(`✅ [Polotno] Background images loaded: ${remainingUrls.length}`);
-    })();
-  }
+  // Prefetch all in parallel
+  await Promise.all(allUrls.map(url => prefetchImage(url)));
 }
 
 /**
- * Warm cache for adjacent records (prev, current, next)
+ * Warm cache for records adjacent to current index (for smooth navigation)
  */
 export async function warmCacheForAdjacentRecords(
   currentIndex: number,
@@ -156,222 +137,269 @@ export async function warmCacheForAdjacentRecords(
 ): Promise<void> {
   if (!projectImages?.length || !records?.length) return;
   
-  const indicesToWarm = [currentIndex - 1, currentIndex, currentIndex + 1]
-    .filter(i => i >= 0 && i < records.length);
+  const indicesToWarm = [
+    currentIndex - 1,
+    currentIndex,
+    currentIndex + 1,
+    currentIndex + 2,
+  ].filter(i => i >= 0 && i < records.length);
   
   const recordsToWarm = indicesToWarm.map(i => records[i]);
-  
-  const urlsToWarm: string[] = [];
-  for (const record of recordsToWarm) {
-    for (const value of Object.values(record)) {
-      if (typeof value === 'string') {
-        const url = findImageUrl(value, projectImages);
-        if (url && !urlsToWarm.includes(url)) {
-          urlsToWarm.push(url);
-        }
-      }
-    }
-  }
-  
-  if (urlsToWarm.length > 0) {
-    await Promise.all(urlsToWarm.map(prefetchImage));
-  }
+  await prefetchImagesForRecords(recordsToWarm, projectImages);
 }
 
-// ============ EXTENDED VDP OPTIONS ============
+// ============ SCENE CLONING ============
 
-export interface VdpResolveOptions {
-  /** Current data record with field values */
-  record: Record<string, string>;
-  /** Current record index (0-based) for sequence number generation */
-  recordIndex: number;
-  /** Base URL for relative image paths (legacy support) */
-  imageBaseUrl?: string;
-  /** Project images for filename -> URL mapping */
-  projectImages?: { name: string; url: string }[];
-  /** Use cached blob URLs for images (faster preview) */
-  useCachedImages?: boolean;
-}
-
-/**
- * Deep clone a scene JSON object
- */
 function cloneScene(scene: PolotnoScene): PolotnoScene {
   return JSON.parse(JSON.stringify(scene));
 }
 
-/**
- * Replace all {{fieldName}} placeholders in text with actual values
- */
-function resolveTextPlaceholders(text: string, record: Record<string, string>): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (match, fieldName) => {
-    const value = record[fieldName];
-    return value !== undefined ? value : match;
-  });
+// ============ VDP RESOLUTION OPTIONS ============
+
+export interface VdpResolveOptions {
+  record: Record<string, string>;
+  recordIndex: number;
+  imageBaseUrl?: string;
+  projectImages?: { name: string; url: string }[];
+  useCachedImages?: boolean;
 }
 
-/**
- * Generate sequence number based on config and current index
- */
-function generateSequenceNumber(config: SequenceConfig, recordIndex: number): string {
-  const { startNumber = 1, prefix = '', suffix = '', padding = 0 } = config;
-  const number = startNumber + recordIndex;
-  const paddedNumber = padding > 0 ? String(number).padStart(padding, '0') : String(number);
-  return `${prefix}${paddedNumber}${suffix}`;
-}
+// ============ MAIN VDP RESOLVER ============
 
 /**
- * Resolve barcode/QR code value from config and record
- */
-function resolveBarcodeValue(config: BarcodeConfig, record: Record<string, string>): string {
-  if (config.dataSource === 'static') {
-    return config.staticValue || '';
-  }
-  if (config.dataSource === 'field' && config.variableField) {
-    return record[config.variableField] || '';
-  }
-  return '';
-}
-
-/**
- * Resolve image URL for an image element with variable binding
- */
-function resolveImageUrl(
-  fieldValue: string,
-  options: VdpResolveOptions
-): string {
-  const { imageBaseUrl, projectImages, useCachedImages } = options;
-  
-  // If already a full URL or data URI, use directly
-  if (fieldValue.startsWith('http') || fieldValue.startsWith('data:')) {
-    // Check cache if enabled
-    if (useCachedImages && imageCache.has(fieldValue)) {
-      return imageCache.get(fieldValue)!;
-    }
-    return fieldValue;
-  }
-  
-  // Try matching against projectImages (CE.SDK-style)
-  if (projectImages && projectImages.length > 0) {
-    const matchedUrl = findImageUrl(fieldValue, projectImages);
-    if (matchedUrl) {
-      console.log(`✅ [VDP] Image resolved: "${fieldValue}" -> ${matchedUrl.substring(0, 50)}...`);
-      // Check cache
-      if (useCachedImages && imageCache.has(matchedUrl)) {
-        return imageCache.get(matchedUrl)!;
-      }
-      return matchedUrl;
-    } else {
-      console.warn(`❌ [VDP] Image not found: "${fieldValue}" (normalized: "${normalizeForMatch(fieldValue)}")`);
-    }
-  }
-  
-  // Fallback: prepend base URL if provided
-  if (imageBaseUrl && !fieldValue.startsWith('/')) {
-    return `${imageBaseUrl}/${fieldValue}`;
-  }
-  
-  return fieldValue;
-}
-
-/**
- * Resolve a single element with VDP data
- */
-function resolveElement(
-  element: PolotnoElement,
-  options: VdpResolveOptions
-): PolotnoElement {
-  const { record, recordIndex } = options;
-  const custom = element.custom as PolotnoElementCustom | undefined;
-
-  // Handle text elements
-  if (element.type === 'text' && element.text) {
-    element.text = resolveTextPlaceholders(element.text, record);
-    
-    // Also resolve if there's a custom.variable field
-    if (custom?.variable && record[custom.variable] !== undefined) {
-      if (element.text === `{{${custom.variable}}}` || element.text.trim() === '') {
-        element.text = record[custom.variable];
-      }
-    }
-  }
-
-  // Handle sequence numbers
-  if (custom?.sequenceConfig) {
-    const sequenceValue = generateSequenceNumber(custom.sequenceConfig, recordIndex);
-    if (element.type === 'text') {
-      element.text = sequenceValue;
-    }
-  }
-
-  // Handle barcode/QR code elements
-  if (custom?.barcodeConfig) {
-    const barcodeValue = resolveBarcodeValue(custom.barcodeConfig, record);
-    
-    if (!element.custom) element.custom = {};
-    (element.custom as PolotnoElementCustom).barcodeValue = barcodeValue;
-
-    // Generate barcode SVG as data URL
-    if ((element.type === 'svg' || element.type === 'image') && barcodeValue) {
-      try {
-        const format = custom.barcodeConfig.format || 'code128';
-        const isQR = custom.barcodeConfig.type === 'qrcode' || format === 'qrcode';
-        
-        let dataUrl: string;
-        if (isQR) {
-          dataUrl = generateQRCodeDataUrl(barcodeValue, {
-            width: element.width,
-            height: element.height,
-          });
-        } else {
-          dataUrl = generateBarcodeDataUrl(barcodeValue, format, {
-            width: element.width,
-            height: element.height,
-          });
-        }
-        
-        if (element.type === 'svg') {
-          element.svgSource = dataUrl;
-        } else {
-          element.src = dataUrl;
-        }
-      } catch (err) {
-        console.warn(`Failed to generate barcode for "${barcodeValue}":`, err);
-      }
-    }
-  }
-
-  // Handle image elements with variable field (VDP images) - IMPROVED
-  if (element.type === 'image' && custom?.variable) {
-    const imageFieldValue = record[custom.variable];
-    if (imageFieldValue) {
-      element.src = resolveImageUrl(imageFieldValue, options);
-    }
-  }
-
-  return element;
-}
-
-/**
- * Resolve all VDP variables in a Polotno scene
+ * Resolve all VDP variables in a Polotno scene with actual data.
+ * Returns a new scene with placeholders replaced by values.
+ * 
+ * IMPORTANT: Element IDs are preserved for matching back to base template.
  */
 export function resolveVdpVariables(
   scene: PolotnoScene,
   options: VdpResolveOptions
 ): PolotnoScene {
   const resolved = cloneScene(scene);
-
+  
   for (const page of resolved.pages) {
-    for (let i = 0; i < page.children.length; i++) {
-      page.children[i] = resolveElement(page.children[i], options);
-    }
+    page.children = page.children.map(element => 
+      resolveElement(element, options)
+    );
   }
-
+  
   return resolved;
 }
 
 /**
- * Apply VDP resolution to a Polotno store (in-place preview update)
+ * Resolve VDP variables for a single element
+ */
+function resolveElement(
+  element: PolotnoElement,
+  options: VdpResolveOptions
+): PolotnoElement {
+  const { record, recordIndex, imageBaseUrl, projectImages, useCachedImages } = options;
+  const el = { ...element };
+  
+  // Handle text elements with placeholders
+  if (el.type === 'text' && el.text) {
+    el.text = el.text.replace(/\{\{(\w+)\}\}/g, (match, fieldName) => {
+      return record[fieldName] ?? match;
+    });
+  }
+  
+  // Handle sequence numbers
+  if (el.custom?.sequenceConfig) {
+    const config = el.custom.sequenceConfig as SequenceConfig;
+    const seqNumber = config.startNumber + recordIndex;
+    const paddedNumber = String(seqNumber).padStart(config.padding || 0, '0');
+    const seqText = `${config.prefix || ''}${paddedNumber}${config.suffix || ''}`;
+    
+    if (el.type === 'text') {
+      el.text = seqText;
+    }
+  }
+  
+  // Handle barcodes and QR codes
+  if (el.custom?.barcodeConfig) {
+    const config = el.custom.barcodeConfig as BarcodeConfig;
+    let barcodeValue = '';
+    
+    if (config.dataSource === 'static') {
+      barcodeValue = config.staticValue || '';
+    } else if (config.dataSource === 'field' && config.variableField) {
+      barcodeValue = record[config.variableField] || '';
+    }
+    
+    // Replace any remaining placeholders
+    barcodeValue = barcodeValue.replace(/\{\{(\w+)\}\}/g, (match, fieldName) => {
+      return record[fieldName] ?? match;
+    });
+    
+    if (barcodeValue) {
+      try {
+        if (config.type === 'qrcode') {
+          el.src = generateQRCodeDataUrl(barcodeValue, {
+            width: Math.max(el.width, el.height),
+            height: Math.max(el.width, el.height),
+          });
+        } else {
+          el.src = generateBarcodeDataUrl(barcodeValue, config.format || 'code128', {
+            width: el.width,
+            height: el.height,
+          });
+        }
+        el.type = 'image';
+      } catch (e) {
+        console.warn('Failed to generate barcode:', e);
+      }
+    }
+  }
+  
+  // Handle image fields with variable binding
+  if (el.type === 'image' && el.custom?.variable) {
+    const fieldValue = record[el.custom.variable];
+    if (fieldValue) {
+      // Try to find matching project image
+      const matchedUrl = findImageUrl(fieldValue, projectImages || []);
+      if (matchedUrl) {
+        // Use cached blob URL if available
+        if (useCachedImages && imageCache.has(matchedUrl)) {
+          el.src = imageCache.get(matchedUrl)!;
+        } else {
+          el.src = matchedUrl;
+        }
+      } else if (imageBaseUrl) {
+        // Fallback to base URL + filename
+        el.src = `${imageBaseUrl}/${fieldValue}`;
+      }
+    }
+  }
+  
+  return el;
+}
+
+// ============ LAYOUT MERGE (UN-RESOLVE) ============
+
+/**
+ * Layout properties that should be transferred from edited scene to base template
+ */
+const LAYOUT_PROPERTIES: (keyof PolotnoElement)[] = [
+  'x', 'y', 'width', 'height', 'rotation', 'opacity'
+];
+
+/**
+ * Text styling properties (transferred for text elements only)
+ */
+const TEXT_STYLE_PROPERTIES: (keyof PolotnoElement)[] = [
+  'fontSize', 'fontFamily', 'fontStyle', 'fontWeight', 'fill', 'align'
+];
+
+/**
+ * Image styling properties (transferred for image elements only)
+ */
+const IMAGE_STYLE_PROPERTIES: (keyof PolotnoElement)[] = [
+  'cropX', 'cropY', 'cropWidth', 'cropHeight'
+];
+
+/**
+ * Merge layout changes from the current (resolved) scene back to the base template.
+ * This preserves placeholders like {{Name}} while applying user's layout edits.
+ * 
+ * @param currentScene - The scene from store.toJSON() with resolved data + user layout changes
+ * @param baseScene - The original template with {{placeholders}}
+ * @returns A new scene with layout from currentScene but data structure from baseScene
+ */
+export function mergeLayoutToBase(
+  currentScene: PolotnoScene,
+  baseScene: PolotnoScene
+): PolotnoScene {
+  const merged = cloneScene(baseScene);
+  
+  // Build lookup map of current elements by ID (across all pages)
+  const currentElementsById = new Map<string, PolotnoElement>();
+  const currentPageIds = new Set<string>();
+  
+  for (const page of currentScene.pages) {
+    currentPageIds.add(page.id);
+    for (const el of page.children) {
+      currentElementsById.set(el.id, el);
+    }
+  }
+  
+  // Process each page in the base template
+  for (const basePage of merged.pages) {
+    const currentPage = currentScene.pages.find(p => p.id === basePage.id);
+    if (!currentPage) continue;
+    
+    // Track which base elements still exist in current scene
+    const survivingElements: PolotnoElement[] = [];
+    const currentElementIds = new Set(currentPage.children.map(el => el.id));
+    
+    // Update existing elements with layout from current scene
+    for (const baseEl of basePage.children) {
+      const currentEl = currentElementsById.get(baseEl.id);
+      
+      if (currentEl && currentElementIds.has(baseEl.id)) {
+        // Element exists in both - transfer layout properties
+        for (const prop of LAYOUT_PROPERTIES) {
+          if (currentEl[prop] !== undefined) {
+            (baseEl as any)[prop] = currentEl[prop];
+          }
+        }
+        
+        // Transfer text styling (but NOT text content - keep placeholders)
+        if (baseEl.type === 'text' && currentEl.type === 'text') {
+          for (const prop of TEXT_STYLE_PROPERTIES) {
+            if (currentEl[prop] !== undefined) {
+              (baseEl as any)[prop] = currentEl[prop];
+            }
+          }
+          // Explicitly keep baseEl.text (which has {{placeholders}})
+        }
+        
+        // Transfer image styling (but NOT src - keep variable binding)
+        if (baseEl.type === 'image' && currentEl.type === 'image') {
+          for (const prop of IMAGE_STYLE_PROPERTIES) {
+            if (currentEl[prop] !== undefined) {
+              (baseEl as any)[prop] = currentEl[prop];
+            }
+          }
+          // Explicitly keep baseEl.src and baseEl.custom.variable
+        }
+        
+        survivingElements.push(baseEl);
+      }
+      // If element was deleted in current scene, don't add to survivingElements
+    }
+    
+    // Find NEW elements added by user (exist in current but not in base)
+    const baseElementIds = new Set(basePage.children.map(el => el.id));
+    for (const currentEl of currentPage.children) {
+      if (!baseElementIds.has(currentEl.id)) {
+        // New element - add to template as-is
+        // User-added elements are typically static (not VDP bound)
+        survivingElements.push({ ...currentEl });
+      }
+    }
+    
+    basePage.children = survivingElements;
+  }
+  
+  // Transfer page-level properties that might have changed
+  for (let i = 0; i < merged.pages.length; i++) {
+    const currentPage = currentScene.pages.find(p => p.id === merged.pages[i].id);
+    if (currentPage) {
+      // Transfer background if changed
+      if (currentPage.background !== undefined) {
+        merged.pages[i].background = currentPage.background;
+      }
+    }
+  }
+  
+  return merged;
+}
+
+// ============ UTILITY FUNCTIONS ============
+
+/**
+ * Apply VDP resolution to a Polotno store in-place (for preview updates)
  */
 export function applyVdpToStore(
   store: any,
@@ -384,38 +412,41 @@ export function applyVdpToStore(
 }
 
 /**
- * Extract field names used in a scene (for validation/preview)
+ * Extract all unique field names used in a scene
  */
 export function extractUsedFields(scene: PolotnoScene | string): string[] {
-  const parsed = typeof scene === 'string' ? JSON.parse(scene) : scene;
+  const sceneObj = typeof scene === 'string' ? JSON.parse(scene) : scene;
   const fields = new Set<string>();
-
+  
   const placeholderRegex = /\{\{(\w+)\}\}/g;
-
-  for (const page of parsed.pages || []) {
-    for (const element of page.children || []) {
-      if (element.text) {
+  
+  for (const page of sceneObj.pages) {
+    for (const el of page.children) {
+      // Check text content
+      if (el.text) {
         let match;
-        while ((match = placeholderRegex.exec(element.text)) !== null) {
+        while ((match = placeholderRegex.exec(el.text)) !== null) {
           fields.add(match[1]);
         }
       }
-
-      if (element.custom?.variable) {
-        fields.add(element.custom.variable);
+      
+      // Check custom variable binding
+      if (el.custom?.variable) {
+        fields.add(el.custom.variable);
       }
-
-      if (element.custom?.barcodeConfig?.variableField) {
-        fields.add(element.custom.barcodeConfig.variableField);
+      
+      // Check barcode field binding
+      if (el.custom?.barcodeConfig?.variableField) {
+        fields.add(el.custom.barcodeConfig.variableField);
       }
     }
   }
-
+  
   return Array.from(fields);
 }
 
 /**
- * Batch resolve multiple records for export
+ * Batch resolve VDP variables for multiple records
  */
 export function batchResolveVdp(
   scene: PolotnoScene | string,
@@ -423,14 +454,15 @@ export function batchResolveVdp(
   imageBaseUrl?: string,
   projectImages?: { name: string; url: string }[]
 ): PolotnoScene[] {
-  const parsed = typeof scene === 'string' ? JSON.parse(scene) : scene;
+  const sceneObj = typeof scene === 'string' ? JSON.parse(scene) : scene;
   
   return records.map((record, index) => 
-    resolveVdpVariables(parsed, {
+    resolveVdpVariables(sceneObj, {
       record,
       recordIndex: index,
       imageBaseUrl,
       projectImages,
+      useCachedImages: true,
     })
   );
 }

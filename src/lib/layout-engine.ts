@@ -347,7 +347,7 @@ function layoutStacked(
       height: fieldHeight,
       fontSize,
       fontWeight: typo.weight,
-      textAlign: 'left',
+      textAlign: 'center', // Professional center alignment for consistent look
       verticalAlign: 'middle'
     });
   });

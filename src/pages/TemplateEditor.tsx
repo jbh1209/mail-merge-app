@@ -580,6 +580,33 @@ export default function TemplateEditor() {
             />
           )}
           
+          {/* Record Navigation - centered in header */}
+          {recordNavState && recordNavState.totalRecords > 1 && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-muted rounded-md">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={recordNavState.goToPrevious}
+                disabled={recordNavState.currentIndex === 0}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-xs font-medium tabular-nums min-w-[80px] text-center">
+                Record {recordNavState.currentIndex + 1} / {recordNavState.totalRecords}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={recordNavState.goToNext}
+                disabled={recordNavState.currentIndex === recordNavState.totalRecords - 1}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+          
           {hasUnsavedChanges && !isSaving && (
             <span className="text-xs text-amber-500 hidden sm:inline">Unsaved</span>
           )}

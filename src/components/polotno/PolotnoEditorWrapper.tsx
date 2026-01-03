@@ -217,58 +217,54 @@ async function generateInitialLayoutPolotno(
       return null;
     }
 
-    // Step 3: Create text elements from layout result with improved sizing
-    // Calculate text area (reserve space for images at bottom if we have image fields)
+    // Step 3: Create text elements with professional grid-based positioning
+    // Simple, clean layout: text on left/center, image on right (if present)
     const hasImages = imageFieldsDetected.length > 0;
-    const textAreaHeight = hasImages ? heightMm * 0.70 : heightMm * 0.90;
-    const textStartY = heightMm * 0.05;
-    const textWidth = widthMm * 0.85;
-    const textStartX = widthMm * 0.075;
+    const safeMarginMm = Math.max(widthMm * 0.05, 2); // 5% margin, minimum 2mm
+    const contentWidth = widthMm - (safeMarginMm * 2);
+    const contentHeight = heightMm - (safeMarginMm * 2);
     
-    for (const field of layoutResult.fields) {
+    // Reserve right side for image if present
+    const textAreaWidth = hasImages ? contentWidth * 0.65 : contentWidth;
+    const textFieldCount = layoutResult.fields.length;
+    const textFieldHeight = (contentHeight - (textFieldCount - 1) * 2) / textFieldCount; // 2mm gap between fields
+    
+    // Calculate dynamic font size based on label size and field count
+    const baseFontPt = Math.max(14, Math.min(heightMm * 0.12, 36)); // Scale with height
+    const scaledFontSizePx = ptToPx(baseFontPt);
+    
+    for (let i = 0; i < layoutResult.fields.length; i++) {
+      const field = layoutResult.fields[i];
       try {
         // Handle combined address blocks (fieldType: 'address_block')
         let textContent: string;
 
         if (field.fieldType === 'address_block' && field.combinedFields && field.combinedFields.length > 0) {
-          // Combined address block: use {{field}} syntax joined by actual newlines
           textContent = field.combinedFields.map(f => `{{${f}}}`).join('\n');
           console.log('📦 Creating combined address block with fields:', field.combinedFields);
         } else {
-          // Individual field - use {{fieldName}} placeholder syntax
           textContent = `{{${field.templateField}}}`;
         }
 
-        // Simpler positioning: use layout engine output more directly with minimal scaling
-        const marginLeft = widthMm * 0.075;
-        const marginTop = heightMm * 0.05;
-        const availableWidth = widthMm * 0.85;
-        const availableHeight = textAreaHeight;
-        
-        // Position relative to text area with field's proportional position
-        const adjustedX = marginLeft + (field.x / widthMm) * availableWidth;
-        const adjustedY = marginTop + (field.y / heightMm) * availableHeight;
-        const adjustedWidth = Math.min(field.width * 1.2, availableWidth); // Allow 20% more width
-        const adjustedHeight = field.height * 1.5; // Allow 50% more height for text
+        // Simple grid positioning: stack fields vertically with equal spacing
+        const fieldX = safeMarginMm;
+        const fieldY = safeMarginMm + i * (textFieldHeight + 2);
+        const fieldWidth = textAreaWidth;
+        const fieldHeight = textFieldHeight;
 
-        // Convert pt to px for fontSize with better defaults
-        // Use larger base fonts for better readability
-        const baseFontSizePt = field.fontSize || 14;
-        const scaledFontSizePx = ptToPx(Math.max(baseFontSizePt, 12)); // Minimum 12pt
-
-        // Add text element to the page
+        // Add text element with center alignment for professional look
         page.addElement({
           type: 'text',
-          x: mmToPixels(adjustedX),
-          y: mmToPixels(adjustedY),
-          width: mmToPixels(adjustedWidth),
-          height: mmToPixels(adjustedHeight),
+          x: mmToPixels(fieldX),
+          y: mmToPixels(fieldY),
+          width: mmToPixels(fieldWidth),
+          height: mmToPixels(fieldHeight),
           text: textContent,
           fontSize: scaledFontSizePx,
           fontFamily: 'Roboto',
           fontWeight: field.fontWeight === 'bold' ? 'bold' : 'normal',
-          align: field.textAlign || 'left',
-          verticalAlign: 'middle', // CE.SDK-style vertical centering
+          align: 'center', // Always center for clean, professional layout
+          verticalAlign: 'middle',
           custom: {
             variable: field.templateField,
             combinedFields: field.combinedFields,
@@ -277,7 +273,7 @@ async function generateInitialLayoutPolotno(
           },
         });
 
-        console.log(`✅ Created Polotno text element: ${field.templateField} (fontSize: ${scaledFontSizePx.toFixed(1)}px)`);
+        console.log(`✅ Created Polotno text element: ${field.templateField} at (${fieldX.toFixed(1)}, ${fieldY.toFixed(1)}mm)`);
       } catch (blockError) {
         console.error(`❌ Failed to create element for ${field.templateField}:`, blockError);
       }
@@ -286,20 +282,15 @@ async function generateInitialLayoutPolotno(
     // Verify element creation
     console.log(`📊 Page now has ${page.children?.length || 0} elements after text layout`);
 
-    // Step 4: Create VDP image elements for detected image fields
-    // Position images at bottom center with better sizing
+    // Step 4: Create VDP image elements on the right side (professional layout)
     if (imageFieldsDetected.length > 0) {
       console.log('🖼️ Creating VDP image elements for:', imageFieldsDetected);
       
-      // Use larger images - scale based on label size without arbitrary cap
-      const imageSize = Math.min(widthMm * 0.35, heightMm * 0.30);
-      const imageMargin = 2; // mm margin from edges
-      const imageY = heightMm - imageSize - imageMargin;
-      
-      // Center images horizontally (if multiple, distribute them)
-      const totalImageWidth = imageFieldsDetected.length * imageSize + 
-        (imageFieldsDetected.length - 1) * imageMargin;
-      const startX = (widthMm - totalImageWidth) / 2;
+      // Position image(s) on the right side of the label, vertically centered
+      const imageAreaX = safeMarginMm + textAreaWidth + (contentWidth * 0.05); // Gap between text and image
+      const imageMaxWidth = contentWidth * 0.30;
+      const imageSize = Math.min(imageMaxWidth, contentHeight * 0.80);
+      const imageY = safeMarginMm + (contentHeight - imageSize) / 2; // Vertically centered
       
       imageFieldsDetected.forEach((imageField, index) => {
         // Find matching project image using improved matching
@@ -307,7 +298,6 @@ async function generateInitialLayoutPolotno(
         let imageSrc = '';
         
         if (sampleValue) {
-          // Use the same matching logic as VDP resolver
           const matchedUrl = findImageUrl(sampleValue, projectImages);
           if (matchedUrl) {
             imageSrc = matchedUrl;
@@ -320,12 +310,15 @@ async function generateInitialLayoutPolotno(
           }
         }
         
-        const imageX = startX + index * (imageSize + imageMargin);
+        // Stack multiple images vertically on the right
+        const imageX = imageAreaX;
+        const stackOffset = index * (imageSize + 2);
+        const adjustedY = imageY + stackOffset;
         
         page.addElement({
           type: 'image',
           x: mmToPixels(imageX),
-          y: mmToPixels(imageY),
+          y: mmToPixels(adjustedY),
           width: mmToPixels(imageSize),
           height: mmToPixels(imageSize),
           src: imageSrc,
@@ -334,7 +327,7 @@ async function generateInitialLayoutPolotno(
           },
         });
         
-        console.log(`✅ Created Polotno VDP image element: ${imageField} at (${imageX.toFixed(1)}, ${imageY.toFixed(1)})`);
+        console.log(`✅ Created Polotno VDP image element: ${imageField} at (${imageX.toFixed(1)}, ${adjustedY.toFixed(1)})`);
       });
     }
     
@@ -1027,32 +1020,7 @@ export function PolotnoEditorWrapper({
         </div>
       )}
       
-      {/* Record navigation - positioned in top-right to avoid Polotno toolbar overlap */}
-      {bootstrapStage === 'ready' && allSampleData.length > 1 && (
-        <div className="absolute top-2 right-4 z-30 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={goToPrev}
-            disabled={currentRecordIndex === 0}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-xs font-medium tabular-nums">
-            Record {currentRecordIndex + 1} / {allSampleData.length}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={goToNext}
-            disabled={currentRecordIndex === allSampleData.length - 1}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+      {/* Record navigation moved to TemplateEditor header for better UX */}
     </div>
   );
 }

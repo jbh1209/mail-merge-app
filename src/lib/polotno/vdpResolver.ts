@@ -394,14 +394,22 @@ export function mergeLayoutToBase(
           }
         }
         
-        // Transfer text styling (but NOT text content - keep placeholders)
+        // Transfer text styling
         if (baseEl.type === 'text' && currentEl.type === 'text') {
           for (const prop of TEXT_STYLE_PROPERTIES) {
             if (currentEl[prop] !== undefined) {
               (baseEl as any)[prop] = currentEl[prop];
             }
           }
-          // Explicitly keep baseEl.text (which has {{placeholders}})
+          
+          // PHASE 4 FIX: Only preserve placeholder text if base has VDP tokens
+          // If base text is static (no {{...}}), allow user edits to persist
+          const hasPlaceholders = /\{\{[^}]+\}\}/.test(baseEl.text || '');
+          if (!hasPlaceholders) {
+            // Static text - allow user's text edits to persist
+            baseEl.text = currentEl.text;
+          }
+          // If hasPlaceholders, keep baseEl.text (which has {{placeholders}})
         }
         
         // Transfer image styling (but NOT src - keep variable binding)
@@ -411,7 +419,12 @@ export function mergeLayoutToBase(
               (baseEl as any)[prop] = currentEl[prop];
             }
           }
-          // Explicitly keep baseEl.src and baseEl.custom.variable
+          
+          // Only preserve src if element has VDP variable binding
+          // Static images (user-added) should keep their src
+          if (!baseEl.custom?.variable) {
+            baseEl.src = currentEl.src;
+          }
         }
         
         survivingElements.push(baseEl);

@@ -31,7 +31,7 @@ import { BarcodePanel } from './panels/BarcodePanel';
 import { ProjectImagesPanel } from './panels/ProjectImagesPanel';
 import { SequencePanel } from './panels/SequencePanel';
 
-// VDP variable resolution with image matching and caching
+// VDP variable resolution with image matching, caching, and layout merge
 import { 
   resolveVdpVariables, 
   batchResolveVdp, 
@@ -39,6 +39,7 @@ import {
   warmCacheForAdjacentRecords,
   findImageUrl,
   normalizeForMatch,
+  mergeLayoutToBase,
 } from '@/lib/polotno/vdpResolver';
 import type { PolotnoScene } from '@/lib/polotno/types';
 
@@ -594,11 +595,25 @@ export function PolotnoEditorWrapper({
         // ---- CREATE HANDLE ----
         const handle: PolotnoEditorHandle = {
           saveScene: async () => {
-            const json = saveScene(store);
-            baseSceneRef.current = json;
-            onSave?.(json);
-            lastSavedSceneRef.current = json;
-            return json;
+            // Get current store state (has resolved data + user layout changes)
+            const currentSceneJson = saveScene(store);
+            const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
+            
+            // Get the original base template (with placeholders)
+            const baseScene = baseSceneRef.current 
+              ? JSON.parse(baseSceneRef.current) as PolotnoScene
+              : currentScene;
+            
+            // Merge layout changes back to base template (preserves placeholders)
+            const mergedTemplate = mergeLayoutToBase(currentScene, baseScene);
+            const mergedJson = JSON.stringify(mergedTemplate);
+            
+            // Update refs with the merged template
+            baseSceneRef.current = mergedJson;
+            lastSavedSceneRef.current = mergedJson;
+            
+            onSave?.(mergedJson);
+            return mergedJson;
           },
           exportPdf: async (options?: PrintExportOptions) => {
             const {
@@ -648,7 +663,14 @@ export function PolotnoEditorWrapper({
             return batchResolveVdp(baseScene, records, undefined, projectImages);
           },
           getBaseScene: () => {
-            return baseSceneRef.current || saveScene(store);
+            // Merge current layout changes with base template
+            const currentSceneJson = saveScene(store);
+            const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
+            const baseScene = baseSceneRef.current 
+              ? JSON.parse(baseSceneRef.current) as PolotnoScene
+              : currentScene;
+            const merged = mergeLayoutToBase(currentScene, baseScene);
+            return JSON.stringify(merged);
           },
           store,
         };
@@ -660,11 +682,19 @@ export function PolotnoEditorWrapper({
         onReady?.(handle);
         console.log('✅ Bootstrap complete - editor ready');
 
-        // Track changes
+        // Track changes by comparing merged layout against last saved
         changeInterval = setInterval(() => {
-          if (!store) return;
-          const current = saveScene(store);
-          onSceneChange?.(current !== lastSavedSceneRef.current);
+          if (!store || !baseSceneRef.current) return;
+          
+          const currentSceneJson = saveScene(store);
+          const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
+          const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
+          
+          // Merge layout to base and compare with last saved
+          const merged = mergeLayoutToBase(currentScene, baseScene);
+          const mergedJson = JSON.stringify(merged);
+          
+          onSceneChange?.(mergedJson !== lastSavedSceneRef.current);
         }, 1000);
         
       } catch (e) {

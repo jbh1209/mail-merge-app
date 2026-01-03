@@ -378,16 +378,21 @@ export function mergeLayoutToBase(
     const currentPage = currentScene.pages.find(p => p.id === basePage.id);
     if (!currentPage) continue;
     
-    // Track which base elements still exist in current scene
-    const survivingElements: PolotnoElement[] = [];
-    const currentElementIds = new Set(currentPage.children.map(el => el.id));
-    
-    // Update existing elements with layout from current scene
+    // Build a map of base elements by ID for quick lookup
+    const baseElementsById = new Map<string, PolotnoElement>();
     for (const baseEl of basePage.children) {
-      const currentEl = currentElementsById.get(baseEl.id);
+      baseElementsById.set(baseEl.id, baseEl);
+    }
+    
+    // Build final elements list PRESERVING Z-ORDER FROM CURRENT SCENE
+    // This fixes the bug where user-reordered elements (send to back/front) reset on record navigation
+    const finalElements: PolotnoElement[] = [];
+    
+    for (const currentEl of currentPage.children) {
+      const baseEl = baseElementsById.get(currentEl.id);
       
-      if (currentEl && currentElementIds.has(baseEl.id)) {
-        // Element exists in both - transfer layout properties
+      if (baseEl) {
+        // Element exists in base - update it with current layout properties
         for (const prop of LAYOUT_PROPERTIES) {
           if (currentEl[prop] !== undefined) {
             (baseEl as any)[prop] = currentEl[prop];
@@ -427,22 +432,14 @@ export function mergeLayoutToBase(
           }
         }
         
-        survivingElements.push(baseEl);
-      }
-      // If element was deleted in current scene, don't add to survivingElements
-    }
-    
-    // Find NEW elements added by user (exist in current but not in base)
-    const baseElementIds = new Set(basePage.children.map(el => el.id));
-    for (const currentEl of currentPage.children) {
-      if (!baseElementIds.has(currentEl.id)) {
-        // New element - add to template as-is
-        // User-added elements are typically static (not VDP bound)
-        survivingElements.push({ ...currentEl });
+        finalElements.push(baseEl);
+      } else {
+        // New element added by user - add as-is in its current z-order position
+        finalElements.push({ ...currentEl });
       }
     }
     
-    basePage.children = survivingElements;
+    basePage.children = finalElements;
   }
   
   // Transfer page-level properties that might have changed

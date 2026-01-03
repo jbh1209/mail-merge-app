@@ -193,9 +193,17 @@ async function generateInitialLayoutPolotno(
     console.log('📐 Hybrid design strategy received:', hybridData.designStrategy.strategy);
 
     // Step 2: Execute layout using the deterministic layout engine
+    // Use CE.SDK-style positioning: 80% width centered with 10% margins, 94% height
     const layoutConfig = {
       ...DEFAULT_LAYOUT_CONFIG,
       templateSize: { width: widthMm, height: heightMm },
+      // CE.SDK-style margins: 10% horizontal, 3% top
+      margins: { 
+        top: heightMm * 0.03, 
+        bottom: heightMm * 0.03, 
+        left: widthMm * 0.10, 
+        right: widthMm * 0.10 
+      },
     };
 
     const layoutResult = executeLayout(hybridData.designStrategy, layoutConfig, sampleData);
@@ -208,7 +216,14 @@ async function generateInitialLayoutPolotno(
       return null;
     }
 
-    // Step 3: Create text elements from layout result
+    // Step 3: Create text elements from layout result with CE.SDK-style positioning
+    // Calculate text area (reserve space for images at bottom if we have image fields)
+    const hasImages = imageFieldsDetected.length > 0;
+    const textAreaHeight = hasImages ? heightMm * 0.65 : heightMm * 0.94;
+    const textStartY = heightMm * 0.03;
+    const textWidth = widthMm * 0.80;
+    const textStartX = widthMm * 0.10;
+    
     for (const field of layoutResult.fields) {
       try {
         // Handle combined address blocks (fieldType: 'address_block')
@@ -223,21 +238,38 @@ async function generateInitialLayoutPolotno(
           textContent = `{{${field.templateField}}}`;
         }
 
+        // CE.SDK-style: Use proportional positioning within text area
+        // Scale field position relative to available text area
+        const fieldXRatio = (field.x - (DEFAULT_LAYOUT_CONFIG.margins?.left || 0)) / 
+          (widthMm - (DEFAULT_LAYOUT_CONFIG.margins?.left || 0) - (DEFAULT_LAYOUT_CONFIG.margins?.right || 0));
+        const fieldYRatio = (field.y - (DEFAULT_LAYOUT_CONFIG.margins?.top || 0)) / 
+          (heightMm - (DEFAULT_LAYOUT_CONFIG.margins?.top || 0) - (DEFAULT_LAYOUT_CONFIG.margins?.bottom || 0));
+        
+        const adjustedX = textStartX + (fieldXRatio * textWidth);
+        const adjustedY = textStartY + (fieldYRatio * textAreaHeight);
+        const adjustedWidth = Math.min(field.width, textWidth);
+        const adjustedHeight = Math.min(field.height, textAreaHeight * 0.3);
+
         // Convert pt to px for fontSize (layout engine returns pt)
-        const fontSizePx = ptToPx(field.fontSize || 12);
+        // CE.SDK-style: Scale font to fill allocated space
+        const baseFontSizePx = ptToPx(field.fontSize || 12);
+        // Calculate scale factor based on allocated vs original height
+        const heightScaleFactor = adjustedHeight / field.height;
+        const scaledFontSizePx = Math.min(Math.max(baseFontSizePx * heightScaleFactor, 8), 72);
 
         // Add text element to the page
         page.addElement({
           type: 'text',
-          x: mmToPixels(field.x),
-          y: mmToPixels(field.y),
-          width: mmToPixels(field.width),
-          height: mmToPixels(field.height),
+          x: mmToPixels(adjustedX),
+          y: mmToPixels(adjustedY),
+          width: mmToPixels(adjustedWidth),
+          height: mmToPixels(adjustedHeight),
           text: textContent,
-          fontSize: fontSizePx,
+          fontSize: scaledFontSizePx,
           fontFamily: 'Roboto',
           fontWeight: field.fontWeight === 'bold' ? 'bold' : 'normal',
           align: field.textAlign || 'left',
+          verticalAlign: 'middle', // CE.SDK-style vertical centering
           custom: {
             variable: field.templateField,
             combinedFields: field.combinedFields,
@@ -246,7 +278,7 @@ async function generateInitialLayoutPolotno(
           },
         });
 
-        console.log(`✅ Created Polotno text element: ${field.templateField} (fontSize: ${fontSizePx}px)`);
+        console.log(`✅ Created Polotno text element: ${field.templateField} (fontSize: ${scaledFontSizePx.toFixed(1)}px)`);
       } catch (blockError) {
         console.error(`❌ Failed to create element for ${field.templateField}:`, blockError);
       }
@@ -256,13 +288,19 @@ async function generateInitialLayoutPolotno(
     console.log(`📊 Page now has ${page.children?.length || 0} elements after text layout`);
 
     // Step 4: Create VDP image elements for detected image fields
+    // CE.SDK-style: Position images at bottom center with proper sizing
     if (imageFieldsDetected.length > 0) {
       console.log('🖼️ Creating VDP image elements for:', imageFieldsDetected);
       
-      // Position images in remaining space (e.g., right side or bottom)
-      const imageAreaX = widthMm * 0.7; // 70% from left
-      const imageAreaWidth = widthMm * 0.25;
-      const imageHeight = heightMm * 0.4;
+      // CE.SDK-style image sizing: Math.min(widthMm * 0.3, heightMm * 0.35, 25)
+      const imageSize = Math.min(widthMm * 0.3, heightMm * 0.35, 25);
+      const imageMargin = 3; // mm margin from edges
+      const imageY = heightMm - imageSize - imageMargin;
+      
+      // Center images horizontally (if multiple, distribute them)
+      const totalImageWidth = imageFieldsDetected.length * imageSize + 
+        (imageFieldsDetected.length - 1) * imageMargin;
+      const startX = (widthMm - totalImageWidth) / 2;
       
       imageFieldsDetected.forEach((imageField, index) => {
         // Find matching project image using improved matching
@@ -279,24 +317,25 @@ async function generateInitialLayoutPolotno(
             imageSrc = sampleValue;
           } else {
             console.warn(`⚠️ Smart layout image not matched: "${sampleValue}" (will use placeholder)`);
-            // Use a placeholder that the VDP resolver will handle
             imageSrc = '';
           }
         }
         
+        const imageX = startX + index * (imageSize + imageMargin);
+        
         page.addElement({
           type: 'image',
-          x: mmToPixels(imageAreaX),
-          y: mmToPixels(heightMm * 0.1 + index * (imageHeight + 2)),
-          width: mmToPixels(imageAreaWidth),
-          height: mmToPixels(imageHeight),
+          x: mmToPixels(imageX),
+          y: mmToPixels(imageY),
+          width: mmToPixels(imageSize),
+          height: mmToPixels(imageSize),
           src: imageSrc,
           custom: {
             variable: imageField,
           },
         });
         
-        console.log(`✅ Created Polotno VDP image element: ${imageField} (src: ${imageSrc ? 'resolved' : 'placeholder'})`);
+        console.log(`✅ Created Polotno VDP image element: ${imageField} at (${imageX.toFixed(1)}, ${imageY.toFixed(1)})`);
       });
     }
     
@@ -675,38 +714,43 @@ export function PolotnoEditorWrapper({
     
     console.log('📂 Phase B1: Loading existing scene...');
     
-    try {
-      baseSceneRef.current = initialScene;
-      lastSavedSceneRef.current = initialScene;
-      
-      // Prefetch images for all records
-      if (projectImages.length > 0 && allSampleData.length > 0) {
-        console.log('📥 Prefetching project images for VDP...');
-        prefetchImagesForRecords(allSampleData, projectImages);
+    const loadWithPrefetch = async () => {
+      try {
+        baseSceneRef.current = initialScene;
+        lastSavedSceneRef.current = initialScene;
+        
+        // AWAIT prefetch images before VDP resolution (fixes caching timing)
+        if (projectImages.length > 0 && allSampleData.length > 0) {
+          console.log('📥 Prefetching project images for VDP...');
+          await prefetchImagesForRecords(allSampleData, projectImages);
+          console.log('✅ Image prefetch complete');
+        }
+        
+        // If we have sample data, apply VDP resolution for first record
+        if (allSampleData.length > 0 && allSampleData[0]) {
+          const parsed = JSON.parse(initialScene) as PolotnoScene;
+          const resolved = resolveVdpVariables(parsed, {
+            record: allSampleData[0],
+            recordIndex: 0,
+            projectImages,
+            useCachedImages: true,
+          });
+          store.loadJSON(resolved);
+          console.log('✅ Loaded scene with VDP resolution for first record');
+        } else {
+          loadScene(store, initialScene);
+          console.log('✅ Loaded scene without VDP resolution');
+        }
+        
+        // Mark layout as "generated" so Phase B2 doesn't run
+        layoutGeneratedRef.current = true;
+      } catch (err) {
+        console.error('❌ Failed to load initial scene:', err);
       }
-      
-      // If we have sample data, apply VDP resolution for first record
-      if (allSampleData.length > 0 && allSampleData[0]) {
-        const parsed = JSON.parse(initialScene) as PolotnoScene;
-        const resolved = resolveVdpVariables(parsed, {
-          record: allSampleData[0],
-          recordIndex: 0,
-          projectImages,
-          useCachedImages: true,
-        });
-        store.loadJSON(resolved);
-        console.log('✅ Loaded scene with VDP resolution for first record');
-      } else {
-        loadScene(store, initialScene);
-        console.log('✅ Loaded scene without VDP resolution');
-      }
-      
-      // Mark layout as "generated" so Phase B2 doesn't run
-      layoutGeneratedRef.current = true;
-    } catch (err) {
-      console.error('❌ Failed to load initial scene:', err);
-    }
-  }, [initialScene, allSampleData, bootstrapStage]);
+    };
+    
+    loadWithPrefetch();
+  }, [initialScene, allSampleData, bootstrapStage, projectImages]);
 
   // ============================================================================
   // PHASE B2: Generate AI Layout (for new templates without initialScene)
@@ -821,23 +865,27 @@ export function PolotnoEditorWrapper({
     const currentRecord = allSampleData[currentRecordIndex];
     if (!currentRecord) return;
 
-    // Warm cache for adjacent records (smooth navigation)
-    if (projectImages.length > 0) {
-      warmCacheForAdjacentRecords(currentRecordIndex, allSampleData, projectImages);
-    }
+    const applyVdpWithCache = async () => {
+      // AWAIT cache warming for adjacent records (fixes caching timing)
+      if (projectImages.length > 0) {
+        await warmCacheForAdjacentRecords(currentRecordIndex, allSampleData, projectImages);
+      }
 
-    try {
-      const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
-      const resolved = resolveVdpVariables(baseScene, {
-        record: currentRecord,
-        recordIndex: currentRecordIndex,
-        projectImages,
-        useCachedImages: true,
-      });
-      storeRef.current.loadJSON(resolved);
-    } catch (err) {
-      console.warn('VDP resolution error:', err);
-    }
+      try {
+        const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
+        const resolved = resolveVdpVariables(baseScene, {
+          record: currentRecord,
+          recordIndex: currentRecordIndex,
+          projectImages,
+          useCachedImages: true,
+        });
+        storeRef.current.loadJSON(resolved);
+      } catch (err) {
+        console.warn('VDP resolution error:', err);
+      }
+    };
+    
+    applyVdpWithCache();
   }, [currentRecordIndex, allSampleData, projectImages]);
 
   useEffect(() => {

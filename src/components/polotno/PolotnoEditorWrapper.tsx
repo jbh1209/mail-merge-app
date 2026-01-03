@@ -31,8 +31,15 @@ import { BarcodePanel } from './panels/BarcodePanel';
 import { ProjectImagesPanel } from './panels/ProjectImagesPanel';
 import { SequencePanel } from './panels/SequencePanel';
 
-// VDP variable resolution
-import { resolveVdpVariables, batchResolveVdp } from '@/lib/polotno/vdpResolver';
+// VDP variable resolution with image matching and caching
+import { 
+  resolveVdpVariables, 
+  batchResolveVdp, 
+  prefetchImagesForRecords,
+  warmCacheForAdjacentRecords,
+  findImageUrl,
+  normalizeForMatch,
+} from '@/lib/polotno/vdpResolver';
 import type { PolotnoScene } from '@/lib/polotno/types';
 
 // Supabase client for edge function calls
@@ -258,18 +265,23 @@ async function generateInitialLayoutPolotno(
       const imageHeight = heightMm * 0.4;
       
       imageFieldsDetected.forEach((imageField, index) => {
-        // Find matching project image or use record value
+        // Find matching project image using improved matching
         const sampleValue = sampleData[imageField];
-        const matchedImage = projectImages.find(img => 
-          img.name === sampleValue || 
-          img.url.includes(sampleValue) ||
-          sampleValue?.includes(img.name)
-        );
+        let imageSrc = '';
         
-        // Use matched image URL, or if the sample value is a URL, use it directly
-        let imageSrc = matchedImage?.url || '';
-        if (!imageSrc && sampleValue && (sampleValue.startsWith('http') || sampleValue.startsWith('/'))) {
-          imageSrc = sampleValue;
+        if (sampleValue) {
+          // Use the same matching logic as VDP resolver
+          const matchedUrl = findImageUrl(sampleValue, projectImages);
+          if (matchedUrl) {
+            imageSrc = matchedUrl;
+            console.log(`✅ Smart layout image matched: "${sampleValue}" -> ${matchedUrl.substring(0, 50)}...`);
+          } else if (sampleValue.startsWith('http') || sampleValue.startsWith('data:')) {
+            imageSrc = sampleValue;
+          } else {
+            console.warn(`⚠️ Smart layout image not matched: "${sampleValue}" (will use placeholder)`);
+            // Use a placeholder that the VDP resolver will handle
+            imageSrc = '';
+          }
         }
         
         page.addElement({
@@ -284,7 +296,7 @@ async function generateInitialLayoutPolotno(
           },
         });
         
-        console.log(`✅ Created Polotno image element: ${imageField}`);
+        console.log(`✅ Created Polotno VDP image element: ${imageField} (src: ${imageSrc ? 'resolved' : 'placeholder'})`);
       });
     }
     
@@ -590,11 +602,11 @@ export function PolotnoEditorWrapper({
           getResolvedScene: (record: Record<string, string>, recordIndex: number) => {
             const baseScene = baseSceneRef.current || saveScene(store);
             const parsed = JSON.parse(baseScene) as PolotnoScene;
-            return resolveVdpVariables(parsed, { record, recordIndex });
+            return resolveVdpVariables(parsed, { record, recordIndex, projectImages });
           },
           batchResolve: (records: Record<string, string>[]) => {
             const baseScene = baseSceneRef.current || saveScene(store);
-            return batchResolveVdp(baseScene, records);
+            return batchResolveVdp(baseScene, records, undefined, projectImages);
           },
           getBaseScene: () => {
             return baseSceneRef.current || saveScene(store);
@@ -667,12 +679,20 @@ export function PolotnoEditorWrapper({
       baseSceneRef.current = initialScene;
       lastSavedSceneRef.current = initialScene;
       
+      // Prefetch images for all records
+      if (projectImages.length > 0 && allSampleData.length > 0) {
+        console.log('📥 Prefetching project images for VDP...');
+        prefetchImagesForRecords(allSampleData, projectImages);
+      }
+      
       // If we have sample data, apply VDP resolution for first record
       if (allSampleData.length > 0 && allSampleData[0]) {
         const parsed = JSON.parse(initialScene) as PolotnoScene;
         const resolved = resolveVdpVariables(parsed, {
           record: allSampleData[0],
           recordIndex: 0,
+          projectImages,
+          useCachedImages: true,
         });
         store.loadJSON(resolved);
         console.log('✅ Loaded scene with VDP resolution for first record');
@@ -725,6 +745,12 @@ export function PolotnoEditorWrapper({
           baseSceneRef.current = generatedScene;
           lastSavedSceneRef.current = generatedScene;
           
+          // Prefetch images if we have project images
+          if (projectImages.length > 0) {
+            console.log('📥 Prefetching project images for AI layout...');
+            await prefetchImagesForRecords(allSampleData, projectImages);
+          }
+          
           // Apply VDP resolution to show first record's actual values
           try {
             console.log('🔄 Applying VDP resolution to first record...');
@@ -739,13 +765,14 @@ export function PolotnoEditorWrapper({
             
             if (elementCount === 0) {
               console.warn('⚠️ Base scene has 0 elements - elements should already be in the store from addElement calls');
-              // Don't call loadJSON with empty scene - keep what's already rendered
               return;
             }
             
             const resolved = resolveVdpVariables(parsed, {
               record: firstRecord,
               recordIndex: 0,
+              projectImages,
+              useCachedImages: true,
             });
             
             console.log('📄 Resolved scene elements:', resolved.pages?.[0]?.children?.length);
@@ -754,7 +781,6 @@ export function PolotnoEditorWrapper({
             console.log('✅ AI layout applied and VDP resolved for first record');
           } catch (vdpError) {
             console.error('❌ VDP resolution error:', vdpError);
-            // Don't reload with fallback - elements are already in the store from addElement
             console.log('ℹ️ Keeping elements as-is without VDP resolution');
           }
         } else {
@@ -795,17 +821,24 @@ export function PolotnoEditorWrapper({
     const currentRecord = allSampleData[currentRecordIndex];
     if (!currentRecord) return;
 
+    // Warm cache for adjacent records (smooth navigation)
+    if (projectImages.length > 0) {
+      warmCacheForAdjacentRecords(currentRecordIndex, allSampleData, projectImages);
+    }
+
     try {
       const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
       const resolved = resolveVdpVariables(baseScene, {
         record: currentRecord,
         recordIndex: currentRecordIndex,
+        projectImages,
+        useCachedImages: true,
       });
       storeRef.current.loadJSON(resolved);
     } catch (err) {
       console.warn('VDP resolution error:', err);
     }
-  }, [currentRecordIndex, allSampleData]);
+  }, [currentRecordIndex, allSampleData, projectImages]);
 
   useEffect(() => {
     if (onRecordNavigationChange && allSampleData.length > 0) {

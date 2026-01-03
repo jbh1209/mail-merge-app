@@ -164,6 +164,40 @@ export interface VdpResolveOptions {
   useCachedImages?: boolean;
 }
 
+// ============ TOKEN NORMALIZATION ============
+
+/**
+ * Normalize a field name for matching (handles case, spaces, underscores)
+ */
+function normalizeFieldName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')   // Replace underscores/dashes with spaces
+    .replace(/\s+/g, ' ')    // Collapse multiple spaces
+    .trim();
+}
+
+/**
+ * Find a matching record key for a token (with fuzzy matching)
+ */
+function findRecordValue(token: string, record: Record<string, string>): string | null {
+  // 1. Direct match
+  if (token in record) {
+    return record[token];
+  }
+  
+  // 2. Normalized match
+  const normalizedToken = normalizeFieldName(token);
+  for (const [key, value] of Object.entries(record)) {
+    if (normalizeFieldName(key) === normalizedToken) {
+      return value;
+    }
+  }
+  
+  // 3. No match found
+  return null;
+}
+
 // ============ MAIN VDP RESOLVER ============
 
 /**
@@ -198,10 +232,22 @@ function resolveElement(
   const el = { ...element };
   
   // Handle text elements with placeholders
+  // Regex supports: {{name}}, {{Full Name}}, {{ job_title }}, etc.
   if (el.type === 'text' && el.text) {
-    el.text = el.text.replace(/\{\{(\w+)\}\}/g, (match, fieldName) => {
-      return record[fieldName] ?? match;
+    const originalText = el.text;
+    el.text = el.text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, rawToken) => {
+      const token = rawToken.trim();
+      const value = findRecordValue(token, record);
+      if (value === null) {
+        console.warn(`⚠️ VDP token not found: "${token}" in record keys:`, Object.keys(record));
+      }
+      return value !== null ? value : match; // Keep original if not found
     });
+    
+    // Log resolution for debugging (only if changed)
+    if (el.text !== originalText && el.text !== originalText) {
+      console.log(`🔄 VDP resolved: "${originalText.substring(0, 30)}..." → "${el.text.substring(0, 30)}..."`);
+    }
   }
   
   // Handle sequence numbers
@@ -224,12 +270,15 @@ function resolveElement(
     if (config.dataSource === 'static') {
       barcodeValue = config.staticValue || '';
     } else if (config.dataSource === 'field' && config.variableField) {
-      barcodeValue = record[config.variableField] || '';
+      // Use fuzzy matching for barcode field values too
+      barcodeValue = findRecordValue(config.variableField, record) || '';
     }
     
-    // Replace any remaining placeholders
-    barcodeValue = barcodeValue.replace(/\{\{(\w+)\}\}/g, (match, fieldName) => {
-      return record[fieldName] ?? match;
+    // Replace any remaining placeholders with fuzzy matching
+    barcodeValue = barcodeValue.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, rawToken) => {
+      const token = rawToken.trim();
+      const value = findRecordValue(token, record);
+      return value !== null ? value : match;
     });
     
     if (barcodeValue) {
@@ -254,7 +303,8 @@ function resolveElement(
   
   // Handle image fields with variable binding
   if (el.type === 'image' && el.custom?.variable) {
-    const fieldValue = record[el.custom.variable];
+    // Use fuzzy matching for image field values
+    const fieldValue = findRecordValue(el.custom.variable, record);
     if (fieldValue) {
       // Try to find matching project image
       const matchedUrl = findImageUrl(fieldValue, projectImages || []);
@@ -418,7 +468,8 @@ export function extractUsedFields(scene: PolotnoScene | string): string[] {
   const sceneObj = typeof scene === 'string' ? JSON.parse(scene) : scene;
   const fields = new Set<string>();
   
-  const placeholderRegex = /\{\{(\w+)\}\}/g;
+  // Updated regex to support spaces and special chars in tokens
+  const placeholderRegex = /\{\{\s*([^}]+?)\s*\}\}/g;
   
   for (const page of sceneObj.pages) {
     for (const el of page.children) {
@@ -426,7 +477,7 @@ export function extractUsedFields(scene: PolotnoScene | string): string[] {
       if (el.text) {
         let match;
         while ((match = placeholderRegex.exec(el.text)) !== null) {
-          fields.add(match[1]);
+          fields.add(match[1].trim());
         }
       }
       

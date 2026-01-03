@@ -218,19 +218,23 @@ async function generateInitialLayoutPolotno(
     }
 
     // Step 3: Create text elements with professional grid-based positioning
-    // Simple, clean layout: text on left/center, image on right (if present)
+    // Simple, clean layout: text on left side, image on right (if present)
     const hasImages = imageFieldsDetected.length > 0;
-    const safeMarginMm = Math.max(widthMm * 0.05, 2); // 5% margin, minimum 2mm
-    const contentWidth = widthMm - (safeMarginMm * 2);
+    const safeMarginMm = Math.max(widthMm * 0.05, 3); // 5% margin, minimum 3mm
     const contentHeight = heightMm - (safeMarginMm * 2);
     
-    // Reserve right side for image if present
-    const textAreaWidth = hasImages ? contentWidth * 0.65 : contentWidth;
+    // FIXED: Calculate proper text and image zones that DON'T overlap
+    // Text takes left portion, image takes right portion with gap between
+    const gapMm = hasImages ? Math.max(widthMm * 0.03, 2) : 0; // 3% gap between text and image
+    const imageWidthMm = hasImages ? Math.min(contentHeight * 0.8, widthMm * 0.25) : 0; // Image max 25% width or 80% of height
+    const textAreaWidth = widthMm - safeMarginMm * 2 - gapMm - imageWidthMm;
+    
     const textFieldCount = layoutResult.fields.length;
-    const textFieldHeight = (contentHeight - (textFieldCount - 1) * 2) / textFieldCount; // 2mm gap between fields
+    const gapBetweenFields = Math.min(3, contentHeight * 0.05); // 3mm max gap between fields
+    const textFieldHeight = (contentHeight - (textFieldCount - 1) * gapBetweenFields) / textFieldCount;
     
     // Calculate dynamic font size based on label size and field count
-    const baseFontPt = Math.max(14, Math.min(heightMm * 0.12, 36)); // Scale with height
+    const baseFontPt = Math.max(12, Math.min(heightMm * 0.10, 32)); // Scale with height
     const scaledFontSizePx = ptToPx(baseFontPt);
     
     for (let i = 0; i < layoutResult.fields.length; i++) {
@@ -246,13 +250,13 @@ async function generateInitialLayoutPolotno(
           textContent = `{{${field.templateField}}}`;
         }
 
-        // Simple grid positioning: stack fields vertically with equal spacing
+        // Simple grid positioning: stack fields vertically in left zone
         const fieldX = safeMarginMm;
-        const fieldY = safeMarginMm + i * (textFieldHeight + 2);
+        const fieldY = safeMarginMm + i * (textFieldHeight + gapBetweenFields);
         const fieldWidth = textAreaWidth;
         const fieldHeight = textFieldHeight;
 
-        // Add text element with center alignment for professional look
+        // Add text element - left-aligned for text-heavy labels
         page.addElement({
           type: 'text',
           x: mmToPixels(fieldX),
@@ -263,7 +267,7 @@ async function generateInitialLayoutPolotno(
           fontSize: scaledFontSizePx,
           fontFamily: 'Roboto',
           fontWeight: field.fontWeight === 'bold' ? 'bold' : 'normal',
-          align: 'center', // Always center for clean, professional layout
+          align: 'left', // Left align for professional text-heavy labels
           verticalAlign: 'middle',
           custom: {
             variable: field.templateField,
@@ -273,7 +277,7 @@ async function generateInitialLayoutPolotno(
           },
         });
 
-        console.log(`✅ Created Polotno text element: ${field.templateField} at (${fieldX.toFixed(1)}, ${fieldY.toFixed(1)}mm)`);
+        console.log(`✅ Created Polotno text element: ${field.templateField} at (${fieldX.toFixed(1)}, ${fieldY.toFixed(1)}mm) width=${fieldWidth.toFixed(1)}mm`);
       } catch (blockError) {
         console.error(`❌ Failed to create element for ${field.templateField}:`, blockError);
       }
@@ -283,13 +287,13 @@ async function generateInitialLayoutPolotno(
     console.log(`📊 Page now has ${page.children?.length || 0} elements after text layout`);
 
     // Step 4: Create VDP image elements on the right side (professional layout)
-    if (imageFieldsDetected.length > 0) {
+    if (hasImages && imageFieldsDetected.length > 0) {
       console.log('🖼️ Creating VDP image elements for:', imageFieldsDetected);
       
       // Position image(s) on the right side of the label, vertically centered
-      const imageAreaX = safeMarginMm + textAreaWidth + (contentWidth * 0.05); // Gap between text and image
-      const imageMaxWidth = contentWidth * 0.30;
-      const imageSize = Math.min(imageMaxWidth, contentHeight * 0.80);
+      // Image zone starts after text area + gap
+      const imageAreaX = widthMm - safeMarginMm - imageWidthMm;
+      const imageSize = Math.min(imageWidthMm, contentHeight * 0.85);
       const imageY = safeMarginMm + (contentHeight - imageSize) / 2; // Vertically centered
       
       imageFieldsDetected.forEach((imageField, index) => {
@@ -312,7 +316,7 @@ async function generateInitialLayoutPolotno(
         
         // Stack multiple images vertically on the right
         const imageX = imageAreaX;
-        const stackOffset = index * (imageSize + 2);
+        const stackOffset = index * (imageSize + 3);
         const adjustedY = imageY + stackOffset;
         
         page.addElement({
@@ -327,7 +331,7 @@ async function generateInitialLayoutPolotno(
           },
         });
         
-        console.log(`✅ Created Polotno VDP image element: ${imageField} at (${imageX.toFixed(1)}, ${adjustedY.toFixed(1)})`);
+        console.log(`✅ Created Polotno VDP image element: ${imageField} at (${imageX.toFixed(1)}, ${adjustedY.toFixed(1)}mm) size=${imageSize.toFixed(1)}mm`);
       });
     }
     

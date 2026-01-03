@@ -35,21 +35,26 @@ export function BarcodePanel({ store, availableFields }: BarcodePanelProps) {
     if (!page) return;
 
     try {
-      const dataUrl = barcodeType === 'qrcode'
+      // Use appropriate dimensions for QR codes (square) vs barcodes (rectangular)
+      const isQR = barcodeType === 'qrcode';
+      const elementWidth = isQR ? 120 : 150;
+      const elementHeight = isQR ? 120 : 50; // QR codes are square, barcodes are wide
+      
+      const dataUrl = isQR
         ? generateQRCodeDataUrl(dataSource === 'static' ? staticValue : 'SAMPLE')
         : generateBarcodeDataUrl(dataSource === 'static' ? staticValue : '12345678', format);
 
       page.addElement({
         type: 'image',
-        x: page.width / 2 - 75,
-        y: page.height / 2 - 40,
-        width: 150,
-        height: 80,
+        x: page.width / 2 - elementWidth / 2,
+        y: page.height / 2 - elementHeight / 2,
+        width: elementWidth,
+        height: elementHeight,
         src: dataUrl,
         custom: {
           barcodeConfig: {
             type: barcodeType,
-            format: barcodeType === 'qrcode' ? 'qrcode' : format,
+            format: isQR ? 'qrcode' : format,
             dataSource,
             staticValue: dataSource === 'static' ? staticValue : undefined,
             variableField: dataSource === 'field' ? variableField : undefined,

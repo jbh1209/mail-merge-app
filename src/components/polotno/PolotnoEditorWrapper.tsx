@@ -217,13 +217,13 @@ async function generateInitialLayoutPolotno(
       return null;
     }
 
-    // Step 3: Create text elements from layout result with CE.SDK-style positioning
+    // Step 3: Create text elements from layout result with improved sizing
     // Calculate text area (reserve space for images at bottom if we have image fields)
     const hasImages = imageFieldsDetected.length > 0;
-    const textAreaHeight = hasImages ? heightMm * 0.65 : heightMm * 0.94;
-    const textStartY = heightMm * 0.03;
-    const textWidth = widthMm * 0.80;
-    const textStartX = widthMm * 0.10;
+    const textAreaHeight = hasImages ? heightMm * 0.70 : heightMm * 0.90;
+    const textStartY = heightMm * 0.05;
+    const textWidth = widthMm * 0.85;
+    const textStartX = widthMm * 0.075;
     
     for (const field of layoutResult.fields) {
       try {
@@ -239,24 +239,22 @@ async function generateInitialLayoutPolotno(
           textContent = `{{${field.templateField}}}`;
         }
 
-        // CE.SDK-style: Use proportional positioning within text area
-        // Scale field position relative to available text area
-        const fieldXRatio = (field.x - (DEFAULT_LAYOUT_CONFIG.margins?.left || 0)) / 
-          (widthMm - (DEFAULT_LAYOUT_CONFIG.margins?.left || 0) - (DEFAULT_LAYOUT_CONFIG.margins?.right || 0));
-        const fieldYRatio = (field.y - (DEFAULT_LAYOUT_CONFIG.margins?.top || 0)) / 
-          (heightMm - (DEFAULT_LAYOUT_CONFIG.margins?.top || 0) - (DEFAULT_LAYOUT_CONFIG.margins?.bottom || 0));
+        // Simpler positioning: use layout engine output more directly with minimal scaling
+        const marginLeft = widthMm * 0.075;
+        const marginTop = heightMm * 0.05;
+        const availableWidth = widthMm * 0.85;
+        const availableHeight = textAreaHeight;
         
-        const adjustedX = textStartX + (fieldXRatio * textWidth);
-        const adjustedY = textStartY + (fieldYRatio * textAreaHeight);
-        const adjustedWidth = Math.min(field.width, textWidth);
-        const adjustedHeight = Math.min(field.height, textAreaHeight * 0.3);
+        // Position relative to text area with field's proportional position
+        const adjustedX = marginLeft + (field.x / widthMm) * availableWidth;
+        const adjustedY = marginTop + (field.y / heightMm) * availableHeight;
+        const adjustedWidth = Math.min(field.width * 1.2, availableWidth); // Allow 20% more width
+        const adjustedHeight = field.height * 1.5; // Allow 50% more height for text
 
-        // Convert pt to px for fontSize (layout engine returns pt)
-        // CE.SDK-style: Scale font to fill allocated space
-        const baseFontSizePx = ptToPx(field.fontSize || 12);
-        // Calculate scale factor based on allocated vs original height
-        const heightScaleFactor = adjustedHeight / field.height;
-        const scaledFontSizePx = Math.min(Math.max(baseFontSizePx * heightScaleFactor, 8), 72);
+        // Convert pt to px for fontSize with better defaults
+        // Use larger base fonts for better readability
+        const baseFontSizePt = field.fontSize || 14;
+        const scaledFontSizePx = ptToPx(Math.max(baseFontSizePt, 12)); // Minimum 12pt
 
         // Add text element to the page
         page.addElement({
@@ -289,13 +287,13 @@ async function generateInitialLayoutPolotno(
     console.log(`📊 Page now has ${page.children?.length || 0} elements after text layout`);
 
     // Step 4: Create VDP image elements for detected image fields
-    // CE.SDK-style: Position images at bottom center with proper sizing
+    // Position images at bottom center with better sizing
     if (imageFieldsDetected.length > 0) {
       console.log('🖼️ Creating VDP image elements for:', imageFieldsDetected);
       
-      // CE.SDK-style image sizing: Math.min(widthMm * 0.3, heightMm * 0.35, 25)
-      const imageSize = Math.min(widthMm * 0.3, heightMm * 0.35, 25);
-      const imageMargin = 3; // mm margin from edges
+      // Use larger images - scale based on label size without arbitrary cap
+      const imageSize = Math.min(widthMm * 0.35, heightMm * 0.30);
+      const imageMargin = 2; // mm margin from edges
       const imageY = heightMm - imageSize - imageMargin;
       
       // Center images horizontally (if multiple, distribute them)
@@ -1029,9 +1027,9 @@ export function PolotnoEditorWrapper({
         </div>
       )}
       
-      {/* Record navigation (shown after bootstrap with multiple records) */}
+      {/* Record navigation - positioned in top-right to avoid Polotno toolbar overlap */}
       {bootstrapStage === 'ready' && allSampleData.length > 1 && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
+        <div className="absolute top-2 right-4 z-30 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-lg border shadow-sm px-3 py-1.5">
           <Button
             variant="ghost"
             size="icon"

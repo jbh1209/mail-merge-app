@@ -888,20 +888,46 @@ export function PolotnoEditorWrapper({
     }
   }, [currentRecordIndex]);
 
+  // Track previous record index to detect actual changes
+  const prevRecordIndexRef = useRef(currentRecordIndex);
+
   // Apply VDP resolution when record index changes
+  // CRITICAL: Merge layout changes BEFORE switching to new record
   useEffect(() => {
     if (!storeRef.current || !baseSceneRef.current || allSampleData.length === 0) return;
     
     const currentRecord = allSampleData[currentRecordIndex];
     if (!currentRecord) return;
 
-    const applyVdpWithCache = async () => {
+    const applyVdpWithLayoutMerge = async () => {
+      const store = storeRef.current;
+      
+      // PHASE 2 FIX: Before loading a new record, merge any layout changes from current view
+      // This ensures user edits are captured in the base template before switching
+      if (prevRecordIndexRef.current !== currentRecordIndex) {
+        try {
+          const currentSceneJson = saveScene(store);
+          const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
+          const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
+          
+          // Merge layout changes back to base template
+          const mergedTemplate = mergeLayoutToBase(currentScene, baseScene);
+          baseSceneRef.current = JSON.stringify(mergedTemplate);
+          
+          console.log('📐 Layout merged to base template before record switch');
+        } catch (mergeErr) {
+          console.warn('Layout merge error:', mergeErr);
+        }
+        prevRecordIndexRef.current = currentRecordIndex;
+      }
+
       // AWAIT cache warming for adjacent records (fixes caching timing)
       if (projectImages.length > 0) {
         await warmCacheForAdjacentRecords(currentRecordIndex, allSampleData, projectImages);
       }
 
       try {
+        // Now resolve VDP using the updated base template (with merged layout)
         const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
         const resolved = resolveVdpVariables(baseScene, {
           record: currentRecord,
@@ -909,13 +935,14 @@ export function PolotnoEditorWrapper({
           projectImages,
           useCachedImages: true,
         });
-        storeRef.current.loadJSON(resolved);
+        store.loadJSON(resolved);
+        console.log(`✅ VDP resolved for record ${currentRecordIndex + 1}:`, Object.keys(currentRecord).slice(0, 3).join(', '));
       } catch (err) {
         console.warn('VDP resolution error:', err);
       }
     };
     
-    applyVdpWithCache();
+    applyVdpWithLayoutMerge();
   }, [currentRecordIndex, allSampleData, projectImages]);
 
   useEffect(() => {

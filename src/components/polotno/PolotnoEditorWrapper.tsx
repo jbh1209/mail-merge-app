@@ -175,9 +175,10 @@ function calculateImageDimensions(
   return { width, height };
 }
 
-// Layout spec from AI
+// Layout spec from AI - now with combined text block support and scale-to-fill
 interface LayoutSpec {
-  layoutType: 'split_text_left_image_right' | 'text_only' | 'split_image_left_text_right';
+  layoutType: 'split_text_left_image_right' | 'text_only_combined' | 'text_only_stacked' | 'split_image_left_text_right' | 'hero_image_top';
+  useCombinedTextBlock?: boolean; // True = all text in one element with newlines
   textArea: {
     xPercent: number;
     yPercent: number;
@@ -190,17 +191,55 @@ interface LayoutSpec {
     widthPercent: number;
     heightPercent: number;
     aspectRatio: { width: number; height: number };
-  };
+  } | null;
   images?: Array<{
     fieldName: string;
     aspectRatio: { width: number; height: number };
   }>;
-  gap: number;
+  textFields?: string[];
+  typography?: {
+    baseFontScale: 'fill' | 'large' | 'medium' | 'small';
+    primaryFieldIndex?: number;
+    alignment?: 'left' | 'center';
+  };
+  gap?: number;
+}
+
+/**
+ * Calculate font size that fills the available space
+ * This mimics CE.SDK's "scale to fill" behavior
+ */
+function calculateFillFontSize(
+  text: string,
+  containerWidthMm: number,
+  containerHeightMm: number,
+  maxFontPt: number = 72,
+  minFontPt: number = 10
+): number {
+  // Approximate: each character is roughly 0.6 * fontSize wide
+  // and line height is roughly 1.2 * fontSize
+  const lines = text.split('\n');
+  const maxLineLength = Math.max(...lines.map(l => l.length));
+  const lineCount = lines.length;
+  
+  // Convert mm to approximate character units (at 72pt, 1 char ≈ 2.5mm)
+  const charWidthFactor = 0.6;
+  const lineHeightFactor = 1.3;
+  
+  // Calculate max font size that fits width
+  const maxFontForWidth = (containerWidthMm / (maxLineLength * charWidthFactor)) * 2.83; // mm to pt
+  
+  // Calculate max font size that fits height
+  const maxFontForHeight = (containerHeightMm / (lineCount * lineHeightFactor)) * 2.83; // mm to pt
+  
+  // Use the smaller of the two, capped by min/max
+  const fontSize = Math.min(maxFontForWidth, maxFontForHeight, maxFontPt);
+  return Math.max(fontSize, minFontPt);
 }
 
 /**
  * AI-assisted layout generation for Polotno
- * Now uses structured layoutSpec from the AI for direct application
+ * Now uses structured layoutSpec from the AI with combined text blocks and scale-to-fill
  */
 async function generateInitialLayoutPolotno(
   store: any,
@@ -224,14 +263,14 @@ async function generateInitialLayoutPolotno(
   const imageFieldsDetected = detectImageColumnsFromValues(fields, sampleRows);
   console.log('🖼️ Detected image fields:', imageFieldsDetected);
   
-  // Filter out image fields from text layout - they will be handled via layoutSpec
+  // Filter out image fields from text layout
   const textFields = fields.filter(f => !imageFieldsDetected.includes(f));
 
   try {
-    // Step 1: Call hybrid layout generator to get AI strategy with layoutSpec
+    // Call AI layout generator
     const { data: hybridData, error: hybridError } = await supabase.functions.invoke('generate-layout', {
       body: {
-        fieldNames: fields, // Send all fields including images for proper detection
+        fieldNames: fields,
         sampleData: [sampleData],
         templateSize: { width: widthMm, height: heightMm },
         templateType: templateType || 'address_label',
@@ -239,39 +278,36 @@ async function generateInitialLayoutPolotno(
     });
 
     if (hybridError) {
-      console.warn('⚠️ Hybrid layout API error:', hybridError);
-      return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
+      console.warn('⚠️ Layout API error:', hybridError);
+      return applySmartFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
     }
 
-    if (!hybridData?.designStrategy) {
-      console.warn('⚠️ No design strategy returned from hybrid layout');
-      return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
+    if (!hybridData?.designStrategy?.layoutSpec) {
+      console.warn('⚠️ No layoutSpec returned');
+      return applySmartFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
     }
 
-    console.log('📐 Design strategy received:', hybridData.designStrategy.strategy);
+    const layoutSpec = hybridData.designStrategy.layoutSpec as LayoutSpec;
+    console.log('📐 AI Layout Decision:', {
+      type: layoutSpec.layoutType,
+      combined: layoutSpec.useCombinedTextBlock,
+      textWidth: layoutSpec.textArea?.widthPercent,
+      fontScale: layoutSpec.typography?.baseFontScale
+    });
     
-    // Step 2: Apply layout using the structured layoutSpec (if available)
-    const layoutSpec = hybridData.designStrategy.layoutSpec as LayoutSpec | undefined;
-    
-    if (layoutSpec) {
-      console.log('📐 Using structured layoutSpec:', layoutSpec.layoutType);
-      return applyStructuredLayout(store, textFields, imageFieldsDetected, layoutSpec, sampleData, widthMm, heightMm, projectImages);
-    }
-    
-    // Fallback: use intelligent defaults if no layoutSpec
-    console.log('📐 No layoutSpec - using intelligent fallback');
-    return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
+    return applyAILayout(store, textFields, imageFieldsDetected, layoutSpec, sampleData, widthMm, heightMm, projectImages);
     
   } catch (error) {
     console.error('❌ Layout generation error:', error);
-    return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
+    return applySmartFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
   }
 }
 
 /**
- * Apply structured layout from AI's layoutSpec
+ * Apply AI-generated layout with combined text blocks and scale-to-fill
+ * This is the main layout function that handles AI decisions
  */
-function applyStructuredLayout(
+function applyAILayout(
   store: any,
   textFields: string[],
   imageFields: string[],
@@ -288,6 +324,8 @@ function applyStructuredLayout(
   }
 
   const hasImages = imageFields.length > 0 && layoutSpec.imageArea;
+  const useCombined = layoutSpec.useCombinedTextBlock ?? textFields.length >= 3;
+  const alignment = layoutSpec.typography?.alignment || 'left';
   
   // Calculate text area bounds from layoutSpec
   const textAreaX = widthMm * layoutSpec.textArea.xPercent;
@@ -295,47 +333,76 @@ function applyStructuredLayout(
   const textAreaWidth = widthMm * layoutSpec.textArea.widthPercent;
   const textAreaHeight = heightMm * layoutSpec.textArea.heightPercent;
   
-  console.log('📐 Text area:', { x: textAreaX, y: textAreaY, w: textAreaWidth, h: textAreaHeight });
+  console.log('📐 Text area:', { x: textAreaX, y: textAreaY, w: textAreaWidth, h: textAreaHeight, combined: useCombined });
 
-  // Step 1: Create text elements in text area
+  // Create text elements
   if (textFields.length > 0) {
-    const fieldCount = textFields.length;
-    const gapMm = Math.min(2, textAreaHeight * 0.03); // 3% gap, max 2mm
-    const fieldHeight = (textAreaHeight - (fieldCount - 1) * gapMm) / fieldCount;
-    
-    // Calculate optimal font size based on field height and label size
-    // Use larger fonts for bigger labels
-    const baseFontPt = Math.max(14, Math.min(fieldHeight * 2.5, 36)); // Scale with field height
-    
-    textFields.forEach((field, index) => {
-      const fieldY = textAreaY + index * (fieldHeight + gapMm);
+    if (useCombined) {
+      // COMBINED TEXT BLOCK: All fields in one text element with newlines
+      const combinedText = textFields.map(f => `{{${f}}}`).join('\n');
       
-      // Create VDP placeholder text
-      const textContent = `{{${field}}}`;
+      // Calculate font size to fill available space
+      const sampleText = textFields.map(f => sampleData[f] || f).join('\n');
+      const fontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 48, 12);
       
       page.addElement({
         type: 'text',
         x: mmToPixels(textAreaX),
-        y: mmToPixels(fieldY),
+        y: mmToPixels(textAreaY),
         width: mmToPixels(textAreaWidth),
-        height: mmToPixels(fieldHeight),
-        text: textContent,
-        fontSize: ptToPx(baseFontPt),
+        height: mmToPixels(textAreaHeight),
+        text: combinedText,
+        fontSize: ptToPx(fontSize),
         fontFamily: 'Roboto',
-        fontWeight: index === 0 ? 'bold' : 'normal', // First field bold
-        align: 'left',
+        fontWeight: 'normal',
+        align: alignment,
         verticalAlign: 'middle',
+        lineHeight: 1.3,
         custom: {
-          variable: field,
-          templateElementId: crypto.randomUUID(), // Stable ID for z-order preservation
+          variable: textFields.join(','),
+          isCombinedBlock: true,
+          templateElementId: crypto.randomUUID(),
         },
       });
       
-      console.log(`✅ Text element: ${field} at (${textAreaX.toFixed(1)}, ${fieldY.toFixed(1)}mm) h=${fieldHeight.toFixed(1)}mm font=${baseFontPt}pt`);
-    });
+      console.log(`✅ Combined text block: ${textFields.length} fields, fontSize=${fontSize.toFixed(1)}pt, fills ${textAreaWidth.toFixed(1)}×${textAreaHeight.toFixed(1)}mm`);
+    } else {
+      // STACKED LAYOUT: Each field gets its own element
+      const fieldCount = textFields.length;
+      const gapMm = Math.min(2, textAreaHeight * 0.05);
+      const fieldHeight = (textAreaHeight - (fieldCount - 1) * gapMm) / fieldCount;
+      
+      textFields.forEach((field, index) => {
+        const fieldY = textAreaY + index * (fieldHeight + gapMm);
+        const sampleText = sampleData[field] || field;
+        
+        // Calculate font size to fill this field's space
+        const fontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 42, 12);
+        
+        page.addElement({
+          type: 'text',
+          x: mmToPixels(textAreaX),
+          y: mmToPixels(fieldY),
+          width: mmToPixels(textAreaWidth),
+          height: mmToPixels(fieldHeight),
+          text: `{{${field}}}`,
+          fontSize: ptToPx(fontSize),
+          fontFamily: 'Roboto',
+          fontWeight: index === 0 ? 'bold' : 'normal',
+          align: alignment,
+          verticalAlign: 'middle',
+          custom: {
+            variable: field,
+            templateElementId: crypto.randomUUID(),
+          },
+        });
+        
+        console.log(`✅ Text: ${field} at y=${fieldY.toFixed(1)}mm, h=${fieldHeight.toFixed(1)}mm, font=${fontSize.toFixed(1)}pt`);
+      });
+    }
   }
 
-  // Step 2: Create image elements in image area (if present)
+  // Create image elements
   if (hasImages && layoutSpec.imageArea) {
     const imageAreaX = widthMm * layoutSpec.imageArea.xPercent;
     const imageAreaY = heightMm * layoutSpec.imageArea.yPercent;
@@ -345,18 +412,13 @@ function applyStructuredLayout(
     console.log('📐 Image area:', { x: imageAreaX, y: imageAreaY, w: imageAreaWidth, h: imageAreaHeight });
 
     imageFields.forEach((imageField, index) => {
-      // Use aspect ratio from layoutSpec or infer from field name
       const imageConfig = layoutSpec.images?.find(i => i.fieldName === imageField);
       const aspectRatio = imageConfig?.aspectRatio || inferImageAspectRatio(imageField);
       
-      // Calculate image dimensions preserving aspect ratio
       const imgDims = calculateImageDimensions(aspectRatio, imageAreaWidth, imageAreaHeight);
-      
-      // Center image within its area
       const imageX = imageAreaX + (imageAreaWidth - imgDims.width) / 2;
       const imageY = imageAreaY + (imageAreaHeight - imgDims.height) / 2;
       
-      // Find matching project image
       const sampleValue = sampleData[imageField];
       let imageSrc = '';
       
@@ -364,13 +426,11 @@ function applyStructuredLayout(
         const matchedUrl = findImageUrl(sampleValue, projectImages);
         if (matchedUrl) {
           imageSrc = matchedUrl;
-          console.log(`✅ Image matched: "${sampleValue}" -> ${matchedUrl.substring(0, 50)}...`);
         } else if (sampleValue.startsWith('http') || sampleValue.startsWith('data:')) {
           imageSrc = sampleValue;
         }
       }
       
-      // Stack multiple images vertically if needed
       const stackOffset = index * (imgDims.height + 2);
       
       page.addElement({
@@ -382,23 +442,21 @@ function applyStructuredLayout(
         src: imageSrc,
         custom: {
           variable: imageField,
-          templateElementId: crypto.randomUUID(), // Stable ID for z-order preservation
+          templateElementId: crypto.randomUUID(),
         },
       });
       
-      console.log(`✅ Image element: ${imageField} at (${imageX.toFixed(1)}, ${(imageY + stackOffset).toFixed(1)}mm) ${imgDims.width.toFixed(1)}×${imgDims.height.toFixed(1)}mm (${aspectRatio.width}:${aspectRatio.height})`);
+      console.log(`✅ Image: ${imageField} ${imgDims.width.toFixed(1)}×${imgDims.height.toFixed(1)}mm`);
     });
   }
 
-  // Wait for MobX to propagate element additions
   return finalizeLayout(store, page);
 }
 
 /**
- * Fallback layout when AI doesn't provide a structured layoutSpec
- * Still produces a professional, non-overlapping layout
+ * Smart fallback layout when AI fails
  */
-function applyFallbackLayout(
+function applySmartFallbackLayout(
   store: any,
   textFields: string[],
   imageFields: string[],
@@ -409,66 +467,84 @@ function applyFallbackLayout(
 ): string | null {
   const page = store.activePage;
   if (!page) {
-    console.warn('⚠️ No active page available for fallback layout');
+    console.warn('⚠️ No active page available');
     return null;
   }
 
   const hasImages = imageFields.length > 0;
-  const marginPercent = 0.05;
-  const marginMm = Math.max(widthMm * marginPercent, 3);
+  const useCombined = textFields.length >= 3;
   
-  // Professional split: 65% for text, 30% for image, 5% gap
-  const textWidthPercent = hasImages ? 0.60 : 0.90;
-  const imageWidthPercent = 0.28;
-  const gapPercent = 0.02;
+  const margin = 0.04;
+  const marginMm = widthMm * margin;
   
+  const textWidthPercent = hasImages ? 0.55 : 0.92;
   const textAreaX = marginMm;
   const textAreaY = marginMm;
   const textAreaWidth = (widthMm - 2 * marginMm) * textWidthPercent;
   const textAreaHeight = heightMm - 2 * marginMm;
   
-  console.log('📐 Fallback layout - Text area:', { x: textAreaX, y: textAreaY, w: textAreaWidth, h: textAreaHeight });
+  console.log('📐 Smart fallback layout:', { combined: useCombined });
 
-  // Create text elements
   if (textFields.length > 0) {
-    const fieldCount = textFields.length;
-    const gapMm = Math.min(2, textAreaHeight * 0.03);
-    const fieldHeight = (textAreaHeight - (fieldCount - 1) * gapMm) / fieldCount;
-    const baseFontPt = Math.max(14, Math.min(fieldHeight * 2.5, 36));
-    
-    textFields.forEach((field, index) => {
-      const fieldY = textAreaY + index * (fieldHeight + gapMm);
+    if (useCombined) {
+      const combinedText = textFields.map(f => `{{${f}}}`).join('\n');
+      const sampleText = textFields.map(f => sampleData[f] || f).join('\n');
+      const fontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 48, 12);
       
       page.addElement({
         type: 'text',
         x: mmToPixels(textAreaX),
-        y: mmToPixels(fieldY),
+        y: mmToPixels(textAreaY),
         width: mmToPixels(textAreaWidth),
-        height: mmToPixels(fieldHeight),
-        text: `{{${field}}}`,
-        fontSize: ptToPx(baseFontPt),
+        height: mmToPixels(textAreaHeight),
+        text: combinedText,
+        fontSize: ptToPx(fontSize),
         fontFamily: 'Roboto',
-        fontWeight: index === 0 ? 'bold' : 'normal',
         align: 'left',
         verticalAlign: 'middle',
+        lineHeight: 1.3,
         custom: {
-          variable: field,
+          variable: textFields.join(','),
+          isCombinedBlock: true,
           templateElementId: crypto.randomUUID(),
         },
       });
+    } else {
+      const fieldCount = textFields.length;
+      const gapMm = Math.min(2, textAreaHeight * 0.05);
+      const fieldHeight = (textAreaHeight - (fieldCount - 1) * gapMm) / fieldCount;
       
-      console.log(`✅ Fallback text: ${field} at (${textAreaX.toFixed(1)}, ${fieldY.toFixed(1)}mm)`);
-    });
+      textFields.forEach((field, index) => {
+        const fieldY = textAreaY + index * (fieldHeight + gapMm);
+        const sampleText = sampleData[field] || field;
+        const fontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 42, 12);
+        
+        page.addElement({
+          type: 'text',
+          x: mmToPixels(textAreaX),
+          y: mmToPixels(fieldY),
+          width: mmToPixels(textAreaWidth),
+          height: mmToPixels(fieldHeight),
+          text: `{{${field}}}`,
+          fontSize: ptToPx(fontSize),
+          fontFamily: 'Roboto',
+          fontWeight: index === 0 ? 'bold' : 'normal',
+          align: 'left',
+          verticalAlign: 'middle',
+          custom: {
+            variable: field,
+            templateElementId: crypto.randomUUID(),
+          },
+        });
+      });
+    }
   }
 
-  // Create image elements on the right side
   if (hasImages) {
-    const imageAreaX = marginMm + (widthMm - 2 * marginMm) * (textWidthPercent + gapPercent);
-    const imageAreaWidth = (widthMm - 2 * marginMm) * imageWidthPercent;
-    const imageAreaHeight = textAreaHeight * 0.80;
+    const imageAreaX = marginMm + (widthMm - 2 * marginMm) * 0.60;
+    const imageAreaWidth = (widthMm - 2 * marginMm) * 0.36;
+    const imageAreaHeight = textAreaHeight * 0.85;
     const imageAreaY = marginMm + (textAreaHeight - imageAreaHeight) / 2;
-    
-    console.log('📐 Fallback layout - Image area:', { x: imageAreaX, y: imageAreaY, w: imageAreaWidth, h: imageAreaHeight });
 
     imageFields.forEach((imageField, index) => {
       const aspectRatio = inferImageAspectRatio(imageField);
@@ -482,11 +558,7 @@ function applyFallbackLayout(
       
       if (sampleValue) {
         const matchedUrl = findImageUrl(sampleValue, projectImages);
-        if (matchedUrl) {
-          imageSrc = matchedUrl;
-        } else if (sampleValue.startsWith('http') || sampleValue.startsWith('data:')) {
-          imageSrc = sampleValue;
-        }
+        imageSrc = matchedUrl || (sampleValue.startsWith('http') ? sampleValue : '');
       }
       
       const stackOffset = index * (imgDims.height + 2);
@@ -503,8 +575,6 @@ function applyFallbackLayout(
           templateElementId: crypto.randomUUID(),
         },
       });
-      
-      console.log(`✅ Fallback image: ${imageField} (${aspectRatio.width}:${aspectRatio.height}) at (${imageX.toFixed(1)}, ${(imageY + stackOffset).toFixed(1)}mm)`);
     });
   }
 

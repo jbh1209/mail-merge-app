@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useCallback, createElement } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { Loader2, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // Import from JS bridge - TypeScript will treat these as `any`, avoiding type resolution
@@ -38,16 +38,12 @@ import {
   prefetchImagesForRecords,
   warmCacheForAdjacentRecords,
   findImageUrl,
-  normalizeForMatch,
   mergeLayoutToBase,
 } from '@/lib/polotno/vdpResolver';
 import type { PolotnoScene } from '@/lib/polotno/types';
 
 // Supabase client for edge function calls
 import { supabase } from '@/integrations/supabase/client';
-
-// Layout engine
-import { executeLayout, DEFAULT_LAYOUT_CONFIG } from '@/lib/layout-engine';
 
 // Ref handle exposed to parent for imperative actions
 export interface PolotnoEditorHandle {
@@ -65,6 +61,8 @@ export interface PolotnoEditorHandle {
   store: any;
   /** Get the base template scene (without VDP resolution) */
   getBaseScene: () => string;
+  /** Regenerate AI layout (for reset functionality) */
+  regenerateLayout: () => Promise<void>;
 }
 
 // Print export options for PDF generation
@@ -142,8 +140,67 @@ function detectImageColumnsFromValues(
 }
 
 /**
+ * Infer image aspect ratio from field name
+ */
+function inferImageAspectRatio(fieldName: string): { width: number; height: number } {
+  const name = fieldName.toLowerCase();
+  // Logos, avatars, icons are typically square
+  if (name.includes('logo') || name.includes('avatar') || name.includes('icon') || name.includes('qr')) {
+    return { width: 1, height: 1 };
+  }
+  // Photos are typically 3:2 landscape
+  return { width: 3, height: 2 };
+}
+
+/**
+ * Calculate image dimensions that fit within bounds while preserving aspect ratio
+ */
+function calculateImageDimensions(
+  aspectRatio: { width: number; height: number },
+  maxWidth: number,
+  maxHeight: number
+): { width: number; height: number } {
+  const aspectW = aspectRatio.width / aspectRatio.height;
+  
+  // Try fitting by width
+  let width = maxWidth;
+  let height = width / aspectW;
+  
+  // If height exceeds max, fit by height instead
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * aspectW;
+  }
+  
+  return { width, height };
+}
+
+// Layout spec from AI
+interface LayoutSpec {
+  layoutType: 'split_text_left_image_right' | 'text_only' | 'split_image_left_text_right';
+  textArea: {
+    xPercent: number;
+    yPercent: number;
+    widthPercent: number;
+    heightPercent: number;
+  };
+  imageArea?: {
+    xPercent: number;
+    yPercent: number;
+    widthPercent: number;
+    heightPercent: number;
+    aspectRatio: { width: number; height: number };
+  };
+  images?: Array<{
+    fieldName: string;
+    aspectRatio: { width: number; height: number };
+  }>;
+  gap: number;
+}
+
+/**
  * AI-assisted layout generation for Polotno
- * Calls the generate-layout edge function and executes the layout engine
+ * Now uses structured layoutSpec from the AI for direct application
  */
 async function generateInitialLayoutPolotno(
   store: any,
@@ -160,21 +217,21 @@ async function generateInitialLayoutPolotno(
     return null;
   }
 
-  console.log('🎨 AUTO-TRIGGERING HYBRID AI LAYOUT FOR NEW POLOTNO DESIGN');
+  console.log('🎨 AUTO-TRIGGERING AI LAYOUT GENERATION');
 
   // Detect image fields using value-based detection
   const sampleRows = allSampleData.length > 0 ? allSampleData : [sampleData];
   const imageFieldsDetected = detectImageColumnsFromValues(fields, sampleRows);
   console.log('🖼️ Detected image fields:', imageFieldsDetected);
   
-  // Filter out image fields from layout generation - they will be handled separately
+  // Filter out image fields from text layout - they will be handled via layoutSpec
   const textFields = fields.filter(f => !imageFieldsDetected.includes(f));
 
   try {
-    // Step 1: Call hybrid layout generator
+    // Step 1: Call hybrid layout generator to get AI strategy with layoutSpec
     const { data: hybridData, error: hybridError } = await supabase.functions.invoke('generate-layout', {
       body: {
-        fieldNames: textFields.length > 0 ? textFields : fields,
+        fieldNames: fields, // Send all fields including images for proper detection
         sampleData: [sampleData],
         templateSize: { width: widthMm, height: heightMm },
         templateType: templateType || 'address_label',
@@ -183,193 +240,308 @@ async function generateInitialLayoutPolotno(
 
     if (hybridError) {
       console.warn('⚠️ Hybrid layout API error:', hybridError);
-      return null;
+      return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
     }
 
     if (!hybridData?.designStrategy) {
       console.warn('⚠️ No design strategy returned from hybrid layout');
-      return null;
+      return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
     }
 
-    console.log('📐 Hybrid design strategy received:', hybridData.designStrategy.strategy);
-
-    // Step 2: Execute layout using the deterministic layout engine
-    // Use CE.SDK-style positioning: 80% width centered with 10% margins, 94% height
-    const layoutConfig = {
-      ...DEFAULT_LAYOUT_CONFIG,
-      templateSize: { width: widthMm, height: heightMm },
-      // CE.SDK-style margins: 10% horizontal, 3% top
-      margins: { 
-        top: heightMm * 0.03, 
-        bottom: heightMm * 0.03, 
-        left: widthMm * 0.10, 
-        right: widthMm * 0.10 
-      },
-    };
-
-    const layoutResult = executeLayout(hybridData.designStrategy, layoutConfig, sampleData);
-    console.log('📏 Layout engine result:', layoutResult.fields.length, 'fields');
-
-    // Get the active page
-    const page = store.activePage;
-    if (!page) {
-      console.warn('⚠️ No active page available for layout');
-      return null;
-    }
-
-    // Step 3: Create text elements with professional grid-based positioning
-    // Simple, clean layout: text on left side, image on right (if present)
-    const hasImages = imageFieldsDetected.length > 0;
-    const safeMarginMm = Math.max(widthMm * 0.05, 3); // 5% margin, minimum 3mm
-    const contentHeight = heightMm - (safeMarginMm * 2);
+    console.log('📐 Design strategy received:', hybridData.designStrategy.strategy);
     
-    // FIXED: Calculate proper text and image zones that DON'T overlap
-    // Text takes left portion, image takes right portion with gap between
-    const gapMm = hasImages ? Math.max(widthMm * 0.03, 2) : 0; // 3% gap between text and image
-    const imageWidthMm = hasImages ? Math.min(contentHeight * 0.8, widthMm * 0.25) : 0; // Image max 25% width or 80% of height
-    const textAreaWidth = widthMm - safeMarginMm * 2 - gapMm - imageWidthMm;
+    // Step 2: Apply layout using the structured layoutSpec (if available)
+    const layoutSpec = hybridData.designStrategy.layoutSpec as LayoutSpec | undefined;
     
-    const textFieldCount = layoutResult.fields.length;
-    const gapBetweenFields = Math.min(3, contentHeight * 0.05); // 3mm max gap between fields
-    const textFieldHeight = (contentHeight - (textFieldCount - 1) * gapBetweenFields) / textFieldCount;
-    
-    // Calculate dynamic font size based on label size and field count
-    const baseFontPt = Math.max(12, Math.min(heightMm * 0.10, 32)); // Scale with height
-    const scaledFontSizePx = ptToPx(baseFontPt);
-    
-    for (let i = 0; i < layoutResult.fields.length; i++) {
-      const field = layoutResult.fields[i];
-      try {
-        // Handle combined address blocks (fieldType: 'address_block')
-        let textContent: string;
-
-        if (field.fieldType === 'address_block' && field.combinedFields && field.combinedFields.length > 0) {
-          textContent = field.combinedFields.map(f => `{{${f}}}`).join('\n');
-          console.log('📦 Creating combined address block with fields:', field.combinedFields);
-        } else {
-          textContent = `{{${field.templateField}}}`;
-        }
-
-        // Simple grid positioning: stack fields vertically in left zone
-        const fieldX = safeMarginMm;
-        const fieldY = safeMarginMm + i * (textFieldHeight + gapBetweenFields);
-        const fieldWidth = textAreaWidth;
-        const fieldHeight = textFieldHeight;
-
-        // Add text element - left-aligned for text-heavy labels
-        page.addElement({
-          type: 'text',
-          x: mmToPixels(fieldX),
-          y: mmToPixels(fieldY),
-          width: mmToPixels(fieldWidth),
-          height: mmToPixels(fieldHeight),
-          text: textContent,
-          fontSize: scaledFontSizePx,
-          fontFamily: 'Roboto',
-          fontWeight: field.fontWeight === 'bold' ? 'bold' : 'normal',
-          align: 'left', // Left align for professional text-heavy labels
-          verticalAlign: 'middle',
-          custom: {
-            variable: field.templateField,
-            combinedFields: field.combinedFields,
-            fieldType: field.fieldType,
-            autoFit: field.autoFit,
-          },
-        });
-
-        console.log(`✅ Created Polotno text element: ${field.templateField} at (${fieldX.toFixed(1)}, ${fieldY.toFixed(1)}mm) width=${fieldWidth.toFixed(1)}mm`);
-      } catch (blockError) {
-        console.error(`❌ Failed to create element for ${field.templateField}:`, blockError);
-      }
-    }
-
-    // Verify element creation
-    console.log(`📊 Page now has ${page.children?.length || 0} elements after text layout`);
-
-    // Step 4: Create VDP image elements on the right side (professional layout)
-    if (hasImages && imageFieldsDetected.length > 0) {
-      console.log('🖼️ Creating VDP image elements for:', imageFieldsDetected);
-      
-      // Position image(s) on the right side of the label, vertically centered
-      // Image zone starts after text area + gap
-      const imageAreaX = widthMm - safeMarginMm - imageWidthMm;
-      const imageSize = Math.min(imageWidthMm, contentHeight * 0.85);
-      const imageY = safeMarginMm + (contentHeight - imageSize) / 2; // Vertically centered
-      
-      imageFieldsDetected.forEach((imageField, index) => {
-        // Find matching project image using improved matching
-        const sampleValue = sampleData[imageField];
-        let imageSrc = '';
-        
-        if (sampleValue) {
-          const matchedUrl = findImageUrl(sampleValue, projectImages);
-          if (matchedUrl) {
-            imageSrc = matchedUrl;
-            console.log(`✅ Smart layout image matched: "${sampleValue}" -> ${matchedUrl.substring(0, 50)}...`);
-          } else if (sampleValue.startsWith('http') || sampleValue.startsWith('data:')) {
-            imageSrc = sampleValue;
-          } else {
-            console.warn(`⚠️ Smart layout image not matched: "${sampleValue}" (will use placeholder)`);
-            imageSrc = '';
-          }
-        }
-        
-        // Stack multiple images vertically on the right
-        const imageX = imageAreaX;
-        const stackOffset = index * (imageSize + 3);
-        const adjustedY = imageY + stackOffset;
-        
-        page.addElement({
-          type: 'image',
-          x: mmToPixels(imageX),
-          y: mmToPixels(adjustedY),
-          width: mmToPixels(imageSize),
-          height: mmToPixels(imageSize),
-          src: imageSrc,
-          custom: {
-            variable: imageField,
-          },
-        });
-        
-        console.log(`✅ Created Polotno VDP image element: ${imageField} at (${imageX.toFixed(1)}, ${adjustedY.toFixed(1)}mm) size=${imageSize.toFixed(1)}mm`);
-      });
+    if (layoutSpec) {
+      console.log('📐 Using structured layoutSpec:', layoutSpec.layoutType);
+      return applyStructuredLayout(store, textFields, imageFieldsDetected, layoutSpec, sampleData, widthMm, heightMm, projectImages);
     }
     
-    // Wait for MobX to propagate element additions before serializing
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Fallback: use intelligent defaults if no layoutSpec
+    console.log('📐 No layoutSpec - using intelligent fallback');
+    return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
     
-    // Verify elements exist before saving
-    const childCount = page.children?.length || 0;
-    console.log(`📊 Page has ${childCount} elements after MobX sync`);
-    
-    if (childCount === 0) {
-      console.warn('⚠️ No elements in page after layout - something went wrong');
-      return null;
-    }
-    
-    // Save the base scene (with placeholders) and return it
-    const baseScene = saveScene(store);
-    
-    // Verify the scene contains elements
-    try {
-      const parsed = JSON.parse(baseScene);
-      const sceneChildCount = parsed.pages?.[0]?.children?.length || 0;
-      console.log(`💾 Saved scene has ${sceneChildCount} elements (expected ${childCount})`);
-      
-      if (sceneChildCount === 0) {
-        console.error('❌ Scene serialized with 0 elements despite page having elements!');
-        return null;
-      }
-    } catch (parseError) {
-      console.error('❌ Failed to parse saved scene:', parseError);
-      return null;
-    }
-    
-    return baseScene;
   } catch (error) {
     console.error('❌ Layout generation error:', error);
+    return applyFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
+  }
+}
+
+/**
+ * Apply structured layout from AI's layoutSpec
+ */
+function applyStructuredLayout(
+  store: any,
+  textFields: string[],
+  imageFields: string[],
+  layoutSpec: LayoutSpec,
+  sampleData: Record<string, string>,
+  widthMm: number,
+  heightMm: number,
+  projectImages: { name: string; url: string }[]
+): string | null {
+  const page = store.activePage;
+  if (!page) {
+    console.warn('⚠️ No active page available for layout');
     return null;
   }
+
+  const hasImages = imageFields.length > 0 && layoutSpec.imageArea;
+  
+  // Calculate text area bounds from layoutSpec
+  const textAreaX = widthMm * layoutSpec.textArea.xPercent;
+  const textAreaY = heightMm * layoutSpec.textArea.yPercent;
+  const textAreaWidth = widthMm * layoutSpec.textArea.widthPercent;
+  const textAreaHeight = heightMm * layoutSpec.textArea.heightPercent;
+  
+  console.log('📐 Text area:', { x: textAreaX, y: textAreaY, w: textAreaWidth, h: textAreaHeight });
+
+  // Step 1: Create text elements in text area
+  if (textFields.length > 0) {
+    const fieldCount = textFields.length;
+    const gapMm = Math.min(2, textAreaHeight * 0.03); // 3% gap, max 2mm
+    const fieldHeight = (textAreaHeight - (fieldCount - 1) * gapMm) / fieldCount;
+    
+    // Calculate optimal font size based on field height and label size
+    // Use larger fonts for bigger labels
+    const baseFontPt = Math.max(14, Math.min(fieldHeight * 2.5, 36)); // Scale with field height
+    
+    textFields.forEach((field, index) => {
+      const fieldY = textAreaY + index * (fieldHeight + gapMm);
+      
+      // Create VDP placeholder text
+      const textContent = `{{${field}}}`;
+      
+      page.addElement({
+        type: 'text',
+        x: mmToPixels(textAreaX),
+        y: mmToPixels(fieldY),
+        width: mmToPixels(textAreaWidth),
+        height: mmToPixels(fieldHeight),
+        text: textContent,
+        fontSize: ptToPx(baseFontPt),
+        fontFamily: 'Roboto',
+        fontWeight: index === 0 ? 'bold' : 'normal', // First field bold
+        align: 'left',
+        verticalAlign: 'middle',
+        custom: {
+          variable: field,
+          templateElementId: crypto.randomUUID(), // Stable ID for z-order preservation
+        },
+      });
+      
+      console.log(`✅ Text element: ${field} at (${textAreaX.toFixed(1)}, ${fieldY.toFixed(1)}mm) h=${fieldHeight.toFixed(1)}mm font=${baseFontPt}pt`);
+    });
+  }
+
+  // Step 2: Create image elements in image area (if present)
+  if (hasImages && layoutSpec.imageArea) {
+    const imageAreaX = widthMm * layoutSpec.imageArea.xPercent;
+    const imageAreaY = heightMm * layoutSpec.imageArea.yPercent;
+    const imageAreaWidth = widthMm * layoutSpec.imageArea.widthPercent;
+    const imageAreaHeight = heightMm * layoutSpec.imageArea.heightPercent;
+    
+    console.log('📐 Image area:', { x: imageAreaX, y: imageAreaY, w: imageAreaWidth, h: imageAreaHeight });
+
+    imageFields.forEach((imageField, index) => {
+      // Use aspect ratio from layoutSpec or infer from field name
+      const imageConfig = layoutSpec.images?.find(i => i.fieldName === imageField);
+      const aspectRatio = imageConfig?.aspectRatio || inferImageAspectRatio(imageField);
+      
+      // Calculate image dimensions preserving aspect ratio
+      const imgDims = calculateImageDimensions(aspectRatio, imageAreaWidth, imageAreaHeight);
+      
+      // Center image within its area
+      const imageX = imageAreaX + (imageAreaWidth - imgDims.width) / 2;
+      const imageY = imageAreaY + (imageAreaHeight - imgDims.height) / 2;
+      
+      // Find matching project image
+      const sampleValue = sampleData[imageField];
+      let imageSrc = '';
+      
+      if (sampleValue) {
+        const matchedUrl = findImageUrl(sampleValue, projectImages);
+        if (matchedUrl) {
+          imageSrc = matchedUrl;
+          console.log(`✅ Image matched: "${sampleValue}" -> ${matchedUrl.substring(0, 50)}...`);
+        } else if (sampleValue.startsWith('http') || sampleValue.startsWith('data:')) {
+          imageSrc = sampleValue;
+        }
+      }
+      
+      // Stack multiple images vertically if needed
+      const stackOffset = index * (imgDims.height + 2);
+      
+      page.addElement({
+        type: 'image',
+        x: mmToPixels(imageX),
+        y: mmToPixels(imageY + stackOffset),
+        width: mmToPixels(imgDims.width),
+        height: mmToPixels(imgDims.height),
+        src: imageSrc,
+        custom: {
+          variable: imageField,
+          templateElementId: crypto.randomUUID(), // Stable ID for z-order preservation
+        },
+      });
+      
+      console.log(`✅ Image element: ${imageField} at (${imageX.toFixed(1)}, ${(imageY + stackOffset).toFixed(1)}mm) ${imgDims.width.toFixed(1)}×${imgDims.height.toFixed(1)}mm (${aspectRatio.width}:${aspectRatio.height})`);
+    });
+  }
+
+  // Wait for MobX to propagate element additions
+  return finalizeLayout(store, page);
+}
+
+/**
+ * Fallback layout when AI doesn't provide a structured layoutSpec
+ * Still produces a professional, non-overlapping layout
+ */
+function applyFallbackLayout(
+  store: any,
+  textFields: string[],
+  imageFields: string[],
+  sampleData: Record<string, string>,
+  widthMm: number,
+  heightMm: number,
+  projectImages: { name: string; url: string }[]
+): string | null {
+  const page = store.activePage;
+  if (!page) {
+    console.warn('⚠️ No active page available for fallback layout');
+    return null;
+  }
+
+  const hasImages = imageFields.length > 0;
+  const marginPercent = 0.05;
+  const marginMm = Math.max(widthMm * marginPercent, 3);
+  
+  // Professional split: 65% for text, 30% for image, 5% gap
+  const textWidthPercent = hasImages ? 0.60 : 0.90;
+  const imageWidthPercent = 0.28;
+  const gapPercent = 0.02;
+  
+  const textAreaX = marginMm;
+  const textAreaY = marginMm;
+  const textAreaWidth = (widthMm - 2 * marginMm) * textWidthPercent;
+  const textAreaHeight = heightMm - 2 * marginMm;
+  
+  console.log('📐 Fallback layout - Text area:', { x: textAreaX, y: textAreaY, w: textAreaWidth, h: textAreaHeight });
+
+  // Create text elements
+  if (textFields.length > 0) {
+    const fieldCount = textFields.length;
+    const gapMm = Math.min(2, textAreaHeight * 0.03);
+    const fieldHeight = (textAreaHeight - (fieldCount - 1) * gapMm) / fieldCount;
+    const baseFontPt = Math.max(14, Math.min(fieldHeight * 2.5, 36));
+    
+    textFields.forEach((field, index) => {
+      const fieldY = textAreaY + index * (fieldHeight + gapMm);
+      
+      page.addElement({
+        type: 'text',
+        x: mmToPixels(textAreaX),
+        y: mmToPixels(fieldY),
+        width: mmToPixels(textAreaWidth),
+        height: mmToPixels(fieldHeight),
+        text: `{{${field}}}`,
+        fontSize: ptToPx(baseFontPt),
+        fontFamily: 'Roboto',
+        fontWeight: index === 0 ? 'bold' : 'normal',
+        align: 'left',
+        verticalAlign: 'middle',
+        custom: {
+          variable: field,
+          templateElementId: crypto.randomUUID(),
+        },
+      });
+      
+      console.log(`✅ Fallback text: ${field} at (${textAreaX.toFixed(1)}, ${fieldY.toFixed(1)}mm)`);
+    });
+  }
+
+  // Create image elements on the right side
+  if (hasImages) {
+    const imageAreaX = marginMm + (widthMm - 2 * marginMm) * (textWidthPercent + gapPercent);
+    const imageAreaWidth = (widthMm - 2 * marginMm) * imageWidthPercent;
+    const imageAreaHeight = textAreaHeight * 0.80;
+    const imageAreaY = marginMm + (textAreaHeight - imageAreaHeight) / 2;
+    
+    console.log('📐 Fallback layout - Image area:', { x: imageAreaX, y: imageAreaY, w: imageAreaWidth, h: imageAreaHeight });
+
+    imageFields.forEach((imageField, index) => {
+      const aspectRatio = inferImageAspectRatio(imageField);
+      const imgDims = calculateImageDimensions(aspectRatio, imageAreaWidth, imageAreaHeight);
+      
+      const imageX = imageAreaX + (imageAreaWidth - imgDims.width) / 2;
+      const imageY = imageAreaY + (imageAreaHeight - imgDims.height) / 2;
+      
+      const sampleValue = sampleData[imageField];
+      let imageSrc = '';
+      
+      if (sampleValue) {
+        const matchedUrl = findImageUrl(sampleValue, projectImages);
+        if (matchedUrl) {
+          imageSrc = matchedUrl;
+        } else if (sampleValue.startsWith('http') || sampleValue.startsWith('data:')) {
+          imageSrc = sampleValue;
+        }
+      }
+      
+      const stackOffset = index * (imgDims.height + 2);
+      
+      page.addElement({
+        type: 'image',
+        x: mmToPixels(imageX),
+        y: mmToPixels(imageY + stackOffset),
+        width: mmToPixels(imgDims.width),
+        height: mmToPixels(imgDims.height),
+        src: imageSrc,
+        custom: {
+          variable: imageField,
+          templateElementId: crypto.randomUUID(),
+        },
+      });
+      
+      console.log(`✅ Fallback image: ${imageField} (${aspectRatio.width}:${aspectRatio.height}) at (${imageX.toFixed(1)}, ${(imageY + stackOffset).toFixed(1)}mm)`);
+    });
+  }
+
+  return finalizeLayout(store, page);
+}
+
+/**
+ * Finalize layout by waiting for MobX and saving scene
+ */
+function finalizeLayout(store: any, page: any): string | null {
+  // Synchronous check
+  const childCount = page.children?.length || 0;
+  console.log(`📊 Page has ${childCount} elements after layout`);
+  
+  if (childCount === 0) {
+    console.warn('⚠️ No elements in page after layout');
+    return null;
+  }
+  
+  // Save and return the base scene
+  const baseScene = saveScene(store);
+  
+  try {
+    const parsed = JSON.parse(baseScene);
+    const sceneChildCount = parsed.pages?.[0]?.children?.length || 0;
+    console.log(`💾 Saved scene has ${sceneChildCount} elements`);
+    
+    if (sceneChildCount === 0) {
+      console.error('❌ Scene serialized with 0 elements!');
+      return null;
+    }
+  } catch (parseError) {
+    console.error('❌ Failed to parse saved scene:', parseError);
+    return null;
+  }
+  
+  return baseScene;
 }
 
 // Bootstrap stages for debugging
@@ -422,6 +594,62 @@ export function PolotnoEditorWrapper({
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
   const handleRef = useRef<PolotnoEditorHandle | null>(null);
+
+  // ============================================================================
+  // Regenerate Layout Function (for Phase 5)
+  // ============================================================================
+  const regenerateLayout = useCallback(async () => {
+    const store = storeRef.current;
+    if (!store || availableFields.length === 0 || allSampleData.length === 0) return;
+    
+    setLayoutStatus('Regenerating layout...');
+    console.log('🔄 Regenerating AI layout...');
+    
+    try {
+      // Clear current elements
+      const page = store.activePage;
+      if (page) {
+        // Remove all children
+        while (page.children?.length > 0) {
+          page.children[0].remove();
+        }
+      }
+      
+      const firstRecord = allSampleData[0] || {};
+      
+      const generatedScene = await generateInitialLayoutPolotno(
+        store,
+        availableFields,
+        firstRecord,
+        allSampleData,
+        labelWidth,
+        labelHeight,
+        projectType,
+        projectImages
+      );
+      
+      if (generatedScene) {
+        baseSceneRef.current = generatedScene;
+        lastSavedSceneRef.current = generatedScene;
+        
+        // Apply VDP resolution
+        const parsed = JSON.parse(generatedScene) as PolotnoScene;
+        const resolved = resolveVdpVariables(parsed, {
+          record: firstRecord,
+          recordIndex: 0,
+          projectImages,
+          useCachedImages: true,
+        });
+        store.loadJSON(resolved);
+        
+        console.log('✅ Layout regenerated successfully');
+      }
+    } catch (err) {
+      console.error('❌ Layout regeneration failed:', err);
+    } finally {
+      setLayoutStatus(null);
+    }
+  }, [availableFields, allSampleData, labelWidth, labelHeight, projectType, projectImages]);
 
   // ============================================================================
   // PHASE 1: Bootstrap only when mount element is available (via callback ref)
@@ -667,6 +895,7 @@ export function PolotnoEditorWrapper({
             const merged = mergeLayoutToBase(currentScene, baseScene);
             return JSON.stringify(merged);
           },
+          regenerateLayout,
           store,
         };
 
@@ -710,7 +939,7 @@ export function PolotnoEditorWrapper({
       if (changeInterval) clearInterval(changeInterval);
       // Don't unmount root here - we want it to persist
     };
-  }, [mountEl, labelWidth, labelHeight, bleedMm, onSave, onSceneChange, onReady, retryCount, availableFields, projectImages]);
+  }, [mountEl, labelWidth, labelHeight, bleedMm, onSave, onSceneChange, onReady, retryCount, availableFields, projectImages, regenerateLayout]);
 
   // Cleanup root on component unmount
   useEffect(() => {
@@ -833,7 +1062,7 @@ export function PolotnoEditorWrapper({
             });
             
             if (elementCount === 0) {
-              console.warn('⚠️ Base scene has 0 elements - elements should already be in the store from addElement calls');
+              console.warn('⚠️ Base scene has 0 elements');
               return;
             }
             
@@ -850,10 +1079,7 @@ export function PolotnoEditorWrapper({
             console.log('✅ AI layout applied and VDP resolved for first record');
           } catch (vdpError) {
             console.error('❌ VDP resolution error:', vdpError);
-            console.log('ℹ️ Keeping elements as-is without VDP resolution');
           }
-        } else {
-          console.log('⚠️ No layout generated (empty or failed) - elements may already be visible from addElement calls');
         }
         
         layoutGeneratedRef.current = true;
@@ -897,19 +1123,19 @@ export function PolotnoEditorWrapper({
     const applyVdpWithLayoutMerge = async () => {
       const store = storeRef.current;
       
-      // PHASE 2 FIX: Before loading a new record, merge any layout changes from current view
-      // This ensures user edits are captured in the base template before switching
+      // PHASE 4 FIX: Before loading a new record, merge any layout changes from current view
+      // This ensures user edits (including z-order) are captured in the base template before switching
       if (prevRecordIndexRef.current !== currentRecordIndex) {
         try {
           const currentSceneJson = saveScene(store);
           const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
           const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
           
-          // Merge layout changes back to base template
+          // Merge layout changes back to base template (preserves z-order!)
           const mergedTemplate = mergeLayoutToBase(currentScene, baseScene);
           baseSceneRef.current = JSON.stringify(mergedTemplate);
           
-          console.log('📐 Layout merged to base template before record switch');
+          console.log('📐 Layout merged to base template before record switch (z-order preserved)');
         } catch (mergeErr) {
           console.warn('Layout merge error:', mergeErr);
         }
@@ -1023,8 +1249,6 @@ export function PolotnoEditorWrapper({
           </div>
         </div>
       )}
-      
-      {/* Record navigation moved to TemplateEditor header for better UX */}
     </div>
   );
 }

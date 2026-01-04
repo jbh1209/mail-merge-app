@@ -69,9 +69,14 @@ serve(async (req) => {
       throw new Error('Template size is required');
     }
 
+    const aspectRatio = templateSize.width / templateSize.height;
+    const isWideLabel = aspectRatio > 2;
+    const isTallLabel = aspectRatio < 0.6;
+
     console.log('🎨 Generating design strategy for:', {
       fields: fieldNames.length,
       template: `${templateSize.width}mm × ${templateSize.height}mm`,
+      aspectRatio: aspectRatio.toFixed(2),
       layoutMode: labelAnalysis?.layoutMode,
       isStandardAddress: labelAnalysis?.isStandardAddress
     });
@@ -104,144 +109,83 @@ serve(async (req) => {
       text: textFields.length
     });
 
-    // Check if this is a standard address label - use combined block layout
-    if (labelAnalysis?.isStandardAddress && labelAnalysis?.layoutMode === 'combined_address_block') {
-      console.log('📮 Standard address detected - using combined block layout');
-      
-      const textFieldNames = textFields.map(f => f.fieldName);
-      
-      return new Response(
-        JSON.stringify({
-          designStrategy: {
-            strategy: 'combined_address_block',
-            regions: {
-              main: {
-                fields: textFieldNames,
-                layout: 'stacked_inline',
-                verticalAllocation: 1.0,
-                priority: 'highest'
-              }
-            },
-            typography: textFieldNames.reduce((acc: any, field: string) => {
-              acc[field] = { weight: 'normal', importance: 'high' };
-              return acc;
-            }, {}),
-            // NEW: Structured layout spec for direct client application
-            layoutSpec: {
-              layoutType: hasImages ? 'split_text_left_image_right' : 'text_only',
-              textArea: {
-                xPercent: 0.05,
-                yPercent: 0.05,
-                widthPercent: hasImages ? 0.60 : 0.90,
-                heightPercent: 0.90
-              },
-              imageArea: hasImages ? {
-                xPercent: 0.68,
-                yPercent: 0.10,
-                widthPercent: 0.27,
-                heightPercent: 0.80,
-                aspectRatio: imageFields[0]?.aspectRatio || { width: 3, height: 2 }
-              } : null,
-              images: imageFields.map(f => ({
-                fieldName: f.fieldName,
-                aspectRatio: f.aspectRatio
-              })),
-              gap: 0.03 // 3% gap between text and image
-            }
-          }
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200 
-        }
-      );
-    }
+    // Build AI prompt - let the AI make REAL layout decisions
+    const systemPrompt = `You are an expert label designer. Your job is to create the OPTIMAL layout for a label.
 
-    // Build AI prompt (high-level strategy only, NO coordinates)
-    const systemPrompt = `You are a professional label design strategist. Your job is to decide the high-level layout structure, NOT to calculate coordinates.
+You must return a JSON object with a layoutSpec that the client will use directly. 
 
-Output a JSON design strategy with:
-1. Overall strategy name
-2. Regions (header, body, footer) with field allocations
-3. Typography hints (weight, importance)
-4. A layoutSpec object with percentage-based areas for text and images
+CRITICAL: You are making REAL creative decisions. Choose values that make sense for this specific label:
+- For wide labels with few fields: use larger text areas, maybe a combined text block
+- For labels with images: decide the best split ratio based on content importance
+- For text-heavy labels: maximize text area
+- Consider the aspect ratio when deciding layout orientation
 
-CRITICAL: You MUST use the EXACT field names provided. Do NOT change them, simplify them, or use generic labels.
-CRITICAL: Image fields should NOT be placed in regions - they are handled separately via layoutSpec.imageArea.
+Your layoutSpec DIRECTLY controls the final layout - choose wisely!`;
 
-DO NOT output coordinates, font sizes, or measurements. The rules engine handles that.`;
+    const userPrompt = `Design the optimal layout for this label:
 
-    const userPrompt = `Design a professional label layout strategy:
+LABEL SIZE: ${templateSize.width}mm × ${templateSize.height}mm (aspect ratio: ${aspectRatio.toFixed(2)})
+${isWideLabel ? '⚠️ This is a WIDE label - text should fill more horizontal space' : ''}
+${isTallLabel ? '⚠️ This is a TALL label - consider vertical stacking' : ''}
 
-TEMPLATE SIZE: ${templateSize.width}mm × ${templateSize.height}mm (aspect ratio: ${(templateSize.width / templateSize.height).toFixed(2)})
+TEXT FIELDS (${textFields.length}):
+${textFields.map(f => `• "${f.fieldName}" [${f.type}]: "${f.sampleValue}" (avg ${Math.round(f.avgLength)} chars)`).join('\n')}
 
-TEXT FIELDS TO LAYOUT (USE THESE EXACT NAMES):
-${textFields.map(f => `- "${f.fieldName}" (type: ${f.type}): sample="${f.sampleValue}" [avg: ${Math.round(f.avgLength)} chars]`).join('\n')}
+IMAGE FIELDS (${imageFields.length}):
+${imageFields.length > 0 ? imageFields.map(f => `• "${f.fieldName}" (aspect: ${f.aspectRatio?.width}:${f.aspectRatio?.height})`).join('\n') : '(none)'}
 
-IMAGE FIELDS (handled separately - DO NOT include in regions):
-${imageFields.length > 0 ? imageFields.map(f => `- "${f.fieldName}" (aspect: ${f.aspectRatio?.width}:${f.aspectRatio?.height})`).join('\n') : '(none)'}
+DECIDE THE BEST LAYOUT:
 
-DESIGN PRINCIPLES:
-1. ${hasImages ? 'TEXT GOES LEFT, IMAGE GOES RIGHT - allocate ~65% width for text, ~30% for image' : 'Use full width for text'}
-2. ADDRESS-type fields should dominate (50-60% of vertical space)
-3. Important fields (NAME, TITLE, CODE types) should be prominent at top
-4. Less important fields (QUANTITY, PROVINCE types) go at bottom
-5. Group short, related fields horizontally to save space
-6. Use vertical space efficiently - no large gaps
-7. FOOTER LAYOUT: Prefer "horizontal_split" or "three_column" for short fields (≤15 chars)
+1. layoutType: Choose based on content
+   - "text_only_combined": ALL text fields in ONE combined block (best for address labels, 3+ text fields)
+   - "text_only_stacked": Separate text fields stacked vertically
+   - "split_text_left_image_right": Text on left, image on right
+   - "split_image_left_text_right": Image on left, text on right
+   - "hero_image_top": Large image at top, text below
 
-OUTPUT FORMAT (JSON):
+2. useCombinedTextBlock: true/false
+   - TRUE = All text fields go in ONE text element with newlines (like an address block)
+   - FALSE = Each field gets its own text element
+   - Recommend TRUE for 3+ text fields to create a cohesive professional look
+
+3. textArea percentages: YOU DECIDE based on content
+   - xPercent, yPercent: margins (typically 0.03-0.08)
+   - widthPercent: how much width for text (0.40-0.94 depending on whether images exist)
+   - heightPercent: how much height for text (typically 0.85-0.94)
+   
+4. imageArea (if has images): YOU DECIDE the best size and position
+   - Consider the image aspect ratio
+   - Make images prominent but don't overwhelm text
+
+5. typography: Decide font emphasis
+   - baseFontScale: "fill" (scale to fill space), "large" (prominent), "medium", "small"
+   - primaryFieldIndex: which text field should be most prominent (0-based index)
+
+OUTPUT ONLY THIS JSON (no markdown, no explanation):
 {
-  "strategy": "professional_${hasImages ? 'with_image' : 'text_only'}",
-  "regions": {
-    "header": {
-      "fields": ["EXACT_FIELD_NAME_1"],
-      "layout": "single_dominant",
-      "verticalAllocation": 0.25,
-      "priority": "high"
-    },
-    "body": {
-      "fields": ["EXACT_FIELD_NAME_2", "EXACT_FIELD_NAME_3"],
-      "layout": "stacked",
-      "verticalAllocation": 0.50,
-      "priority": "highest"
-    },
-    "footer": {
-      "fields": ["EXACT_FIELD_NAME_4"],
-      "layout": "horizontal_split",
-      "verticalAllocation": 0.25,
-      "priority": "low"
-    }
-  },
-  "typography": {
-    "EXACT_FIELD_NAME_1": { "weight": "bold", "importance": "high" },
-    "EXACT_FIELD_NAME_2": { "weight": "normal", "importance": "highest" }
-  },
+  "strategy": "descriptive_strategy_name",
   "layoutSpec": {
-    "layoutType": "${hasImages ? 'split_text_left_image_right' : 'text_only'}",
+    "layoutType": "text_only_combined|text_only_stacked|split_text_left_image_right|split_image_left_text_right|hero_image_top",
+    "useCombinedTextBlock": true,
     "textArea": {
-      "xPercent": 0.05,
-      "yPercent": 0.05,
-      "widthPercent": ${hasImages ? 0.60 : 0.90},
-      "heightPercent": 0.90
+      "xPercent": 0.04,
+      "yPercent": 0.04,
+      "widthPercent": 0.92,
+      "heightPercent": 0.92
     },
-    ${hasImages ? `"imageArea": {
-      "xPercent": 0.68,
-      "yPercent": 0.10,
-      "widthPercent": 0.27,
-      "heightPercent": 0.80,
-      "aspectRatio": { "width": ${imageFields[0]?.aspectRatio?.width || 3}, "height": ${imageFields[0]?.aspectRatio?.height || 2} }
-    },
-    "images": [${imageFields.map(f => `{ "fieldName": "${f.fieldName}", "aspectRatio": { "width": ${f.aspectRatio?.width || 3}, "height": ${f.aspectRatio?.height || 2} } }`).join(', ')}],` : ''}
-    "gap": 0.03
+    "imageArea": null,
+    "typography": {
+      "baseFontScale": "fill",
+      "primaryFieldIndex": 0,
+      "alignment": "left|center"
+    }
   }
 }
 
-CRITICAL RULES:
-- Use EXACT field names as provided above
-- DO NOT include image fields in regions - they go in layoutSpec.images
-- verticalAllocation values must sum to ≤ 1.0
-- Allocate 50-60% to ADDRESS-type fields if present`;
+Make smart decisions! For example:
+- 4 text fields on 200x75mm wide label → useCombinedTextBlock: true, widthPercent: 0.92, baseFontScale: "fill"
+- 2 text fields + 1 photo → split layout with ~60% text, ~35% image
+- Single product name → text_only_stacked with baseFontScale: "fill"`;
 
     // Call Lovable AI
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -259,7 +203,6 @@ CRITICAL RULES:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.7,
         response_format: { type: "json_object" }
       }),
     });
@@ -274,76 +217,93 @@ CRITICAL RULES:
     let designStrategy;
     
     try {
-      designStrategy = JSON.parse(aiResult.choices[0].message.content);
+      const content = aiResult.choices[0].message.content;
+      // Strip markdown code blocks if present
+      const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      designStrategy = JSON.parse(cleanContent);
     } catch (parseError) {
       console.error('Failed to parse AI response:', aiResult.choices[0].message.content);
       throw new Error('AI returned invalid JSON');
     }
 
-    console.log('📐 Generated design strategy:', designStrategy.strategy);
+    console.log('📐 AI Design Decision:', {
+      strategy: designStrategy.strategy,
+      layoutType: designStrategy.layoutSpec?.layoutType,
+      useCombined: designStrategy.layoutSpec?.useCombinedTextBlock,
+      textWidth: designStrategy.layoutSpec?.textArea?.widthPercent,
+      fontScale: designStrategy.layoutSpec?.typography?.baseFontScale
+    });
 
-    // Validate strategy
-    if (!designStrategy.regions || !designStrategy.typography) {
-      throw new Error('Invalid design strategy from AI');
+    // Ensure layoutSpec has all required fields with sensible defaults
+    const layoutSpec = designStrategy.layoutSpec || {};
+    
+    // Fill in any missing fields
+    if (!layoutSpec.layoutType) {
+      layoutSpec.layoutType = hasImages ? 'split_text_left_image_right' : 'text_only_combined';
     }
-
-    // Ensure layoutSpec exists with defaults
-    if (!designStrategy.layoutSpec) {
-      designStrategy.layoutSpec = {
-        layoutType: hasImages ? 'split_text_left_image_right' : 'text_only',
-        textArea: {
-          xPercent: 0.05,
-          yPercent: 0.05,
-          widthPercent: hasImages ? 0.60 : 0.90,
-          heightPercent: 0.90
-        },
-        imageArea: hasImages ? {
-          xPercent: 0.68,
-          yPercent: 0.10,
-          widthPercent: 0.27,
-          heightPercent: 0.80,
-          aspectRatio: imageFields[0]?.aspectRatio || { width: 3, height: 2 }
-        } : null,
-        images: imageFields.map(f => ({
-          fieldName: f.fieldName,
-          aspectRatio: f.aspectRatio || { width: 3, height: 2 }
-        })),
-        gap: 0.03
+    
+    if (layoutSpec.useCombinedTextBlock === undefined) {
+      layoutSpec.useCombinedTextBlock = textFields.length >= 3;
+    }
+    
+    if (!layoutSpec.textArea) {
+      layoutSpec.textArea = {
+        xPercent: 0.04,
+        yPercent: 0.04,
+        widthPercent: hasImages ? 0.55 : 0.92,
+        heightPercent: 0.92
+      };
+    }
+    
+    if (!layoutSpec.typography) {
+      layoutSpec.typography = {
+        baseFontScale: 'fill',
+        primaryFieldIndex: 0,
+        alignment: 'left'
       };
     }
 
-    // Validate that all fields in the strategy match the input field names (text fields only)
-    const inputTextFieldNames = new Set(textFields.map(f => f.fieldName));
-    const strategyFieldNames = new Set<string>();
-    
-    Object.values(designStrategy.regions).forEach((region: any) => {
-      if (region.fields && Array.isArray(region.fields)) {
-        region.fields.forEach((fieldName: string) => strategyFieldNames.add(fieldName));
+    // Add image area if needed
+    if (hasImages && !layoutSpec.imageArea) {
+      const isImageLeft = layoutSpec.layoutType === 'split_image_left_text_right';
+      const isHeroTop = layoutSpec.layoutType === 'hero_image_top';
+      
+      if (isHeroTop) {
+        layoutSpec.imageArea = {
+          xPercent: 0.04,
+          yPercent: 0.04,
+          widthPercent: 0.92,
+          heightPercent: 0.45,
+          aspectRatio: imageFields[0]?.aspectRatio || { width: 3, height: 2 }
+        };
+        // Adjust text area for hero top
+        layoutSpec.textArea.yPercent = 0.52;
+        layoutSpec.textArea.heightPercent = 0.44;
+      } else {
+        const imageX = isImageLeft ? 0.04 : 0.62;
+        const textX = isImageLeft ? 0.40 : 0.04;
+        
+        layoutSpec.imageArea = {
+          xPercent: imageX,
+          yPercent: 0.08,
+          widthPercent: 0.34,
+          heightPercent: 0.84,
+          aspectRatio: imageFields[0]?.aspectRatio || { width: 3, height: 2 }
+        };
+        
+        layoutSpec.textArea.xPercent = textX;
+        layoutSpec.textArea.widthPercent = 0.52;
       }
-    });
-
-    const invalidFields = Array.from(strategyFieldNames).filter(name => !inputTextFieldNames.has(name));
-    if (invalidFields.length > 0) {
-      console.warn('AI returned field names not in text fields:', invalidFields);
-      // Don't throw - just filter them out
-      Object.values(designStrategy.regions).forEach((region: any) => {
-        if (region.fields && Array.isArray(region.fields)) {
-          region.fields = region.fields.filter((f: string) => inputTextFieldNames.has(f));
-        }
-      });
     }
 
-    // Check vertical allocation sums
-    const totalAllocation = Object.values(designStrategy.regions).reduce(
-      (sum: number, region: any) => sum + (region.verticalAllocation || 0), 0
-    );
-    
-    if (totalAllocation > 1.05) {
-      console.warn('Vertical allocation exceeds 100%, normalizing...');
-      Object.keys(designStrategy.regions).forEach(key => {
-        designStrategy.regions[key].verticalAllocation /= totalAllocation;
-      });
-    }
+    // Add field information for client
+    layoutSpec.textFields = textFields.map(f => f.fieldName);
+    layoutSpec.images = imageFields.map(f => ({
+      fieldName: f.fieldName,
+      aspectRatio: f.aspectRatio || { width: 3, height: 2 }
+    }));
+
+    designStrategy.layoutSpec = layoutSpec;
 
     return new Response(
       JSON.stringify({ designStrategy }),

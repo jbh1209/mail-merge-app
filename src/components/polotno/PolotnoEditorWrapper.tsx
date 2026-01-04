@@ -222,9 +222,11 @@ function calculateFillFontSize(
   const lines = text.split('\n').filter(l => l.trim() !== '');
   if (lines.length === 0) return maxFontPt;
   
-  // Convert mm to pixels for measurement (at 96 DPI for screen)
-  const containerWidthPx = (containerWidthMm / 25.4) * 96;
-  const containerHeightPx = (containerHeightMm / 25.4) * 96;
+  // Convert mm to pixels for measurement at 300 DPI (same as Polotno store)
+  // This ensures the font size we calculate matches the Polotno canvas scale
+  const DPI = 300;
+  const containerWidthPx = (containerWidthMm / 25.4) * DPI;
+  const containerHeightPx = (containerHeightMm / 25.4) * DPI;
   
   // Create offscreen canvas for real text measurement
   const canvas = document.createElement('canvas');
@@ -247,7 +249,7 @@ function calculateFillFontSize(
   
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
-    const fontSizePx = mid * (96 / 72); // pt to px
+    const fontSizePx = mid * (DPI / 72); // pt to px at 300 DPI
     
     ctx.font = `${fontSizePx}px ${fontFamily}`;
     
@@ -825,8 +827,10 @@ export function PolotnoEditorWrapper({
 
         if (cancelled) return;
 
-        // Configure bleed
-        configureBleed(store, mmToPixels(bleedMm));
+        // Configure bleed - only show bleed indicator if bleed > 0 and it's NOT a label
+        // Labels typically don't need visible bleed guides in the editor
+        const showBleedIndicator = bleedMm > 0 && projectType !== 'label';
+        configureBleed(store, mmToPixels(bleedMm), showBleedIndicator);
         storeRef.current = store;
         console.log('✅ Polotno store created');
         

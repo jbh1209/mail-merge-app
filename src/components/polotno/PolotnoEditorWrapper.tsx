@@ -206,35 +206,72 @@ interface LayoutSpec {
 }
 
 /**
- * Calculate font size that fills the available space
- * This mimics CE.SDK's "scale to fill" behavior
+ * Calculate font size that fills the available space using REAL canvas measurement.
+ * This mimics CE.SDK's "scale to fill" behavior with actual text dimensions.
  */
 function calculateFillFontSize(
   text: string,
   containerWidthMm: number,
   containerHeightMm: number,
+  fontFamily: string = 'Roboto',
   maxFontPt: number = 72,
   minFontPt: number = 10
 ): number {
-  // Approximate: each character is roughly 0.6 * fontSize wide
-  // and line height is roughly 1.2 * fontSize
-  const lines = text.split('\n');
-  const maxLineLength = Math.max(...lines.map(l => l.length));
-  const lineCount = lines.length;
+  if (!text || text.trim() === '') return maxFontPt;
   
-  // Convert mm to approximate character units (at 72pt, 1 char ≈ 2.5mm)
-  const charWidthFactor = 0.6;
+  const lines = text.split('\n').filter(l => l.trim() !== '');
+  if (lines.length === 0) return maxFontPt;
+  
+  // Convert mm to pixels for measurement (at 96 DPI for screen)
+  const containerWidthPx = (containerWidthMm / 25.4) * 96;
+  const containerHeightPx = (containerHeightMm / 25.4) * 96;
+  
+  // Create offscreen canvas for real text measurement
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    // Fallback to heuristic if canvas fails
+    const lineCount = lines.length;
+    const maxLineLength = Math.max(...lines.map(l => l.length), 1);
+    const fontForWidth = (containerWidthMm / (maxLineLength * 0.55)) * 2.83;
+    const fontForHeight = (containerHeightMm / (lineCount * 1.3)) * 2.83;
+    return Math.max(Math.min(fontForWidth, fontForHeight, maxFontPt), minFontPt);
+  }
+  
   const lineHeightFactor = 1.3;
   
-  // Calculate max font size that fits width
-  const maxFontForWidth = (containerWidthMm / (maxLineLength * charWidthFactor)) * 2.83; // mm to pt
+  // Binary search for optimal font size
+  let low = minFontPt;
+  let high = maxFontPt;
+  let bestFit = minFontPt;
   
-  // Calculate max font size that fits height
-  const maxFontForHeight = (containerHeightMm / (lineCount * lineHeightFactor)) * 2.83; // mm to pt
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const fontSizePx = mid * (96 / 72); // pt to px
+    
+    ctx.font = `${fontSizePx}px ${fontFamily}`;
+    
+    // Measure max line width
+    let maxLineWidth = 0;
+    for (const line of lines) {
+      const metrics = ctx.measureText(line);
+      maxLineWidth = Math.max(maxLineWidth, metrics.width);
+    }
+    
+    // Calculate total height
+    const totalHeight = lines.length * fontSizePx * lineHeightFactor;
+    
+    // Check if it fits
+    if (maxLineWidth <= containerWidthPx && totalHeight <= containerHeightPx) {
+      bestFit = mid;
+      low = mid + 1; // Try larger
+    } else {
+      high = mid - 1; // Try smaller
+    }
+  }
   
-  // Use the smaller of the two, capped by min/max
-  const fontSize = Math.min(maxFontForWidth, maxFontForHeight, maxFontPt);
-  return Math.max(fontSize, minFontPt);
+  console.log(`📏 Measured font: ${bestFit}pt for "${text.substring(0, 20)}..." in ${containerWidthMm.toFixed(1)}×${containerHeightMm.toFixed(1)}mm`);
+  return bestFit;
 }
 
 /**
@@ -341,9 +378,9 @@ function applyAILayout(
       // COMBINED TEXT BLOCK: All fields in one text element with newlines
       const combinedText = textFields.map(f => `{{${f}}}`).join('\n');
       
-      // Calculate font size to fill available space
+      // Calculate font size using REAL measurement
       const sampleText = textFields.map(f => sampleData[f] || f).join('\n');
-      const fontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 48, 12);
+      const fontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 'Roboto', 60, 14);
       
       page.addElement({
         type: 'text',
@@ -365,7 +402,7 @@ function applyAILayout(
         },
       });
       
-      console.log(`✅ Combined text block: ${textFields.length} fields, fontSize=${fontSize.toFixed(1)}pt, fills ${textAreaWidth.toFixed(1)}×${textAreaHeight.toFixed(1)}mm`);
+      console.log(`✅ Combined text: ${textFields.length} fields, ${fontSize.toFixed(1)}pt in ${textAreaWidth.toFixed(1)}×${textAreaHeight.toFixed(1)}mm`);
     } else {
       // STACKED LAYOUT: Each field gets its own element
       const fieldCount = textFields.length;
@@ -376,8 +413,8 @@ function applyAILayout(
         const fieldY = textAreaY + index * (fieldHeight + gapMm);
         const sampleText = sampleData[field] || field;
         
-        // Calculate font size to fill this field's space
-        const fontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 42, 12);
+        // Calculate font size using REAL measurement
+        const fontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 'Roboto', 48, 14);
         
         page.addElement({
           type: 'text',
@@ -397,7 +434,7 @@ function applyAILayout(
           },
         });
         
-        console.log(`✅ Text: ${field} at y=${fieldY.toFixed(1)}mm, h=${fieldHeight.toFixed(1)}mm, font=${fontSize.toFixed(1)}pt`);
+        console.log(`✅ Stacked: ${field} ${fontSize.toFixed(1)}pt in h=${fieldHeight.toFixed(1)}mm`);
       });
     }
   }
@@ -489,7 +526,7 @@ function applySmartFallbackLayout(
     if (useCombined) {
       const combinedText = textFields.map(f => `{{${f}}}`).join('\n');
       const sampleText = textFields.map(f => sampleData[f] || f).join('\n');
-      const fontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 48, 12);
+      const fontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 'Roboto', 60, 14);
       
       page.addElement({
         type: 'text',
@@ -517,7 +554,7 @@ function applySmartFallbackLayout(
       textFields.forEach((field, index) => {
         const fieldY = textAreaY + index * (fieldHeight + gapMm);
         const sampleText = sampleData[field] || field;
-        const fontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 42, 12);
+        const fontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 'Roboto', 48, 14);
         
         page.addElement({
           type: 'text',
@@ -751,23 +788,20 @@ export function PolotnoEditorWrapper({
       console.log('🚀 Bootstrap starting with mount element available');
       
       try {
-        // ---- FETCH KEY ----
+        // ---- FETCH KEY (use supabase.functions.invoke for proper auth) ----
         setBootstrapStage('fetch_key');
         
-        const keyResponse = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-polotno-key`
-        );
+        const { data: keyData, error: keyFetchError } = await supabase.functions.invoke('get-polotno-key');
         
         if (cancelled) return;
         
-        if (!keyResponse.ok) {
-          throw new Error(`Failed to fetch Polotno API key (status: ${keyResponse.status})`);
+        if (keyFetchError) {
+          throw new Error(`Failed to fetch API key: ${keyFetchError.message}`);
         }
         
-        const { apiKey, error: keyError } = await keyResponse.json();
-        
-        if (keyError || !apiKey) {
-          throw new Error(keyError || 'Polotno API key not configured');
+        const apiKey = keyData?.apiKey;
+        if (!apiKey) {
+          throw new Error('Editor API key not configured');
         }
 
         if (cancelled) return;
@@ -1286,23 +1320,21 @@ export function PolotnoEditorWrapper({
         style={{ visibility: isLoading || error ? 'hidden' : 'visible' }}
       />
       
-      {/* Loading overlay */}
+      {/* Loading overlay - show generic message, no debug stage info */}
       {isLoading && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">
-            {STAGE_LABELS[bootstrapStage]}
-          </p>
-          <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
+          <p className="text-sm text-muted-foreground">Loading editor...</p>
         </div>
       )}
       
-      {/* Error overlay */}
+      {/* Error overlay - user-friendly message, no stage info */}
       {error && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background">
-          <p className="text-sm font-medium text-destructive">Editor Error</p>
-          <p className="text-sm text-muted-foreground max-w-md text-center">{error}</p>
-          <p className="text-xs text-muted-foreground/60">Stage: {bootstrapStage}</p>
+          <p className="text-sm font-medium text-destructive">Failed to load editor</p>
+          <p className="text-sm text-muted-foreground max-w-md text-center">
+            There was a problem loading the design editor. Please try again.
+          </p>
           <Button variant="outline" size="sm" onClick={handleRetry} className="mt-2">
             <RefreshCw className="h-4 w-4 mr-2" />
             Retry

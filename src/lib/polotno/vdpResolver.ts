@@ -239,14 +239,22 @@ function resolveElement(
       const token = rawToken.trim();
       const value = findRecordValue(token, record);
       if (value === null) {
-        console.warn(`⚠️ VDP token not found: "${token}" in record keys:`, Object.keys(record));
+        // Missing token → resolve to empty string (cleaner than keeping placeholder)
+        return '';
       }
-      return value !== null ? value : match; // Keep original if not found
+      return value;
     });
     
+    // Clean up empty lines and collapse multiple newlines
+    el.text = el.text
+      .split('\n')
+      .filter(line => line.trim() !== '') // Remove empty lines
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n'); // Collapse 3+ newlines to 2
+    
     // Log resolution for debugging (only if changed)
-    if (el.text !== originalText && el.text !== originalText) {
-      console.log(`🔄 VDP resolved: "${originalText.substring(0, 30)}..." → "${el.text.substring(0, 30)}..."`);
+    if (el.text !== originalText) {
+      console.log(`🔄 VDP: "${originalText.substring(0, 25)}..." → "${el.text.substring(0, 25)}..."`);
     }
   }
   

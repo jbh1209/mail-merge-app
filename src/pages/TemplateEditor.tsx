@@ -718,7 +718,7 @@ export default function TemplateEditor() {
                 ? (template.height_mm || 50) + printSettings.bleedMm * 2
                 : (template.height_mm || 50)
             }
-            bleedMm={template.bleed_mm || 0}
+            bleedMm={isLabelProject ? 0 : (template.bleed_mm || 0)}
             projectType={project?.project_type || 'label'}
             projectImages={projectImages}
             trimGuideMm={

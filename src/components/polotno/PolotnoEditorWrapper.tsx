@@ -102,8 +102,20 @@ interface PolotnoEditorWrapperProps {
 // Use runtime's mmToPixels for consistency
 const mmToPixels = (mm: number, dpi = 300) => runtimeMmToPixels(mm, dpi);
 
-// Convert pt to px for font sizes (layout engine returns pt, Polotno uses px)
-const ptToPx = (pt: number): number => pt * (96 / 72); // 96 DPI screen / 72 pt per inch
+// Polotno canvas runs at 300 DPI
+const POLOTNO_DPI = 300;
+
+/**
+ * Convert font size in points to Polotno canvas pixels at 300 DPI.
+ * 
+ * The calculation: pt → inches → pixels at 300 DPI
+ * 1 point = 1/72 inch
+ * At 300 DPI: 1 point = 300/72 ≈ 4.167 pixels
+ * 
+ * This ensures fonts are sized correctly for the 300 DPI Polotno canvas,
+ * not the 96 DPI screen.
+ */
+const ptToPx = (pt: number): number => pt * (POLOTNO_DPI / 72);
 
 /**
  * Detect if a field is likely an image field based on its name or sample values
@@ -326,12 +338,37 @@ async function generateInitialLayoutPolotno(
       return applySmartFallbackLayout(store, textFields, imageFieldsDetected, sampleData, widthMm, heightMm, projectImages);
     }
 
-    const layoutSpec = hybridData.designStrategy.layoutSpec as LayoutSpec;
-    console.log('📐 AI Layout Decision:', {
+    let layoutSpec = hybridData.designStrategy.layoutSpec as LayoutSpec;
+    console.log('📐 AI Layout Decision (raw):', {
       type: layoutSpec.layoutType,
       combined: layoutSpec.useCombinedTextBlock,
       textWidth: layoutSpec.textArea?.widthPercent,
       fontScale: layoutSpec.typography?.baseFontScale
+    });
+    
+    // PHASE 3: Clamp AI layout outputs to "professional defaults" for labels
+    // Enforce minimum text area usage - AI can be too conservative
+    const hasImageFields = imageFieldsDetected.length > 0;
+    if (!hasImageFields) {
+      if (layoutSpec.textArea.widthPercent < 0.85) {
+        console.log(`📐 Clamping text width: ${layoutSpec.textArea.widthPercent} → 0.90`);
+        layoutSpec = {
+          ...layoutSpec,
+          textArea: { ...layoutSpec.textArea, widthPercent: 0.90 }
+        };
+      }
+      if (layoutSpec.textArea.heightPercent < 0.75) {
+        console.log(`📐 Clamping text height: ${layoutSpec.textArea.heightPercent} → 0.85`);
+        layoutSpec = {
+          ...layoutSpec,
+          textArea: { ...layoutSpec.textArea, heightPercent: 0.85 }
+        };
+      }
+    }
+    
+    console.log('📐 AI Layout (after clamp):', {
+      textWidth: layoutSpec.textArea?.widthPercent,
+      textHeight: layoutSpec.textArea?.heightPercent,
     });
     
     return applyAILayout(store, textFields, imageFieldsDetected, layoutSpec, sampleData, widthMm, heightMm, projectImages);
@@ -827,10 +864,21 @@ export function PolotnoEditorWrapper({
 
         if (cancelled) return;
 
-        // Configure bleed - only show bleed indicator if bleed > 0 and it's NOT a label
-        // Labels typically don't need visible bleed guides in the editor
-        const showBleedIndicator = bleedMm > 0 && projectType !== 'label';
-        configureBleed(store, mmToPixels(bleedMm), showBleedIndicator);
+        // PHASE 2: Force bleed guides OFF for label projects
+        // Labels never need bleed visualization in the editor
+        if (projectType === 'label') {
+          // For labels: no bleed at all
+          configureBleed(store, 0, false);
+          store.toggleBleed(false); // Explicitly disable bleed visualization
+          console.log('📐 Bleed disabled for label project');
+        } else if (bleedMm > 0) {
+          // For non-labels with bleed: show indicator
+          configureBleed(store, mmToPixels(bleedMm), true);
+          console.log(`📐 Bleed enabled: ${bleedMm}mm`);
+        } else {
+          // For non-labels without bleed
+          configureBleed(store, 0, false);
+        }
         storeRef.current = store;
         console.log('✅ Polotno store created');
         

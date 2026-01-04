@@ -2,7 +2,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Save, Loader2, FileDown, ImageIcon, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, FileDown, ImageIcon, Upload, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import CreativeEditorWrapper, { CesdkEditorHandle, RecordNavigationState } from '@/components/cesdk/CreativeEditorWrapper';
@@ -605,6 +605,25 @@ export default function TemplateEditor() {
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>
             </div>
+          )}
+          
+          {/* Regenerate Layout Button - only for Polotno and new templates */}
+          {USE_POLOTNO_EDITOR && isEditorReady && !initialScene && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const polotnoHandle = editorHandleRef.current as PolotnoEditorHandle | null;
+                if (polotnoHandle?.regenerateLayout) {
+                  polotnoHandle.regenerateLayout();
+                }
+              }}
+              title="Regenerate AI layout"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span className="ml-1.5 hidden sm:inline">Reset Layout</span>
+            </Button>
           )}
           
           {hasUnsavedChanges && !isSaving && (

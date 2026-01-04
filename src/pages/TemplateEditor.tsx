@@ -471,10 +471,16 @@ export default function TemplateEditor() {
   );
 
   // Filter records that have at least one non-empty value in valid fields
+  // This prevents blank rows from appearing as records in the preview
   const validRecords = allSampleData.filter(record => {
+    // Check if at least one valid field has meaningful content
     return validFields.some(field => {
       const value = record[field];
-      return value !== null && value !== undefined && String(value).trim() !== '';
+      if (value === null || value === undefined) return false;
+      const trimmed = String(value).trim();
+      // Exclude empty strings and raw placeholder tokens
+      if (trimmed === '' || /^\{\{[^}]+\}\}$/.test(trimmed)) return false;
+      return true;
     });
   });
   const hasImageFields = imageFields.length > 0;

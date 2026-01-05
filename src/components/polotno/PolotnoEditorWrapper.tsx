@@ -864,20 +864,20 @@ export function PolotnoEditorWrapper({
 
         if (cancelled) return;
 
-        // PHASE 2: Force bleed guides OFF for label projects
-        // Labels never need bleed visualization in the editor
-        if (projectType === 'label') {
-          // For labels: no bleed at all
-          configureBleed(store, 0, false);
-          store.toggleBleed(false); // Explicitly disable bleed visualization
-          console.log('📐 Bleed disabled for label project');
-        } else if (bleedMm > 0) {
-          // For non-labels with bleed: show indicator
-          configureBleed(store, mmToPixels(bleedMm), true);
-          console.log(`📐 Bleed enabled: ${bleedMm}mm`);
-        } else {
-          // For non-labels without bleed
-          configureBleed(store, 0, false);
+        // Configure bleed - wrapped in try/catch to prevent bootstrap failure
+        try {
+          if (projectType === 'label') {
+            // Labels: no bleed at all
+            configureBleed(store, 0, false);
+            console.log('📐 Bleed disabled for label project');
+          } else if (bleedMm > 0) {
+            configureBleed(store, mmToPixels(bleedMm), true);
+            console.log(`📐 Bleed enabled: ${bleedMm}mm`);
+          } else {
+            configureBleed(store, 0, false);
+          }
+        } catch (bleedError) {
+          console.warn('Bleed configuration failed, continuing:', bleedError);
         }
         storeRef.current = store;
         console.log('✅ Polotno store created');

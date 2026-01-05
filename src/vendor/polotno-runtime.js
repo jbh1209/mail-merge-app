@@ -104,33 +104,40 @@ export function toggleBleedVisibility(store, show) {
 }
 
 /**
- * Export the store as a PDF with print features (bleed, crop marks).
+ * Export the store as a PDF blob WITHOUT triggering browser download.
+ * Uses toPDFDataURL() which returns base64, then converts to Blob.
+ * 
  * @param {object} store - Polotno store instance
  * @param {object} options - Export options
  * @param {boolean} options.includeBleed - Include bleed area in export
  * @param {number} options.cropMarkSize - Size of crop marks in pixels (0 = no marks)
  * @param {number} options.pixelRatio - Quality multiplier (1-3)
- * @param {string} options.fileName - Output filename
- * @returns {Promise<Blob>} PDF blob
+ * @returns {Promise<Blob>} PDF blob (no download triggered)
  */
 export async function exportToPdf(store, options = {}) {
   const {
     includeBleed = true,
     cropMarkSize = 0,
     pixelRatio = 2,
-    fileName = 'output.pdf',
   } = options;
 
-  // Polotno's saveAsPDF returns a blob
-  const blob = await store.saveAsPDF({
+  // Use toPDFDataURL instead of saveAsPDF to avoid triggering browser download
+  const dataUrl = await store.toPDFDataURL({
     includeBleed,
     cropMarkSize,
     pixelRatio,
-    fileName,
     dpi: 300,
   });
 
-  return blob;
+  // Convert base64 data URL to Blob
+  const base64 = dataUrl.split(',')[1];
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  
+  return new Blob([bytes], { type: 'application/pdf' });
 }
 
 /**

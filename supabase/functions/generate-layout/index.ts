@@ -59,6 +59,7 @@ serve(async (req) => {
           fieldNames, 
           sampleData, 
           templateSize,
+          templateType,  // Pass project type for type-specific layout decisions
           labelAnalysis
         }
       }

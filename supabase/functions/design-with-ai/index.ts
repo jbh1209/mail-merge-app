@@ -59,7 +59,7 @@ serve(async (req) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    const { fieldNames, sampleData, templateSize, labelAnalysis } = await req.json();
+    const { fieldNames, sampleData, templateSize, templateType, labelAnalysis } = await req.json();
 
     if (!fieldNames || !Array.isArray(fieldNames) || fieldNames.length === 0) {
       throw new Error('Field names are required');
@@ -72,11 +72,20 @@ serve(async (req) => {
     const aspectRatio = templateSize.width / templateSize.height;
     const isWideLabel = aspectRatio > 2;
     const isTallLabel = aspectRatio < 0.6;
+    
+    // Project type affects layout strategy
+    const projectType = templateType || 'label';
+    const isBadge = projectType === 'badge';
+    const isNameTag = isBadge || projectType === 'card';  // Badges and cards need separate fields
+    const isAddressLabel = projectType === 'label' && labelAnalysis?.isStandardAddress;
 
     console.log('🎨 Generating design strategy for:', {
       fields: fieldNames.length,
       template: `${templateSize.width}mm × ${templateSize.height}mm`,
       aspectRatio: aspectRatio.toFixed(2),
+      projectType,
+      isBadge,
+      isNameTag,
       layoutMode: labelAnalysis?.layoutMode,
       isStandardAddress: labelAnalysis?.isStandardAddress
     });
@@ -122,7 +131,22 @@ CRITICAL: You are making REAL creative decisions. Choose values that make sense 
 
 Your layoutSpec DIRECTLY controls the final layout - choose wisely!`;
 
-    const userPrompt = `Design the optimal layout for this label:
+    // Build type-specific instructions
+    const typeSpecificInstructions = isBadge || isNameTag 
+      ? `⚠️ PROJECT TYPE: ${projectType.toUpperCase()} - IMPORTANT RULES:
+   - useCombinedTextBlock: FALSE (REQUIRED) - Each field (Name, Title, Company) MUST be a separate text element
+   - This allows different styling per field (larger name, smaller title)
+   - Stack fields vertically with appropriate hierarchy
+   - Typically center-aligned for badges/name tags`
+      : isAddressLabel
+      ? `ℹ️ PROJECT TYPE: Address Label
+   - useCombinedTextBlock: TRUE (recommended) - Combine address lines into one block
+   - Left-aligned typically works best for addresses`
+      : '';
+
+    const userPrompt = `Design the optimal layout for this ${projectType}:
+
+${typeSpecificInstructions}
 
 LABEL SIZE: ${templateSize.width}mm × ${templateSize.height}mm (aspect ratio: ${aspectRatio.toFixed(2)})
 ${isWideLabel ? '⚠️ This is a WIDE label - text should fill more horizontal space' : ''}
@@ -137,16 +161,16 @@ ${imageFields.length > 0 ? imageFields.map(f => `• "${f.fieldName}" (aspect: $
 DECIDE THE BEST LAYOUT:
 
 1. layoutType: Choose based on content
-   - "text_only_combined": ALL text fields in ONE combined block (best for address labels, 3+ text fields)
-   - "text_only_stacked": Separate text fields stacked vertically
+   - "text_only_combined": ALL text fields in ONE combined block (best for address labels)
+   - "text_only_stacked": Separate text fields stacked vertically (best for badges, name tags, cards)
    - "split_text_left_image_right": Text on left, image on right
    - "split_image_left_text_right": Image on left, text on right
-   - "hero_image_top": Large image at top, text below
+   - "hero_image_top": Large image at top, text below (best for badges with photos)
 
 2. useCombinedTextBlock: true/false
    - TRUE = All text fields go in ONE text element with newlines (like an address block)
-   - FALSE = Each field gets its own text element
-   - Recommend TRUE for 3+ text fields to create a cohesive professional look
+   - FALSE = Each field gets its own text element (required for badges, name tags)
+   - For badges/name tags: ALWAYS use FALSE so each field can be styled differently
 
 3. textArea percentages: YOU DECIDE based on content
    - xPercent, yPercent: margins (typically 0.03-0.08)
@@ -155,18 +179,19 @@ DECIDE THE BEST LAYOUT:
    
 4. imageArea (if has images): YOU DECIDE the best size and position
    - Consider the image aspect ratio
-   - Make images prominent but don't overwhelm text
+   - For badges with photos: hero_image_top with ~40% image height
 
 5. typography: Decide font emphasis
    - baseFontScale: "fill" (scale to fill space), "large" (prominent), "medium", "small"
    - primaryFieldIndex: which text field should be most prominent (0-based index)
+   - alignment: "center" for badges/name tags, "left" for address labels
 
 OUTPUT ONLY THIS JSON (no markdown, no explanation):
 {
   "strategy": "descriptive_strategy_name",
   "layoutSpec": {
     "layoutType": "text_only_combined|text_only_stacked|split_text_left_image_right|split_image_left_text_right|hero_image_top",
-    "useCombinedTextBlock": true,
+    "useCombinedTextBlock": ${isBadge || isNameTag ? 'false' : 'true'},
     "textArea": {
       "xPercent": 0.04,
       "yPercent": 0.04,
@@ -177,13 +202,14 @@ OUTPUT ONLY THIS JSON (no markdown, no explanation):
     "typography": {
       "baseFontScale": "fill",
       "primaryFieldIndex": 0,
-      "alignment": "left|center"
+      "alignment": "${isBadge || isNameTag ? 'center' : 'left'}"
     }
   }
 }
 
 Make smart decisions! For example:
-- 4 text fields on 200x75mm wide label → useCombinedTextBlock: true, widthPercent: 0.92, baseFontScale: "fill"
+- Badge with Name, Title, Company + Photo → hero_image_top, useCombinedTextBlock: false, center aligned
+- Address label with 4 fields → text_only_combined, useCombinedTextBlock: true, left aligned
 - 2 text fields + 1 photo → split layout with ~60% text, ~35% image
 - Single product name → text_only_stacked with baseFontScale: "fill"`;
 

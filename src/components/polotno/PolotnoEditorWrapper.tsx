@@ -402,6 +402,19 @@ function applyAILayout(
   const hasImages = imageFields.length > 0 && layoutSpec.imageArea;
   const useCombined = layoutSpec.useCombinedTextBlock ?? textFields.length >= 3;
   const alignment = layoutSpec.typography?.alignment || 'left';
+  const baseFontScale = (layoutSpec.typography?.baseFontScale || 'fill') as string;
+  
+  // Font scale mapping - more conservative for badges/multi-field layouts
+  const fontScaleLimits: Record<string, { maxPt: number; multiplier: number }> = {
+    'fill': { maxPt: 60, multiplier: 1.0 },      // Full scale-to-fill
+    'large': { maxPt: 48, multiplier: 0.85 },    // Prominent but restrained
+    'medium': { maxPt: 36, multiplier: 0.70 },   // Balanced
+    'restrained': { maxPt: 28, multiplier: 0.55 }, // Conservative for badges
+    'small': { maxPt: 22, multiplier: 0.45 },    // Compact for many fields
+  };
+  
+  const scaleConfig = fontScaleLimits[baseFontScale] || fontScaleLimits['medium'];
+  console.log(`🔤 Font scale: ${baseFontScale} → max ${scaleConfig.maxPt}pt, multiplier ${scaleConfig.multiplier}`);
   
   // Calculate text area bounds from layoutSpec
   const textAreaX = widthMm * layoutSpec.textArea.xPercent;
@@ -417,9 +430,10 @@ function applyAILayout(
       // COMBINED TEXT BLOCK: All fields in one text element with newlines
       const combinedText = textFields.map(f => `{{${f}}}`).join('\n');
       
-      // Calculate font size using REAL measurement
+      // Calculate font size using REAL measurement, capped by scale config
       const sampleText = textFields.map(f => sampleData[f] || f).join('\n');
-      const fontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 'Roboto', 60, 14);
+      const rawFontSize = calculateFillFontSize(sampleText, textAreaWidth, textAreaHeight, 'Roboto', scaleConfig.maxPt, 14);
+      const fontSize = Math.min(rawFontSize * scaleConfig.multiplier, scaleConfig.maxPt);
       
       page.addElement({
         type: 'text',
@@ -445,15 +459,23 @@ function applyAILayout(
     } else {
       // STACKED LAYOUT: Each field gets its own element
       const fieldCount = textFields.length;
-      const gapMm = Math.min(2, textAreaHeight * 0.05);
+      // Increase gaps for better visual separation when restrained
+      const isRestrained = baseFontScale === 'restrained' || baseFontScale === 'small';
+      const gapMm = isRestrained 
+        ? Math.min(4, textAreaHeight * 0.08)
+        : Math.min(2, textAreaHeight * 0.05);
       const fieldHeight = (textAreaHeight - (fieldCount - 1) * gapMm) / fieldCount;
+      
+      // For stacked layout, use even more conservative max based on field count
+      const stackedMaxPt = Math.min(scaleConfig.maxPt, 48);
       
       textFields.forEach((field, index) => {
         const fieldY = textAreaY + index * (fieldHeight + gapMm);
         const sampleText = sampleData[field] || field;
         
-        // Calculate font size using REAL measurement
-        const fontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 'Roboto', 48, 14);
+        // Calculate font size using REAL measurement with scale limits
+        const rawFontSize = calculateFillFontSize(sampleText, textAreaWidth, fieldHeight, 'Roboto', stackedMaxPt, 12);
+        const fontSize = Math.min(rawFontSize * scaleConfig.multiplier, stackedMaxPt);
         
         page.addElement({
           type: 'text',
@@ -473,7 +495,7 @@ function applyAILayout(
           },
         });
         
-        console.log(`✅ Stacked: ${field} ${fontSize.toFixed(1)}pt in h=${fieldHeight.toFixed(1)}mm`);
+        console.log(`✅ Stacked: ${field} ${fontSize.toFixed(1)}pt (raw: ${rawFontSize.toFixed(1)}pt) in h=${fieldHeight.toFixed(1)}mm`);
       });
     }
   }

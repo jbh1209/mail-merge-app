@@ -137,12 +137,18 @@ Your layoutSpec DIRECTLY controls the final layout - choose wisely!`;
    - useCombinedTextBlock: FALSE (REQUIRED) - Each field (Name, Title, Company) MUST be a separate text element
    - This allows different styling per field (larger name, smaller title)
    - Stack fields vertically with appropriate hierarchy
-   - Typically center-aligned for badges/name tags`
+   - Typically center-aligned for badges/name tags
+   - CRITICAL: Use "restrained" or "medium" baseFontScale for badges with multiple fields to prevent overlapping
+   - Leave enough vertical spacing between fields (don't fill all vertical space)`
       : isAddressLabel
       ? `ℹ️ PROJECT TYPE: Address Label
    - useCombinedTextBlock: TRUE (recommended) - Combine address lines into one block
    - Left-aligned typically works best for addresses`
       : '';
+
+    // Calculate max recommended font scale based on field count
+    const fieldCount = textFields.length + imageFields.length;
+    const recommendedFontScale = fieldCount >= 4 ? 'small' : fieldCount >= 3 ? 'restrained' : fieldCount >= 2 ? 'medium' : 'fill';
 
     const userPrompt = `Design the optimal layout for this ${projectType}:
 
@@ -182,9 +188,15 @@ DECIDE THE BEST LAYOUT:
    - For badges with photos: hero_image_top with ~40% image height
 
 5. typography: Decide font emphasis
-   - baseFontScale: "fill" (scale to fill space), "large" (prominent), "medium", "small"
+   - baseFontScale: 
+     * "fill" - Scale to fill space (only for 1-2 fields with no image, NOT for badges)
+     * "large" - Prominent but restrained 
+     * "medium" - Balanced, good default for most multi-field layouts
+     * "restrained" - Conservative sizing, good for 3-4 fields (RECOMMENDED for badges: "${recommendedFontScale}")
+     * "small" - Compact, for many fields or long text
    - primaryFieldIndex: which text field should be most prominent (0-based index)
    - alignment: "center" for badges/name tags, "left" for address labels
+   - IMPORTANT: For badges/name tags with 3+ fields, ALWAYS use "restrained" or "small" to prevent overlapping text
 
 OUTPUT ONLY THIS JSON (no markdown, no explanation):
 {
@@ -200,7 +212,7 @@ OUTPUT ONLY THIS JSON (no markdown, no explanation):
     },
     "imageArea": null,
     "typography": {
-      "baseFontScale": "fill",
+      "baseFontScale": "${isBadge || isNameTag ? recommendedFontScale : 'fill'}",
       "primaryFieldIndex": 0,
       "alignment": "${isBadge || isNameTag ? 'center' : 'left'}"
     }
@@ -208,9 +220,9 @@ OUTPUT ONLY THIS JSON (no markdown, no explanation):
 }
 
 Make smart decisions! For example:
-- Badge with Name, Title, Company + Photo → hero_image_top, useCombinedTextBlock: false, center aligned
-- Address label with 4 fields → text_only_combined, useCombinedTextBlock: true, left aligned
-- 2 text fields + 1 photo → split layout with ~60% text, ~35% image
+- Badge with Name, Title, Company + Photo → hero_image_top, useCombinedTextBlock: false, baseFontScale: "restrained", center aligned
+- Address label with 4 fields → text_only_combined, useCombinedTextBlock: true, baseFontScale: "fill", left aligned
+- 2 text fields + 1 photo → split layout with ~60% text, ~35% image, baseFontScale: "medium"
 - Single product name → text_only_stacked with baseFontScale: "fill"`;
 
     // Call Lovable AI

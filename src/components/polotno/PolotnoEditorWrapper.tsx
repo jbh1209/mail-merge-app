@@ -1219,6 +1219,15 @@ export function PolotnoEditorWrapper({
         
         if (generatedScene) {
           baseSceneRef.current = generatedScene;
+          
+          // CRITICAL: Auto-save the newly generated layout to database immediately
+          // This ensures re-opening the editor loads the saved scene instead of regenerating
+          if (onSave) {
+            console.log('💾 Persisting AI-generated layout to database...');
+            onSave(generatedScene);
+          }
+          
+          // Update lastSavedSceneRef AFTER triggering save
           lastSavedSceneRef.current = generatedScene;
           
           // Prefetch images if we have project images

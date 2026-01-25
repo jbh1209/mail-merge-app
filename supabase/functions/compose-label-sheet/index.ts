@@ -531,6 +531,20 @@ async function createLabelSheet(
   const gapX = mmToPoints(layout.gapXMm);
   const gapY = mmToPoints(layout.gapYMm);
   
+  // Validate layout fits on sheet - critical for millimeter-accurate positioning
+  const totalWidth = marginLeft + layout.columns * labelWidth + (layout.columns - 1) * gapX;
+  const totalHeight = marginTop + layout.rows * labelHeight + (layout.rows - 1) * gapY;
+  
+  console.log(`📐 Layout validation: ${layout.columns}×${layout.rows} labels, label=${layout.labelWidthMm}×${layout.labelHeightMm}mm, gap=${layout.gapXMm}×${layout.gapYMm}mm`);
+  console.log(`📐 Content size: ${(totalWidth / 2.83465).toFixed(1)}×${(totalHeight / 2.83465).toFixed(1)}mm on ${layout.sheetWidthMm}×${layout.sheetHeightMm}mm sheet`);
+  
+  if (totalWidth > sheetWidth) {
+    console.error(`⚠️ Layout overflow X! Content ${(totalWidth / 2.83465).toFixed(1)}mm exceeds sheet width ${layout.sheetWidthMm}mm`);
+  }
+  if (totalHeight > sheetHeight) {
+    console.error(`⚠️ Layout overflow Y! Content ${(totalHeight / 2.83465).toFixed(1)}mm exceeds sheet height ${layout.sheetHeightMm}mm`);
+  }
+  
   const labelsPerSheet = layout.columns * layout.rows;
   let currentPage: ReturnType<typeof outputPdf.addPage> | null = null;
   let labelIndex = 0;

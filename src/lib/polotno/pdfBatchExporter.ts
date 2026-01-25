@@ -376,8 +376,9 @@ export async function getLayoutFromPartNumber(
     rows: data.rows,
     marginTopMm: data.margin_top_mm,
     marginLeftMm: data.margin_left_mm,
-    // Use spacing values (correct) over gap values (some have negative/incorrect values)
-    gapXMm: data.spacing_x_mm ?? data.gap_x_mm ?? 0,
-    gapYMm: data.spacing_y_mm ?? data.gap_y_mm ?? 0,
+    // gap_x_mm and gap_y_mm are computed columns: spacing - label_size
+    // Use gap values directly (already computed by database)
+    gapXMm: data.gap_x_mm ?? 0,
+    gapYMm: data.gap_y_mm ?? 0,
   };
 }

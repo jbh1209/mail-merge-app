@@ -319,13 +319,17 @@ export default function TemplateEditor() {
     },
   });
 
-  // Handle save from CE.SDK callback
+  // Ref to hold save mutation for stable callback reference
+  const saveMutationRef = useRef(saveMutation);
+  useEffect(() => { saveMutationRef.current = saveMutation; }, [saveMutation]);
+
+  // Handle save from CE.SDK callback - stable reference via ref pattern
   const handleSave = useCallback((sceneString: string) => {
     setIsSaving(true);
-    saveMutation.mutate(sceneString, {
+    saveMutationRef.current.mutate(sceneString, {
       onSettled: () => setIsSaving(false),
     });
-  }, [saveMutation]);
+  }, []);
 
   // Manual save button click - triggers save via handle
   const handleManualSave = useCallback(async () => {

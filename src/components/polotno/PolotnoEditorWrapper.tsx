@@ -763,9 +763,15 @@ export function PolotnoEditorWrapper({
   const baseSceneRef = useRef<string>('');
   const handleRef = useRef<PolotnoEditorHandle | null>(null);
   
-  // Ref to hold onSave callback for stable reference (prevents bootstrap re-runs)
+  // Refs to hold callbacks/arrays for stable reference (prevents bootstrap re-runs)
   const onSaveRef = useRef(onSave);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+  
+  // These refs prevent the bootstrap effect from being cancelled when data loads async
+  const availableFieldsRef = useRef(availableFields);
+  const projectImagesRef = useRef(projectImages);
+  useEffect(() => { availableFieldsRef.current = availableFields; }, [availableFields]);
+  useEffect(() => { projectImagesRef.current = projectImages; }, [projectImages]);
 
   // ============================================================================
   // Regenerate Layout Function (for Phase 5)
@@ -1077,7 +1083,7 @@ export function PolotnoEditorWrapper({
             const merged = mergeLayoutToBase(currentScene, baseScene);
             return JSON.stringify(merged);
           },
-          regenerateLayout,
+          regenerateLayout: () => regenerateLayout(),
           store,
         };
 
@@ -1121,7 +1127,7 @@ export function PolotnoEditorWrapper({
       if (changeInterval) clearInterval(changeInterval);
       // Don't unmount root here - we want it to persist
     };
-  }, [mountEl, labelWidth, labelHeight, bleedMm, onSceneChange, onReady, retryCount, availableFields, projectImages, regenerateLayout]);
+  }, [mountEl, labelWidth, labelHeight, bleedMm, onSceneChange, onReady, retryCount]);
 
   // Cleanup root on component unmount
   useEffect(() => {

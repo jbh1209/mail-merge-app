@@ -426,8 +426,14 @@ export default function TemplateEditor() {
     setHasUnsavedChanges(hasChanges);
   }, []);
 
-  // Store editor handle when ready
+  // Store editor handle when ready (CE.SDK)
   const handleEditorReady = useCallback((handle: CesdkEditorHandle) => {
+    editorHandleRef.current = handle;
+    setIsEditorReady(true);
+  }, []);
+
+  // Store editor handle when ready (Polotno) - stable reference to prevent bootstrap re-runs
+  const handlePolotnoReady = useCallback((handle: PolotnoEditorHandle) => {
     editorHandleRef.current = handle;
     setIsEditorReady(true);
   }, []);
@@ -707,10 +713,7 @@ export default function TemplateEditor() {
             initialScene={initialScene}
             onSave={handleSave}
             onSceneChange={handleSceneChange}
-            onReady={(handle) => {
-              editorHandleRef.current = handle;
-              setIsEditorReady(true);
-            }}
+            onReady={handlePolotnoReady}
             onRecordNavigationChange={setRecordNavState}
             labelWidth={
               !isLabelProject && printSettings.enablePrintMarks

@@ -349,7 +349,9 @@ export async function getLayoutFromPartNumber(
     .from('label_templates')
     .select('*')
     .eq('part_number', partNumber)
-    .single();
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   if (error || !data) {
     console.warn(`No layout found for part number: ${partNumber}`);

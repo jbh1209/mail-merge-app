@@ -99,7 +99,11 @@ export function PolotnoPdfGenerator({
       // Get layout from Avery part number if this is a label project
       let layout = null;
       if (!isFullPage && templateConfig.averyPartNumber) {
+        console.log(`[PDFGen] Looking up layout for part number: ${templateConfig.averyPartNumber}`);
         layout = await getLayoutFromPartNumber(templateConfig.averyPartNumber);
+        console.log(`[PDFGen] Layout result:`, layout 
+          ? `${layout.columns}×${layout.rows} (${layout.labelsPerSheet} per sheet)` 
+          : 'null (will use full page mode)');
       }
 
       // Convert print settings to PrintConfig format

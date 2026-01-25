@@ -765,7 +765,11 @@ export function PolotnoEditorWrapper({
   
   // Refs to hold callbacks/arrays for stable reference (prevents bootstrap re-runs)
   const onSaveRef = useRef(onSave);
+  const onReadyRef = useRef(onReady);
+  const onSceneChangeRef = useRef(onSceneChange);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+  useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
+  useEffect(() => { onSceneChangeRef.current = onSceneChange; }, [onSceneChange]);
   
   // These refs prevent effects from being cancelled/re-run when data loads async
   const availableFieldsRef = useRef(availableFields);
@@ -1096,7 +1100,7 @@ export function PolotnoEditorWrapper({
         setBootstrapStage('ready');
         setError(null);
         
-        onReady?.(handle);
+        onReadyRef.current?.(handle);
         console.log('✅ Bootstrap complete - editor ready');
 
         // Track changes by comparing merged layout against last saved
@@ -1111,7 +1115,7 @@ export function PolotnoEditorWrapper({
           const merged = mergeLayoutToBase(currentScene, baseScene);
           const mergedJson = JSON.stringify(merged);
           
-          onSceneChange?.(mergedJson !== lastSavedSceneRef.current);
+          onSceneChangeRef.current?.(mergedJson !== lastSavedSceneRef.current);
         }, 1000);
         
       } catch (e) {
@@ -1128,11 +1132,12 @@ export function PolotnoEditorWrapper({
     bootstrap();
 
     return () => {
+      console.log('🧹 Bootstrap cleanup - cancelled flag set');
       cancelled = true;
       if (changeInterval) clearInterval(changeInterval);
       // Don't unmount root here - we want it to persist
     };
-  }, [mountEl, labelWidth, labelHeight, bleedMm, onSceneChange, onReady, retryCount]);
+  }, [mountEl, labelWidth, labelHeight, bleedMm, retryCount]);
 
   // Cleanup root on component unmount
   useEffect(() => {

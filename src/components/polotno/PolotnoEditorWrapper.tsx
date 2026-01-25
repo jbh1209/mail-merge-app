@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState, useCallback, createElement } from 'react';
+import { useEffect, useRef, useState, useCallback, createElement, useMemo } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -762,6 +762,10 @@ export function PolotnoEditorWrapper({
   // Base template scene (without VDP resolution) - used for preview switching
   const baseSceneRef = useRef<string>('');
   const handleRef = useRef<PolotnoEditorHandle | null>(null);
+  
+  // Ref to hold onSave callback for stable reference (prevents bootstrap re-runs)
+  const onSaveRef = useRef(onSave);
+  useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
 
   // ============================================================================
   // Regenerate Layout Function (for Phase 5)
@@ -1013,7 +1017,7 @@ export function PolotnoEditorWrapper({
             baseSceneRef.current = mergedJson;
             lastSavedSceneRef.current = mergedJson;
             
-            onSave?.(mergedJson);
+            onSaveRef.current?.(mergedJson);
             return mergedJson;
           },
           exportPdf: async (options?: PrintExportOptions) => {
@@ -1117,7 +1121,7 @@ export function PolotnoEditorWrapper({
       if (changeInterval) clearInterval(changeInterval);
       // Don't unmount root here - we want it to persist
     };
-  }, [mountEl, labelWidth, labelHeight, bleedMm, onSave, onSceneChange, onReady, retryCount, availableFields, projectImages, regenerateLayout]);
+  }, [mountEl, labelWidth, labelHeight, bleedMm, onSceneChange, onReady, retryCount, availableFields, projectImages, regenerateLayout]);
 
   // Cleanup root on component unmount
   useEffect(() => {
@@ -1222,9 +1226,9 @@ export function PolotnoEditorWrapper({
           
           // CRITICAL: Auto-save the newly generated layout to database immediately
           // This ensures re-opening the editor loads the saved scene instead of regenerating
-          if (onSave) {
+          if (onSaveRef.current) {
             console.log('💾 Persisting AI-generated layout to database...');
-            onSave(generatedScene);
+            onSaveRef.current(generatedScene);
           }
           
           // Update lastSavedSceneRef AFTER triggering save

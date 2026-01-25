@@ -174,6 +174,18 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
       dialogContentRef.current.scrollTop = 0;
     }
   }, [wizardState.step]);
+
+  // Navigate to editor when reaching step 6.5 (must be in useEffect, not during render)
+  useEffect(() => {
+    if (wizardState.step === 6.5 && wizardState.templateId && wizardState.projectId) {
+      // Capture values before state reset
+      const projectId = wizardState.projectId;
+      const templateId = wizardState.templateId;
+      // Close wizard and navigate (now safe - in useEffect, not during render)
+      handleClose();
+      navigate(`/projects/${projectId}/edit/${templateId}`);
+    }
+  }, [wizardState.step, wizardState.templateId, wizardState.projectId]);
   
   const handleNext = () => setWizardState(prev => ({ ...prev, step: prev.step + 1 }));
   const handleBack = () => setWizardState(prev => ({ ...prev, step: prev.step - 1 }));
@@ -637,33 +649,31 @@ export default function ProjectCreationWizard({ open, onOpenChange, userId, work
           </div>
         )}
 
-        {/* Step 6.5: Navigate to CE.SDK Editor */}
-        {wizardState.step === 6.5 && (() => {
-          // Navigate to the full-page CE.SDK editor
-          if (wizardState.templateId && wizardState.projectId) {
-            // Close wizard and navigate to editor
-            handleClose();
-            navigate(`/projects/${wizardState.projectId}/edit/${wizardState.templateId}`);
-            return null;
-          }
-          
-          // Fallback if missing data
-          return (
-            <div className="text-center py-8">
-              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">
-                Missing template data. Please go back and select a template.
-              </p>
-              <Button 
-                variant="outline" 
-                onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))}
-                className="mt-4"
-              >
-                Go Back
-              </Button>
-            </div>
-          );
-        })()}
+        {/* Step 6.5: Show loading or fallback (navigation handled by useEffect) */}
+        {wizardState.step === 6.5 && (
+          <>
+            {wizardState.templateId && wizardState.projectId ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+                <p className="text-muted-foreground mt-4">Launching editor...</p>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">
+                  Missing template data. Please go back and select a template.
+                </p>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setWizardState(prev => ({ ...prev, step: 5 }))}
+                  className="mt-4"
+                >
+                  Go Back
+                </Button>
+              </div>
+            )}
+          </>
+        )}
 
         {wizardState.step === 7 && (
           <div className="space-y-6 py-6 sm:py-8 px-4">

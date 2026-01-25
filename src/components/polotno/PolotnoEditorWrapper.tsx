@@ -767,11 +767,16 @@ export function PolotnoEditorWrapper({
   const onSaveRef = useRef(onSave);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
   
-  // These refs prevent the bootstrap effect from being cancelled when data loads async
+  // These refs prevent effects from being cancelled/re-run when data loads async
   const availableFieldsRef = useRef(availableFields);
   const projectImagesRef = useRef(projectImages);
+  const allSampleDataRef = useRef(allSampleData);
   useEffect(() => { availableFieldsRef.current = availableFields; }, [availableFields]);
   useEffect(() => { projectImagesRef.current = projectImages; }, [projectImages]);
+  useEffect(() => { allSampleDataRef.current = allSampleData; }, [allSampleData]);
+  
+  // Track if initial VDP resolution has happened (prevents re-running when data loads async)
+  const initialVdpAppliedRef = useRef(false);
 
   // ============================================================================
   // Regenerate Layout Function (for Phase 5)
@@ -1178,6 +1183,7 @@ export function PolotnoEditorWrapper({
             useCachedImages: true,
           });
           store.loadJSON(resolved);
+          initialVdpAppliedRef.current = true;
           console.log('✅ Loaded scene with VDP resolution for first record');
         } else {
           loadScene(store, initialScene);
@@ -1273,6 +1279,7 @@ export function PolotnoEditorWrapper({
             console.log('📄 Resolved scene elements:', resolved.pages?.[0]?.children?.length);
             
             await store.loadJSON(resolved);
+            initialVdpAppliedRef.current = true;
             console.log('✅ AI layout applied and VDP resolved for first record');
           } catch (vdpError) {
             console.error('❌ VDP resolution error:', vdpError);
@@ -1309,39 +1316,53 @@ export function PolotnoEditorWrapper({
   // Track previous record index to detect actual changes
   const prevRecordIndexRef = useRef(currentRecordIndex);
 
-  // Apply VDP resolution when record index changes
-  // CRITICAL: Merge layout changes BEFORE switching to new record
+  // Apply VDP resolution ONLY when record index changes (not when data loads async)
+  // CRITICAL: Merge layout changes BEFORE switching to new record to preserve user edits
   useEffect(() => {
-    if (!storeRef.current || !baseSceneRef.current || allSampleData.length === 0) return;
+    if (!storeRef.current || !baseSceneRef.current) return;
     
-    const currentRecord = allSampleData[currentRecordIndex];
+    // Use refs for data to avoid re-running when arrays load async
+    const sampleData = allSampleDataRef.current;
+    const images = projectImagesRef.current;
+    
+    if (sampleData.length === 0) return;
+    
+    const currentRecord = sampleData[currentRecordIndex];
     if (!currentRecord) return;
+    
+    // Skip if this is just data loading (not an actual record change)
+    // The initial VDP resolution happens in the bootstrap phase
+    if (initialVdpAppliedRef.current && prevRecordIndexRef.current === currentRecordIndex) {
+      console.log('⏭️ Skipping VDP re-resolution (data changed, not record index)');
+      return;
+    }
 
     const applyVdpWithLayoutMerge = async () => {
       const store = storeRef.current;
       
       // PHASE 4 FIX: Before loading a new record, merge any layout changes from current view
-      // This ensures user edits (including z-order) are captured in the base template before switching
-      if (prevRecordIndexRef.current !== currentRecordIndex) {
+      // This ensures user edits (including z-order, new elements) are captured before switching
+      if (prevRecordIndexRef.current !== currentRecordIndex && initialVdpAppliedRef.current) {
         try {
           const currentSceneJson = saveScene(store);
           const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
           const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
           
-          // Merge layout changes back to base template (preserves z-order!)
+          // Merge layout changes back to base template (preserves z-order and new elements!)
           const mergedTemplate = mergeLayoutToBase(currentScene, baseScene);
           baseSceneRef.current = JSON.stringify(mergedTemplate);
           
-          console.log('📐 Layout merged to base template before record switch (z-order preserved)');
+          console.log('📐 Layout merged to base template before record switch (z-order + new elements preserved)');
         } catch (mergeErr) {
           console.warn('Layout merge error:', mergeErr);
         }
-        prevRecordIndexRef.current = currentRecordIndex;
       }
+      
+      prevRecordIndexRef.current = currentRecordIndex;
 
       // AWAIT cache warming for adjacent records (fixes caching timing)
-      if (projectImages.length > 0) {
-        await warmCacheForAdjacentRecords(currentRecordIndex, allSampleData, projectImages);
+      if (images.length > 0) {
+        await warmCacheForAdjacentRecords(currentRecordIndex, sampleData, images);
       }
 
       try {
@@ -1350,10 +1371,11 @@ export function PolotnoEditorWrapper({
         const resolved = resolveVdpVariables(baseScene, {
           record: currentRecord,
           recordIndex: currentRecordIndex,
-          projectImages,
+          projectImages: images,
           useCachedImages: true,
         });
         store.loadJSON(resolved);
+        initialVdpAppliedRef.current = true;
         console.log(`✅ VDP resolved for record ${currentRecordIndex + 1}:`, Object.keys(currentRecord).slice(0, 3).join(', '));
       } catch (err) {
         console.warn('VDP resolution error:', err);
@@ -1361,7 +1383,7 @@ export function PolotnoEditorWrapper({
     };
     
     applyVdpWithLayoutMerge();
-  }, [currentRecordIndex, allSampleData, projectImages]);
+  }, [currentRecordIndex]); // ONLY depend on record index - use refs for data
 
   useEffect(() => {
     if (onRecordNavigationChange && allSampleData.length > 0) {

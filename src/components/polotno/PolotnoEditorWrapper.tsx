@@ -781,6 +781,11 @@ export function PolotnoEditorWrapper({
   
   // Track if initial VDP resolution has happened (prevents re-running when data loads async)
   const initialVdpAppliedRef = useRef(false);
+  
+  // CRITICAL: Track which initialScene has been loaded to prevent Phase B1 re-runs
+  // This is the "load-once-per-initialScene" guard that prevents re-loading when
+  // parent components re-render and pass new array references for projectImages/allSampleData
+  const loadedInitialSceneRef = useRef<string | null>(null);
 
   // ============================================================================
   // Commit to Base - immediately merge current store state into baseSceneRef
@@ -1204,41 +1209,64 @@ export function PolotnoEditorWrapper({
   // ============================================================================
   // PHASE B1: Load Initial Scene (when we have an existing template)
   // Runs after bootstrap, when initialScene is provided
+  // 
+  // CRITICAL FIX: This effect now uses loadedInitialSceneRef to track which
+  // initialScene has been loaded. This prevents re-running when:
+  // - Parent re-renders and creates new array references for projectImages/allSampleData
+  // - The baseSceneRef changes due to user edits or merge operations
   // ============================================================================
   useEffect(() => {
     const store = storeRef.current;
     if (!store || !initialScene || bootstrapStage !== 'ready') return;
     
-    // Skip if we already loaded this scene
-    if (baseSceneRef.current === initialScene) return;
+    // CRITICAL: Use loadedInitialSceneRef instead of comparing with baseSceneRef
+    // baseSceneRef changes as users edit, but we only want to load initialScene ONCE
+    if (loadedInitialSceneRef.current === initialScene) {
+      console.log('⏭️ Phase B1: Already loaded this initialScene, skipping');
+      return;
+    }
     
-    console.log('📂 Phase B1: Loading existing scene...');
+    console.log('[B1] Running - loading existing scene...');
+    console.log('[B1] Details:', { 
+      bootstrapStage, 
+      hasInitialScene: !!initialScene,
+      previouslyLoaded: loadedInitialSceneRef.current?.substring(0, 30) || 'none'
+    });
     
     const loadWithPrefetch = async () => {
       try {
+        // Mark this initialScene as loaded BEFORE async operations to prevent race conditions
+        loadedInitialSceneRef.current = initialScene;
+        
         baseSceneRef.current = initialScene;
         lastSavedSceneRef.current = initialScene;
         
+        // Use refs for data to avoid stale closures - these get updated when data loads async
+        const images = projectImagesRef.current;
+        const sampleData = allSampleDataRef.current;
+        
         // AWAIT prefetch images before VDP resolution (fixes caching timing)
-        if (projectImages.length > 0 && allSampleData.length > 0) {
+        if (images.length > 0 && sampleData.length > 0) {
           console.log('📥 Prefetching project images for VDP...');
-          await prefetchImagesForRecords(allSampleData, projectImages);
+          await prefetchImagesForRecords(sampleData, images);
           console.log('✅ Image prefetch complete');
         }
         
         // If we have sample data, apply VDP resolution for first record
-        if (allSampleData.length > 0 && allSampleData[0]) {
+        if (sampleData.length > 0 && sampleData[0]) {
           const parsed = JSON.parse(initialScene) as PolotnoScene;
           const resolved = resolveVdpVariables(parsed, {
-            record: allSampleData[0],
+            record: sampleData[0],
             recordIndex: 0,
-            projectImages,
+            projectImages: images,
             useCachedImages: true,
           });
+          console.log('[B1] Calling store.loadJSON with resolved scene - this will overwrite canvas');
           store.loadJSON(resolved);
           initialVdpAppliedRef.current = true;
           console.log('✅ Loaded scene with VDP resolution for first record');
         } else {
+          console.log('[B1] Calling loadScene without VDP - this will overwrite canvas');
           loadScene(store, initialScene);
           console.log('✅ Loaded scene without VDP resolution');
         }
@@ -1247,11 +1275,16 @@ export function PolotnoEditorWrapper({
         layoutGeneratedRef.current = true;
       } catch (err) {
         console.error('❌ Failed to load initial scene:', err);
+        // Reset the loaded flag so we can retry
+        loadedInitialSceneRef.current = null;
       }
     };
     
     loadWithPrefetch();
-  }, [initialScene, allSampleData, bootstrapStage, projectImages]);
+  // CRITICAL: Remove volatile arrays from dependencies!
+  // allSampleData and projectImages can get new references on parent re-renders
+  // We access them via refs inside the effect instead
+  }, [initialScene, bootstrapStage]);
 
   // ============================================================================
   // PHASE B2: Generate AI Layout (for new templates without initialScene)

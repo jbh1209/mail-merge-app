@@ -12,6 +12,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 interface BarcodePanelProps {
   store: any;
   availableFields: string[];
+  /** Called immediately after inserting a barcode/QR to commit to base template */
+  onInserted?: () => void;
 }
 
 const BARCODE_FORMATS = [
@@ -23,7 +25,7 @@ const BARCODE_FORMATS = [
   { value: 'itf14', label: 'ITF-14' },
 ];
 
-export function BarcodePanel({ store, availableFields }: BarcodePanelProps) {
+export function BarcodePanel({ store, availableFields, onInserted }: BarcodePanelProps) {
   const [barcodeType, setBarcodeType] = useState<'barcode' | 'qrcode'>('barcode');
   const [format, setFormat] = useState('code128');
   const [dataSource, setDataSource] = useState<'static' | 'field'>('static');
@@ -61,6 +63,12 @@ export function BarcodePanel({ store, availableFields }: BarcodePanelProps) {
           },
         },
       });
+      
+      // CRITICAL: Immediately commit to base template to prevent loss on record navigation
+      // Small delay to ensure Polotno has processed the addElement
+      setTimeout(() => {
+        onInserted?.();
+      }, 50);
     } catch (error) {
       console.error('Failed to generate barcode:', error);
     }

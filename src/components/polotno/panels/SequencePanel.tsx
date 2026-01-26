@@ -8,9 +8,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface SequencePanelProps {
   store: any;
+  /** Called immediately after inserting a sequence to commit to base template */
+  onInserted?: () => void;
 }
 
-export function SequencePanel({ store }: SequencePanelProps) {
+export function SequencePanel({ store, onInserted }: SequencePanelProps) {
   const [startNumber, setStartNumber] = useState(1);
   const [prefix, setPrefix] = useState('');
   const [suffix, setSuffix] = useState('');
@@ -44,6 +46,12 @@ export function SequencePanel({ store }: SequencePanelProps) {
         },
       },
     });
+    
+    // CRITICAL: Immediately commit to base template to prevent loss on record navigation
+    // Small delay to ensure Polotno has processed the addElement
+    setTimeout(() => {
+      onInserted?.();
+    }, 50);
   };
 
   return (

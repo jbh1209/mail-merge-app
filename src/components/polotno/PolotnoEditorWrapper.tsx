@@ -1460,17 +1460,36 @@ export function PolotnoEditorWrapper({
       }
 
       try {
+        // CRITICAL FIX: Re-capture record data right before resolution to avoid stale closure
+        const freshSampleData = allSampleDataRef.current;
+        const freshRecord = freshSampleData[currentRecordIndex];
+        
+        if (!freshRecord) {
+          console.warn(`❌ No record found at index ${currentRecordIndex}`);
+          return;
+        }
+        
+        // Diagnostic logging to confirm correct record data
+        const recordPreview = freshRecord['Name'] || freshRecord['Full Name'] || freshRecord[Object.keys(freshRecord)[0]];
+        console.log(`🔄 VDP resolving for record ${currentRecordIndex + 1}:`, {
+          recordPreview,
+          totalRecords: freshSampleData.length,
+          baseHasPlaceholders: baseSceneRef.current?.includes('{{'),
+        });
+        
         // Now resolve VDP using the updated base template (with merged layout)
         const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
         const resolved = resolveVdpVariables(baseScene, {
-          record: currentRecord,
+          record: freshRecord,  // Use freshly captured record
           recordIndex: currentRecordIndex,
           projectImages: images,
           useCachedImages: true,
         });
-        store.loadJSON(resolved);
+        
+        // CRITICAL: Await store.loadJSON to ensure canvas updates before effect completes
+        await store.loadJSON(resolved);
         initialVdpAppliedRef.current = true;
-        console.log(`✅ VDP resolved for record ${currentRecordIndex + 1}:`, Object.keys(currentRecord).slice(0, 3).join(', '));
+        console.log(`✅ VDP resolved for record ${currentRecordIndex + 1}:`, Object.keys(freshRecord).slice(0, 3).join(', '));
       } catch (err) {
         console.warn('VDP resolution error:', err);
       }

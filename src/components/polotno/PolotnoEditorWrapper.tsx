@@ -1104,6 +1104,7 @@ export function PolotnoEditorWrapper({
         console.log('✅ Bootstrap complete - editor ready');
 
         // Track changes by comparing merged layout against last saved
+        // AND synchronize baseSceneRef with user edits in real-time
         changeInterval = setInterval(() => {
           if (!store || !baseSceneRef.current) return;
           
@@ -1111,10 +1112,16 @@ export function PolotnoEditorWrapper({
           const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
           const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
           
-          // Merge layout to base and compare with last saved
+          // Merge layout to base (captures user edits + new elements)
           const merged = mergeLayoutToBase(currentScene, baseScene);
           const mergedJson = JSON.stringify(merged);
           
+          // CRITICAL FIX: Update baseSceneRef with merged result in real-time
+          // This ensures user-added elements (QR codes, sequences) are immediately
+          // captured into the base template, preventing loss on store reloads
+          baseSceneRef.current = mergedJson;
+          
+          // Detect changes for save prompt
           onSceneChangeRef.current?.(mergedJson !== lastSavedSceneRef.current);
         }, 1000);
         

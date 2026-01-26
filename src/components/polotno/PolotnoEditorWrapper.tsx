@@ -783,6 +783,40 @@ export function PolotnoEditorWrapper({
   const initialVdpAppliedRef = useRef(false);
 
   // ============================================================================
+  // Commit to Base - immediately merge current store state into baseSceneRef
+  // Used by panels after inserting elements to ensure they're captured
+  // ============================================================================
+  const commitToBase = useCallback((reason: string = 'manual') => {
+    const store = storeRef.current;
+    if (!store || !baseSceneRef.current || !initialVdpAppliedRef.current) {
+      console.log(`⏭️ commitToBase(${reason}) skipped - not ready`);
+      return;
+    }
+    
+    try {
+      const currentSceneJson = saveScene(store);
+      const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
+      const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
+      
+      // Log element counts for debugging
+      const currentElements = currentScene.pages[0]?.children?.length || 0;
+      const baseElements = baseScene.pages[0]?.children?.length || 0;
+      
+      const merged = mergeLayoutToBase(currentScene, baseScene);
+      baseSceneRef.current = JSON.stringify(merged);
+      
+      const mergedElements = merged.pages[0]?.children?.length || 0;
+      console.log(`✅ commitToBase(${reason}): ${baseElements} base + ${currentElements} current → ${mergedElements} merged`);
+    } catch (err) {
+      console.error(`❌ commitToBase(${reason}) error:`, err);
+    }
+  }, []);
+  
+  // Ref for commitToBase to use in bootstrap closure (avoids stale closure)
+  const commitToBaseRef = useRef(commitToBase);
+  useEffect(() => { commitToBaseRef.current = commitToBase; }, [commitToBase]);
+
+  // ============================================================================
   // Regenerate Layout Function (for Phase 5)
   // ============================================================================
   const regenerateLayout = useCallback(async () => {
@@ -943,11 +977,13 @@ export function PolotnoEditorWrapper({
         } = getPolotnoComponents();
 
         // Build custom sections with our VDP panels
+        // CRITICAL: Pass onInserted callback to BarcodePanel and SequencePanel
+        // This ensures newly inserted elements are immediately committed to baseSceneRef
         const customSections = [
           createVdpFieldsSection(VdpFieldsPanel, { store, availableFields, projectImages }),
-          createBarcodesSection(BarcodePanel, { store, availableFields }),
+          createBarcodesSection(BarcodePanel, { store, availableFields, onInserted: () => commitToBaseRef.current?.('barcode-insert') }),
           createProjectImagesSection(ProjectImagesPanel, { store, projectImages }),
-          createSequenceSection(SequencePanel, { store }),
+          createSequenceSection(SequencePanel, { store, onInserted: () => commitToBaseRef.current?.('sequence-insert') }),
         ];
         
         const sections = buildCustomSections(customSections);
@@ -1106,7 +1142,12 @@ export function PolotnoEditorWrapper({
         // Track changes by comparing merged layout against last saved
         // AND synchronize baseSceneRef with user edits in real-time
         changeInterval = setInterval(() => {
-          if (!store || !baseSceneRef.current) return;
+          // CRITICAL: Guard interval - don't run until initial VDP resolution is complete
+          // This prevents the interval from running during the unstable initialization window
+          // where page IDs might not match between store and baseSceneRef
+          if (!store || !baseSceneRef.current || !initialVdpAppliedRef.current) {
+            return;
+          }
           
           const currentSceneJson = saveScene(store);
           const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;

@@ -382,9 +382,22 @@ export function mergeLayoutToBase(
   }
   
   // Process each page in the base template
-  for (const basePage of merged.pages) {
-    const currentPage = currentScene.pages.find(p => p.id === basePage.id);
-    if (!currentPage) continue;
+  for (let pageIndex = 0; pageIndex < merged.pages.length; pageIndex++) {
+    const basePage = merged.pages[pageIndex];
+    
+    // Try ID-based matching first, then fall back to index matching
+    let currentPage = currentScene.pages.find(p => p.id === basePage.id);
+    
+    if (!currentPage && currentScene.pages.length === merged.pages.length) {
+      // Fallback: match by index when page count is same (handles ID regeneration by Polotno)
+      currentPage = currentScene.pages[pageIndex];
+      console.warn(`⚠️ Page ID mismatch - using index fallback for page ${pageIndex} (base: ${basePage.id?.substring(0, 8)}, current: ${currentScene.pages[pageIndex]?.id?.substring(0, 8)})`);
+    }
+    
+    if (!currentPage) {
+      console.error(`❌ Cannot match base page ${basePage.id?.substring(0, 8)} - skipping merge for this page!`);
+      continue;
+    }
     
     // Build lookup maps for both base and current elements
     const baseElementsById = new Map<string, PolotnoElement>();

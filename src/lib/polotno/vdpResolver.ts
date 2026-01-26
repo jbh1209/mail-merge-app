@@ -443,6 +443,7 @@ export function mergeLayoutToBase(
         finalElements.push(baseEl);
       } else {
         // New element added by user - add as-is in its current z-order position
+        console.log(`➕ New element added to base: ${currentEl.type} (id: ${currentEl.id?.substring(0, 8) || 'no-id'})`);
         finalElements.push({ ...currentEl });
       }
     }

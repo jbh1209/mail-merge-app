@@ -1319,7 +1319,8 @@ export function PolotnoEditorWrapper({
   }, [currentRecordIndex]);
 
   // Track previous record index to detect actual changes
-  const prevRecordIndexRef = useRef(currentRecordIndex);
+  // CRITICAL: Initialize to -1, NOT currentRecordIndex, so first record (index 0) triggers proper initialization
+  const prevRecordIndexRef = useRef(-1);
 
   // Apply VDP resolution ONLY when record index changes (not when data loads async)
   // CRITICAL: Merge layout changes BEFORE switching to new record to preserve user edits
@@ -1345,6 +1346,8 @@ export function PolotnoEditorWrapper({
     const applyVdpWithLayoutMerge = async () => {
       const store = storeRef.current;
       
+      console.log(`🔄 VDP Effect: currentRecord=${currentRecordIndex}, prevRecord=${prevRecordIndexRef.current}, initialApplied=${initialVdpAppliedRef.current}`);
+      
       // PHASE 4 FIX: Before loading a new record, merge any layout changes from current view
       // This ensures user edits (including z-order, new elements) are captured before switching
       if (prevRecordIndexRef.current !== currentRecordIndex && initialVdpAppliedRef.current) {
@@ -1353,11 +1356,16 @@ export function PolotnoEditorWrapper({
           const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
           const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
           
+          const elementCountBefore = baseScene.pages[0]?.children?.length || 0;
+          const capturedCount = currentScene.pages[0]?.children?.length || 0;
+          console.log(`📸 Captured ${capturedCount} elements from store before merge`);
+          
           // Merge layout changes back to base template (preserves z-order and new elements!)
           const mergedTemplate = mergeLayoutToBase(currentScene, baseScene);
           baseSceneRef.current = JSON.stringify(mergedTemplate);
           
-          console.log('📐 Layout merged to base template before record switch (z-order + new elements preserved)');
+          const elementCountAfter = mergedTemplate.pages[0]?.children?.length || 0;
+          console.log(`📐 Merge: ${elementCountBefore} base → ${elementCountAfter} merged (${elementCountAfter - elementCountBefore} new elements)`);
         } catch (mergeErr) {
           console.warn('Layout merge error:', mergeErr);
         }

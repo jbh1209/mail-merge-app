@@ -386,21 +386,30 @@ export function mergeLayoutToBase(
     const currentPage = currentScene.pages.find(p => p.id === basePage.id);
     if (!currentPage) continue;
     
-    // Build a map of base elements by ID for quick lookup
+    // Build lookup maps for both base and current elements
     const baseElementsById = new Map<string, PolotnoElement>();
     for (const baseEl of basePage.children) {
       baseElementsById.set(baseEl.id, baseEl);
     }
     
-    // Build final elements list PRESERVING Z-ORDER FROM CURRENT SCENE
-    // This fixes the bug where user-reordered elements (send to back/front) reset on record navigation
-    const finalElements: PolotnoElement[] = [];
-    
+    const currentElementsById = new Map<string, PolotnoElement>();
     for (const currentEl of currentPage.children) {
-      const baseEl = baseElementsById.get(currentEl.id);
+      currentElementsById.set(currentEl.id, currentEl);
+    }
+    
+    // CRITICAL FIX: Start with ALL base elements, then update/add from current
+    // This ensures user-added elements are NEVER dropped when navigating records
+    const finalElements: PolotnoElement[] = [];
+    const processedIds = new Set<string>();
+    
+    console.log(`🔍 Merge: base has ${basePage.children.length} elements, current has ${currentPage.children.length} elements`);
+    
+    // First pass: Update existing base elements with current layout changes
+    for (const baseEl of basePage.children) {
+      const currentEl = currentElementsById.get(baseEl.id);
       
-      if (baseEl) {
-        // Element exists in base - update it with current layout properties
+      if (currentEl) {
+        // Element exists in both - update base with current layout
         for (const prop of LAYOUT_PROPERTIES) {
           if (currentEl[prop] !== undefined) {
             (baseEl as any)[prop] = currentEl[prop];
@@ -415,14 +424,11 @@ export function mergeLayoutToBase(
             }
           }
           
-          // PHASE 4 FIX: Only preserve placeholder text if base has VDP tokens
-          // If base text is static (no {{...}}), allow user edits to persist
+          // Only preserve placeholder text if base has VDP tokens
           const hasPlaceholders = /\{\{[^}]+\}\}/.test(baseEl.text || '');
           if (!hasPlaceholders) {
-            // Static text - allow user's text edits to persist
             baseEl.text = currentEl.text;
           }
-          // If hasPlaceholders, keep baseEl.text (which has {{placeholders}})
         }
         
         // Transfer image styling (but NOT src - keep variable binding)
@@ -434,19 +440,45 @@ export function mergeLayoutToBase(
           }
           
           // Only preserve src if element has VDP variable binding
-          // Static images (user-added) should keep their src
           if (!baseEl.custom?.variable) {
             baseEl.src = currentEl.src;
           }
         }
         
         finalElements.push(baseEl);
+        processedIds.add(baseEl.id);
       } else {
-        // New element added by user - add as-is in its current z-order position
-        console.log(`➕ New element added to base: ${currentEl.type} (id: ${currentEl.id?.substring(0, 8) || 'no-id'})`);
-        finalElements.push({ ...currentEl });
+        // Element in base but NOT in current - PRESERVE IT (critical fix!)
+        // This handles user-added elements that exist in base template
+        console.log(`🔒 Preserving base element not in current: ${baseEl.type} (id: ${baseEl.id?.substring(0, 8) || 'no-id'})`);
+        finalElements.push({ ...baseEl });
+        processedIds.add(baseEl.id);
       }
     }
+    
+    // Second pass: Add NEW elements from current scene (user additions during this session)
+    for (const currentEl of currentPage.children) {
+      if (!processedIds.has(currentEl.id)) {
+        console.log(`➕ New element added to base: ${currentEl.type} (id: ${currentEl.id?.substring(0, 8) || 'no-id'})`);
+        finalElements.push({ ...currentEl });
+        processedIds.add(currentEl.id);
+      }
+    }
+    
+    // Z-order: Use current scene's order for elements that exist in both
+    // This preserves user's "send to back/front" operations
+    const currentIds = currentPage.children.map(el => el.id);
+    finalElements.sort((a, b) => {
+      const aIndex = currentIds.indexOf(a.id);
+      const bIndex = currentIds.indexOf(b.id);
+      
+      if (aIndex === -1 && bIndex === -1) return 0; // Both not in current, keep relative order
+      if (aIndex === -1) return -1; // a not in current, put before current elements
+      if (bIndex === -1) return 1;  // b not in current, put after
+      return aIndex - bIndex; // Both in current, use current order
+    });
+    
+    console.log(`✅ Merge result: ${finalElements.length} elements (preserved ${finalElements.length - currentPage.children.length + processedIds.size} base elements)`);
     
     basePage.children = finalElements;
   }

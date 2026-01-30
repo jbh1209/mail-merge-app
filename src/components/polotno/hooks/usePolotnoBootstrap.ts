@@ -275,12 +275,12 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           () => commitToBase('sequence-insert')
         );
 
-        const sections = buildCustomSections(
+        const sections = buildCustomSections([
           vdpFieldsSection,
           barcodesSection,
           imagesSection,
           sequenceSection
-        );
+        ]);
 
         // Clean up previous root if exists
         if (rootRef.current) {

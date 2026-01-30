@@ -9,6 +9,22 @@ export type {
   PrintExportOptions 
 } from './PolotnoEditorWrapper';
 
+// Extracted hooks for advanced usage
+export {
+  usePolotnoBootstrap,
+  useVdpNavigation,
+  useLayoutGenerator,
+} from './hooks';
+export type {
+  BootstrapStage,
+  UsePolotnoBootstrapOptions,
+  UsePolotnoBootstrapResult,
+  UseVdpNavigationOptions,
+  UseVdpNavigationResult,
+  UseLayoutGeneratorOptions,
+  UseLayoutGeneratorResult,
+} from './hooks';
+
 // Custom panels (React components, no polotno imports)
 export { VdpFieldsPanel } from './panels/VdpFieldsPanel';
 export { BarcodePanel } from './panels/BarcodePanel';

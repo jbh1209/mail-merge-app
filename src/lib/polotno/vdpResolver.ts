@@ -180,16 +180,21 @@ function normalizeFieldName(name: string): string {
 /**
  * Find a matching record key for a token (with fuzzy matching)
  */
+/**
+ * Check if a value is effectively empty (null, undefined, empty string, or literal "null"/"undefined")
+ */
+function isEmptyValue(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v !== 'string') return false;
+  const trimmed = v.trim().toLowerCase();
+  return trimmed === '' || trimmed === 'null' || trimmed === 'undefined';
+}
+
 function findRecordValue(token: string, record: Record<string, string>): string | null {
-  // Helper to check if value is effectively empty
-  const isEmptyValue = (v: unknown): boolean => {
-    return v === null || v === undefined || v === '' || v === 'null' || v === 'undefined';
-  };
-  
   // 1. Direct match
   if (token in record) {
     const value = record[token];
-    // Treat null, undefined, empty, and "null" string as missing → return empty string
+    // Treat null, undefined, empty, and "null"/"undefined" strings as empty → return empty string
     if (isEmptyValue(value)) {
       return '';
     }

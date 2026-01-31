@@ -135,30 +135,44 @@ export function useVdpNavigation(options: UseVdpNavigationOptions): UseVdpNaviga
   }, [initialScene, bootstrapStage, storeRef, baseSceneRef, lastSavedSceneRef, initialVdpAppliedRef, loadedInitialSceneRef, allSampleDataRef, projectImagesRef]);
 
   // VDP Resolution on record navigation
+  // CRITICAL: This effect must run whenever record index changes AND when bootstrap becomes ready
   useEffect(() => {
-    if (!storeRef.current || !baseSceneRef.current) return;
+    const store = storeRef.current;
+    
+    // Guard: Need store and base scene
+    if (!store || !baseSceneRef.current) {
+      console.log('[VDP-Nav] Skipping: no store or base scene');
+      return;
+    }
 
     const sampleData = allSampleDataRef.current || [];
     const images = projectImagesRef.current || [];
 
-    if (sampleData.length === 0) return;
+    if (sampleData.length === 0) {
+      console.log('[VDP-Nav] Skipping: no sample data');
+      return;
+    }
 
     const currentRecord = sampleData[currentRecordIndex];
-    if (!currentRecord) return;
+    if (!currentRecord) {
+      console.log(`[VDP-Nav] Skipping: no record at index ${currentRecordIndex}`);
+      return;
+    }
 
-    // Skip if data changed but not record index
-    if (initialVdpAppliedRef.current && prevRecordIndexRef.current === currentRecordIndex) {
-      console.log('⏭️ Skipping VDP re-resolution (data changed, not record index)');
+    // Only skip if record index truly hasn't changed AND we've already applied VDP
+    const isFirstRun = !initialVdpAppliedRef.current;
+    const indexChanged = prevRecordIndexRef.current !== currentRecordIndex;
+    
+    if (!isFirstRun && !indexChanged) {
+      console.log('[VDP-Nav] Skipping: index unchanged and VDP already applied');
       return;
     }
 
     const applyVdpWithLayoutMerge = async () => {
-      const store = storeRef.current;
+      console.log(`[VDP-Nav] Resolving: index=${currentRecordIndex}, prev=${prevRecordIndexRef.current}, firstRun=${isFirstRun}`);
 
-      console.log(`🔄 VDP Effect: currentRecord=${currentRecordIndex}, prevRecord=${prevRecordIndexRef.current}`);
-
-      // Merge layout changes before switching records
-      if (prevRecordIndexRef.current !== currentRecordIndex && initialVdpAppliedRef.current) {
+      // Merge layout changes before switching records (only if we're switching, not on first load)
+      if (indexChanged && initialVdpAppliedRef.current) {
         try {
           const currentSceneJson = saveScene(store);
           const currentScene = JSON.parse(currentSceneJson) as PolotnoScene;
@@ -166,18 +180,19 @@ export function useVdpNavigation(options: UseVdpNavigationOptions): UseVdpNaviga
 
           const elementCountBefore = baseScene.pages[0]?.children?.length || 0;
           const capturedCount = currentScene.pages[0]?.children?.length || 0;
-          console.log(`📸 Captured ${capturedCount} elements from store before merge`);
+          console.log(`[VDP-Nav] Captured ${capturedCount} elements before merge`);
 
           const mergedTemplate = mergeLayoutToBase(currentScene, baseScene);
           baseSceneRef.current = JSON.stringify(mergedTemplate);
 
           const elementCountAfter = mergedTemplate.pages[0]?.children?.length || 0;
-          console.log(`📐 Merge: ${elementCountBefore} base → ${elementCountAfter} merged`);
+          console.log(`[VDP-Nav] Merged: ${elementCountBefore} base → ${elementCountAfter}`);
         } catch (mergeErr) {
-          console.warn('Layout merge error:', mergeErr);
+          console.warn('[VDP-Nav] Layout merge error:', mergeErr);
         }
       }
 
+      // Update prev index BEFORE async work to prevent double-runs
       prevRecordIndexRef.current = currentRecordIndex;
 
       // Warm cache for adjacent records
@@ -186,41 +201,42 @@ export function useVdpNavigation(options: UseVdpNavigationOptions): UseVdpNaviga
       }
 
       try {
-        // Re-capture record data to avoid stale closure
+        // Re-read record from ref to avoid stale closure
         const freshSampleData = allSampleDataRef.current || [];
         const freshRecord = freshSampleData[currentRecordIndex];
 
         if (!freshRecord) {
-          console.warn(`❌ No record found at index ${currentRecordIndex}`);
+          console.warn(`[VDP-Nav] No record found at index ${currentRecordIndex}`);
           return;
         }
 
-        const recordPreview = freshRecord['Name'] || freshRecord['Full Name'] || freshRecord[Object.keys(freshRecord)[0]];
-        console.log(`🔄 VDP resolving for record ${currentRecordIndex + 1}:`, {
-          recordPreview,
-          totalRecords: freshSampleData.length,
-          baseHasPlaceholders: baseSceneRef.current?.includes('{{'),
-        });
+        // Log the record data for debugging
+        const firstKey = Object.keys(freshRecord)[0] || '';
+        const recordPreview = freshRecord['Name'] || freshRecord['Full Name'] || freshRecord[firstKey] || '(empty)';
+        console.log(`[VDP-Nav] Record ${currentRecordIndex + 1}/${freshSampleData.length}: "${recordPreview}"`);
+        console.log(`[VDP-Nav] Base has placeholders: ${baseSceneRef.current?.includes('{{')}`, 'Record keys:', Object.keys(freshRecord).slice(0, 5));
 
         const baseScene = JSON.parse(baseSceneRef.current) as PolotnoScene;
+        const freshImages = projectImagesRef.current || [];
+        
         const resolved = resolveVdpVariables(baseScene, {
           record: freshRecord,
           recordIndex: currentRecordIndex,
-          projectImages: images,
+          projectImages: freshImages,
           useCachedImages: true,
         });
 
-        // CRITICAL: Await store.loadJSON
+        // CRITICAL: Await store.loadJSON to ensure it completes before returning
         await store.loadJSON(resolved);
         initialVdpAppliedRef.current = true;
-        console.log(`✅ VDP resolved for record ${currentRecordIndex + 1}`);
+        console.log(`[VDP-Nav] ✅ VDP resolved for record ${currentRecordIndex + 1}`);
       } catch (err) {
-        console.warn('VDP resolution error:', err);
+        console.error('[VDP-Nav] Resolution error:', err);
       }
     };
 
     applyVdpWithLayoutMerge();
-  }, [currentRecordIndex, storeRef, baseSceneRef, initialVdpAppliedRef, allSampleDataRef, projectImagesRef]);
+  }, [currentRecordIndex, bootstrapStage, storeRef, baseSceneRef, initialVdpAppliedRef, allSampleDataRef, projectImagesRef]);
 
   // Notify parent of navigation state
   useEffect(() => {

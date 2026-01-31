@@ -1,188 +1,101 @@
 
-# Fix Plan: Critical Regressions in Refactored Polotno Editor
+Goal: stop the Polotno editor from getting stuck on the “Loading editor…” spinner by eliminating the bootstrap cancellation/race condition introduced by the refactor, and align our integration with Polotno’s documented SidePanel/sections contract.
 
-## Problem Summary
+What I can already see (root cause)
+- Your screenshot’s sequence:
+  - “Waiting for mount element…”
+  - “Bootstrap starting with mount element available”
+  - “Bootstrap cleanup – cancelled flag set”
+  - “Bootstrap already in flight, skipping”
+  strongly indicates a React effect is being re-run (due to dependency changes), which triggers cleanup (sets `cancelled = true`) while the async bootstrap is still running. Then the “new” effect run refuses to start because `bootstrapInFlightRef.current` is still true, leaving the editor stuck forever.
+- In `usePolotnoBootstrap`, the bootstrap effect depends on volatile values:
+  - `projectImages` (array identity can change frequently)
+  - `regenerateLayout` (function identity changes because it is recreated whenever `availableFields/allSampleData/projectImages/...` change)
+- In `PolotnoEditorWrapper`, we call `useLayoutGenerator` twice; the first time is effectively just to get `regenerateLayout` and it’s not stable. That doubles churn and increases chances of bootstrap cancellation.
+- Polotno documentation confirms custom section panels receive `{ store }` and should be defined as `Panel: observer(({ store }) => ...)`. Our “store prop” wiring in `polotno-sections.js` matches that contract now, so the remaining blocker is the bootstrap lifecycle itself (not Polotno’s section API). Reference: https://polotno.com/docs/side-panel-overview
 
-The refactoring introduced **three critical bugs**:
+High-level strategy
+1) Make bootstrap “one-shot” per mount/template unless the user explicitly retries.
+2) Remove volatile dependencies from the bootstrap effect; read dynamic data via refs instead.
+3) Make `regenerateLayout` stable via refs (not via dependency-heavy `useCallback`).
+4) Remove the duplicate `useLayoutGenerator` invocation and route all interactions through a single instance.
+5) Add deterministic instrumentation so if it fails again we can point to the exact phase and why it aborted (key fetch, module load, store create, UI render, DOM verify).
 
-1. **"null" displayed for blank data** - Empty cells show literal "null" instead of being blank
-2. **Records not changing on navigation** - VDP text fields stay frozen on first record
-3. **Barcode panel crashes** - `TypeError: Cannot read properties of undefined (reading '0')`
+Concrete implementation plan (code changes)
+A) Fix `usePolotnoBootstrap` effect dependency churn (main spinner fix)
+- Change `UsePolotnoBootstrapOptions` to accept:
+  - `projectImagesRef` (RefObject) instead of `projectImages` array
+  - `regenerateLayoutRef` (RefObject<() => Promise<void>>) or accept `regenerateLayout` but store it into a local ref inside `usePolotnoBootstrap` and do not include it in deps
+- Update the bootstrap effect dependencies to only include stable primitives:
+  - `mountEl`, `labelWidth`, `labelHeight`, `bleedMm`, `projectType`, `retryCount`
+  - (Avoid including arrays/functions like `projectImages`, `regenerateLayout`, etc.)
+- Inside bootstrap, whenever we need images or regenerateLayout, read from refs:
+  - `const images = projectImagesRef.current || []`
+  - `await regenerateLayoutRef.current?.()`
+- Improve cancellation logic so a cancelled run never blocks a future run:
+  - Introduce a `bootstrapRunIdRef` incremented each time we start
+  - Each awaited step checks `if (runId !== bootstrapRunIdRef.current) return;`
+  - In cleanup, increment the runId so the in-flight async chain becomes a no-op
+  - Ensure `bootstrapInFlightRef.current` is cleared even when cancelled early
 
-## Root Cause Analysis
+B) Fix `PolotnoEditorWrapper` orchestration (reduce re-render churn)
+- Remove the first `useLayoutGenerator` call that uses `bootstrapStage: 'ready'`.
+- Keep only one `useLayoutGenerator` call (the one driven by the real `bootstrapStage`).
+- Create a stable `regenerateLayoutRef` in the wrapper:
+  - `const regenerateLayoutRef = useRef(async () => {});`
+  - `useEffect(() => { regenerateLayoutRef.current = layoutGenerator.regenerateLayout; }, [layoutGenerator.regenerateLayout]);`
+- Pass `regenerateLayoutRef` into `usePolotnoBootstrap` (instead of passing the function directly).
+- Pass `projectImagesRef` into `usePolotnoBootstrap` (instead of passing the array).
 
-### Issue 1: Incorrect Props Passing to Section Creators
+C) Make `useLayoutGenerator.regenerateLayout` stable (avoid function identity changes)
+- Convert `useLayoutGenerator` to internally use refs for:
+  - `availableFields`, `allSampleData`, `projectImages`, `labelWidth/height`, `projectType`
+- Implement `regenerateLayout` with `useCallback([])` (or a very small dependency list), reading everything from those refs.
+- This ensures:
+  - `regenerateLayout` does not change identity on data updates
+  - `usePolotnoBootstrap` won’t be retriggered by layout generator changes
 
-The `polotno-sections.js` functions expect:
-```javascript
-createBarcodesSection(PanelComponent, panelProps)
-// where panelProps = { store, availableFields, onInserted }
-```
+D) Add targeted bootstrap diagnostics (so this doesn’t regress silently again)
+- Add a single structured log per stage transition with a runId, e.g.:
+  - `[polotno-bootstrap run=3 stage=load_modules] ...`
+- Add a “timeout watchdog” (e.g. 20s) per run:
+  - If we don’t reach `ready`, set `error` with the stage that timed out.
+- Log the reason for abort:
+  - “aborted because mountEl changed”
+  - “aborted because runId superseded”
+  - “aborted because key fetch failed”
+- This will give us definitive proof the spinner is caused by cancellation and exactly which dependency is causing reruns (if any remain).
 
-But `usePolotnoBootstrap.ts` passes:
-```javascript
-createBarcodesSection(
-  BarcodePanel,
-  availableFieldsRef,           // ← Wrong! This is a ref, not props object
-  () => commitToBase('...')     // ← This third arg is ignored!
-)
-```
+E) Re-validate against Polotno docs (to satisfy the “deep dive” request)
+- Confirm we follow the documented SidePanel contract:
+  - sections array passed into `<SidePanel store={store} sections={...} />`
+  - custom section uses `Panel: observer(({ store }) => ...)`
+- Confirm our bridge pattern (isolating Polotno imports in `polotno-runtime.js`) remains intact and we’re not accidentally importing Polotno types in TS anywhere else.
+- Check if any “Polotno init” steps changed across versions (we’ll pin symptoms to our lifecycle rather than guessing).
 
-### Issue 2: Store Not Passed to Panels
+Testing checklist (end-to-end, the critical part)
+1) Open any existing project → editor should reach “ready” without spinner.
+2) Confirm the Polotno UI actually renders (tabs visible, canvas visible).
+3) Record navigation:
+   - Click next/previous record; confirm text changes per record.
+4) Side panel:
+   - Click Barcodes; confirm it loads (no blank panel, no console error).
+   - Insert a barcode/QR/sequence; confirm it appears and persists when switching records.
+5) Reload the page:
+   - Confirm editor still loads (no dependency-churn regressions).
+6) Repeat in at least two different projects (one with images, one without).
 
-In `polotno-sections.js` line 87:
-```javascript
-Panel: () => React.createElement(PanelComponent, panelProps)
-```
+Fallback / safety net
+- If we still see any instability after the above, we will:
+  - Add a “hard reset editor” button that calls `retry()` and also increments `bootstrapRunIdRef` (forces a clean restart).
+  - Provide a quick rollback path via History to the last known stable snapshot, then re-apply only the stabilization changes incrementally.
 
-This doesn't pass the `store` prop. According to Polotno documentation, the `Panel` component receives `{ store }` from Polotno's SidePanel. It should be:
-```javascript
-Panel: ({ store }) => React.createElement(PanelComponent, { store, ...panelProps })
-```
+Files that will be modified (expected)
+- src/components/polotno/hooks/usePolotnoBootstrap.ts
+- src/components/polotno/hooks/useLayoutGenerator.ts
+- src/components/polotno/PolotnoEditorWrapper.tsx
+(plus any hook type exports if needed)
 
-### Issue 3: Null Value Handling
-
-When a record field contains `null` (empty cell in CSV), the VDP resolver converts it to the string "null" because:
-```javascript
-const value = findRecordValue(token, record);
-// If record[token] = null, this returns null
-// But the null check uses: if (value === null) return ''
-// The problem is JavaScript's null vs the string "null" from JSON parsing
-```
-
-Actually, looking more closely at the code, if the record has `"null"` as a string value (not JavaScript `null`), `findRecordValue` will return `"null"` and the VDP resolver will display it.
-
-## Technical Solution
-
-### Step 1: Fix polotno-sections.js - Pass Store to Panels
-
-**File:** `src/vendor/polotno-sections.js`
-
-Update all section creator functions to properly receive and pass `store`:
-
-```javascript
-// BEFORE:
-Panel: () => React.createElement(PanelComponent, panelProps)
-
-// AFTER:
-Panel: ({ store }) => React.createElement(PanelComponent, { store, ...panelProps })
-```
-
-### Step 2: Fix usePolotnoBootstrap.ts - Correct Props Objects
-
-**File:** `src/components/polotno/hooks/usePolotnoBootstrap.ts`
-
-Fix how section creators are called:
-
-```javascript
-// VDP Fields Section
-const vdpFieldsSection = createVdpFieldsSection(VdpFieldsPanel, {
-  availableFields: availableFieldsRef.current || [],
-  projectImages: projectImagesRef.current || [],
-  onInserted: () => commitToBase('vdp-insert'),
-});
-
-// Barcodes Section  
-const barcodesSection = createBarcodesSection(BarcodePanel, {
-  availableFields: availableFieldsRef.current || [],
-  onInserted: () => commitToBase('barcode-insert'),
-});
-
-// Project Images Section
-const imagesSection = createProjectImagesSection(ProjectImagesPanel, {
-  projectImages: projectImages,
-  onInserted: () => commitToBase('image-insert'),
-});
-
-// Sequence Section
-const sequenceSection = createSequenceSection(SequencePanel, {
-  onInserted: () => commitToBase('sequence-insert'),
-});
-```
-
-However, this has a problem: props become stale if `availableFieldsRef.current` changes after bootstrap.
-
-**Better approach**: Use refs in the section factories:
-
-```javascript
-const vdpFieldsSection = createVdpFieldsSection(VdpFieldsPanel, {
-  get availableFields() { return availableFieldsRef.current || []; },
-  get projectImages() { return projectImagesRef.current || []; },
-  onInserted: () => commitToBase('vdp-insert'),
-});
-```
-
-Or even simpler - keep using refs and update `polotno-sections.js` to handle refs:
-
-```javascript
-Panel: ({ store }) => {
-  const resolvedProps = typeof panelProps === 'function' 
-    ? panelProps() 
-    : panelProps;
-  return React.createElement(PanelComponent, { store, ...resolvedProps });
-}
-```
-
-Then pass a factory function from bootstrap:
-
-```javascript
-const vdpFieldsSection = createVdpFieldsSection(VdpFieldsPanel, () => ({
-  availableFields: availableFieldsRef.current || [],
-  projectImages: projectImagesRef.current || [],
-  onInserted: () => commitToBase('vdp-insert'),
-}));
-```
-
-### Step 3: Fix Null Value Handling in VDP Resolver
-
-**File:** `src/lib/polotno/vdpResolver.ts`
-
-Update the `findRecordValue` function and the replacement logic to handle null/undefined values:
-
-```javascript
-function findRecordValue(token: string, record: Record<string, string>): string | null {
-  // Direct match
-  if (token in record) {
-    const value = record[token];
-    // Treat null, undefined, and "null" string as missing
-    if (value === null || value === undefined || value === 'null') {
-      return '';  // Return empty string instead of null
-    }
-    return value;
-  }
-  // ... rest of fuzzy matching
-}
-```
-
-Also update the replacement block:
-
-```javascript
-el.text = el.text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, rawToken) => {
-  const token = rawToken.trim();
-  const value = findRecordValue(token, record);
-  // Handle null, undefined, empty string, and literal "null"
-  if (value === null || value === undefined || value === '' || value === 'null') {
-    return '';
-  }
-  return value;
-});
-```
-
-## Files to Modify
-
-1. **`src/vendor/polotno-sections.js`** - Fix Panel to receive and pass store
-2. **`src/components/polotno/hooks/usePolotnoBootstrap.ts`** - Fix section creator calls
-3. **`src/lib/polotno/vdpResolver.ts`** - Handle null values properly
-
-## Testing Checklist
-
-After implementing fixes:
-
-1. Open existing template in editor
-2. Verify no "null" text appears for empty data fields
-3. Navigate through records - text should update correctly
-4. Click Barcode section - should open without errors
-5. Add a barcode/QR code - should appear on canvas
-6. Navigate records - barcode should persist
-7. Click Sequence section - should work
-8. Add sequence number - should increment per record
+Why this will fix the spinner
+- It removes the exact mechanism shown in your console: bootstrap cleanup happening mid-flight due to dependency churn + a “bootstrap already in flight” guard that prevents restart.
+- After these changes, data updates (fields, images, subscription banners, etc.) will not cancel bootstrap. Bootstrap will only rerun on intentional events (mount change, template change via key, or retry).

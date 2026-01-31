@@ -76,6 +76,8 @@ const SequenceIcon = () => React.createElement('svg', {
 
 /**
  * Create VDP fields section for the side panel
+ * @param {React.ComponentType} PanelComponent - The panel component to render
+ * @param {object|function} panelProps - Props object or factory function that returns props
  */
 export function createVdpFieldsSection(PanelComponent, panelProps) {
   const { SectionTab } = getPolotnoComponents();
@@ -84,12 +86,17 @@ export function createVdpFieldsSection(PanelComponent, panelProps) {
     name: 'vdp-fields',
     Tab: (props) => React.createElement(SectionTab, { name: 'Data Fields', ...props },
       React.createElement(DataFieldsIcon)),
-    Panel: () => React.createElement(PanelComponent, panelProps),
+    Panel: ({ store }) => {
+      const resolvedProps = typeof panelProps === 'function' ? panelProps() : panelProps;
+      return React.createElement(PanelComponent, { store, ...resolvedProps });
+    },
   };
 }
 
 /**
  * Create barcodes section for the side panel
+ * @param {React.ComponentType} PanelComponent - The panel component to render
+ * @param {object|function} panelProps - Props object or factory function that returns props
  */
 export function createBarcodesSection(PanelComponent, panelProps) {
   const { SectionTab } = getPolotnoComponents();
@@ -98,12 +105,17 @@ export function createBarcodesSection(PanelComponent, panelProps) {
     name: 'barcodes',
     Tab: (props) => React.createElement(SectionTab, { name: 'Barcodes', ...props },
       React.createElement(BarcodeIcon)),
-    Panel: () => React.createElement(PanelComponent, panelProps),
+    Panel: ({ store }) => {
+      const resolvedProps = typeof panelProps === 'function' ? panelProps() : panelProps;
+      return React.createElement(PanelComponent, { store, ...resolvedProps });
+    },
   };
 }
 
 /**
  * Create project images section for the side panel
+ * @param {React.ComponentType} PanelComponent - The panel component to render
+ * @param {object|function} panelProps - Props object or factory function that returns props
  */
 export function createProjectImagesSection(PanelComponent, panelProps) {
   const { SectionTab } = getPolotnoComponents();
@@ -112,12 +124,17 @@ export function createProjectImagesSection(PanelComponent, panelProps) {
     name: 'project-images',
     Tab: (props) => React.createElement(SectionTab, { name: 'Images', ...props },
       React.createElement(ImageIcon)),
-    Panel: () => React.createElement(PanelComponent, panelProps),
+    Panel: ({ store }) => {
+      const resolvedProps = typeof panelProps === 'function' ? panelProps() : panelProps;
+      return React.createElement(PanelComponent, { store, ...resolvedProps });
+    },
   };
 }
 
 /**
  * Create sequence section for the side panel
+ * @param {React.ComponentType} PanelComponent - The panel component to render
+ * @param {object|function} panelProps - Props object or factory function that returns props
  */
 export function createSequenceSection(PanelComponent, panelProps) {
   const { SectionTab } = getPolotnoComponents();
@@ -126,7 +143,10 @@ export function createSequenceSection(PanelComponent, panelProps) {
     name: 'sequence',
     Tab: (props) => React.createElement(SectionTab, { name: 'Sequence', ...props },
       React.createElement(SequenceIcon)),
-    Panel: () => React.createElement(PanelComponent, panelProps),
+    Panel: ({ store }) => {
+      const resolvedProps = typeof panelProps === 'function' ? panelProps() : panelProps;
+      return React.createElement(PanelComponent, { store, ...resolvedProps });
+    },
   };
 }
 

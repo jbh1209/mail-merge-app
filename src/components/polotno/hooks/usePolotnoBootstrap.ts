@@ -7,6 +7,10 @@
  * - Store creation with DPI/unit configuration
  * - UI rendering with custom sections
  * - Change detection interval
+ * 
+ * STABILITY: This hook uses a runId pattern to prevent race conditions.
+ * All dynamic data (projectImages, regenerateLayout, etc.) is accessed via refs
+ * to avoid effect dependency churn that would cancel bootstrap mid-flight.
  */
 
 import { useEffect, useRef, useState, useCallback, createElement } from 'react';
@@ -82,7 +86,8 @@ export interface UsePolotnoBootstrapOptions {
   labelHeight: number;
   bleedMm: number;
   projectType: string;
-  projectImages: { name: string; url: string }[];
+  // All dynamic data passed via refs to prevent effect re-runs
+  projectImagesRef: React.RefObject<{ name: string; url: string }[]>;
   availableFieldsRef: React.RefObject<string[]>;
   allSampleDataRef: React.RefObject<Record<string, string>[]>;
   baseSceneRef: React.MutableRefObject<string>;
@@ -91,8 +96,8 @@ export interface UsePolotnoBootstrapOptions {
   onSaveRef: React.RefObject<((scene: string) => void) | undefined>;
   onReadyRef: React.RefObject<((handle: PolotnoEditorHandle) => void) | undefined>;
   onSceneChangeRef: React.RefObject<((hasChanges: boolean) => void) | undefined>;
-  regenerateLayout: () => Promise<void>;
-  commitToBase: (reason?: string) => void;
+  regenerateLayoutRef: React.RefObject<() => Promise<void>>;
+  commitToBaseRef: React.RefObject<(reason?: string) => void>;
 }
 
 export interface UsePolotnoBootstrapResult {
@@ -104,6 +109,9 @@ export interface UsePolotnoBootstrapResult {
   retry: () => void;
 }
 
+// Timeout for bootstrap watchdog (20 seconds)
+const BOOTSTRAP_TIMEOUT_MS = 20000;
+
 export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePolotnoBootstrapResult {
   const {
     mountEl,
@@ -111,7 +119,8 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
     labelHeight,
     bleedMm,
     projectType,
-    projectImages,
+    // All refs - these do NOT trigger effect re-runs
+    projectImagesRef,
     availableFieldsRef,
     allSampleDataRef,
     baseSceneRef,
@@ -120,30 +129,34 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
     onSaveRef,
     onReadyRef,
     onSceneChangeRef,
-    regenerateLayout,
-    commitToBase,
+    regenerateLayoutRef,
+    commitToBaseRef,
   } = options;
 
   const storeRef = useRef<any>(null);
   const rootRef = useRef<Root | null>(null);
   const handleRef = useRef<PolotnoEditorHandle | null>(null);
-  const bootstrapInFlightRef = useRef(false);
+  
+  // Run ID pattern: each bootstrap attempt gets a unique ID
+  // If runId changes mid-flight, the async chain aborts gracefully
+  const bootstrapRunIdRef = useRef(0);
 
   const [bootstrapStage, setBootstrapStage] = useState<BootstrapStage>('waiting_for_mount');
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
 
-  // Retry handler
+  // Retry handler - increments runId to abort any in-flight bootstrap
   const retry = useCallback(() => {
+    console.log(`[polotno-bootstrap] Retry requested, incrementing runId`);
+    bootstrapRunIdRef.current += 1;
     setError(null);
     setBootstrapStage('waiting_for_mount');
-    bootstrapInFlightRef.current = false;
 
     if (rootRef.current) {
       try {
         rootRef.current.unmount();
       } catch (e) {
-        console.warn('Retry cleanup failed:', e);
+        console.warn('[polotno-bootstrap] Retry cleanup failed:', e);
       }
       rootRef.current = null;
     }
@@ -154,36 +167,50 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
   }, []);
 
   // Main bootstrap effect
+  // CRITICAL: Only depends on stable primitives, NOT on arrays/functions
   useEffect(() => {
     if (!mountEl) {
-      console.log('⏳ Waiting for mount element...');
+      console.log('[polotno-bootstrap] Waiting for mount element...');
       return;
     }
 
-    if (bootstrapInFlightRef.current) {
-      console.log('⏳ Bootstrap already in flight, skipping');
-      return;
-    }
-
+    // If already ready, skip
     if (bootstrapStage === 'ready' && handleRef.current) {
-      console.log('✅ Already ready, skipping bootstrap');
+      console.log('[polotno-bootstrap] Already ready, skipping');
       return;
     }
 
-    let cancelled = false;
+    // Increment runId for this bootstrap attempt
+    const runId = ++bootstrapRunIdRef.current;
     let changeInterval: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    // Helper to check if this run is still valid
+    const isStale = () => runId !== bootstrapRunIdRef.current;
 
     const bootstrap = async () => {
-      bootstrapInFlightRef.current = true;
-      console.log('🚀 Bootstrap starting with mount element available');
+      console.log(`[polotno-bootstrap run=${runId}] Starting bootstrap`);
 
       try {
+        // ---- TIMEOUT WATCHDOG ----
+        timeoutId = setTimeout(() => {
+          if (!isStale() && bootstrapStage !== 'ready') {
+            console.error(`[polotno-bootstrap run=${runId}] Timeout after ${BOOTSTRAP_TIMEOUT_MS}ms at stage: ${bootstrapStage}`);
+            setError(`Bootstrap timed out at stage: ${bootstrapStage}`);
+            setBootstrapStage('error');
+          }
+        }, BOOTSTRAP_TIMEOUT_MS);
+
         // ---- FETCH KEY ----
         setBootstrapStage('fetch_key');
+        console.log(`[polotno-bootstrap run=${runId} stage=fetch_key]`);
 
         const { data: keyData, error: keyFetchError } = await supabase.functions.invoke('get-polotno-key');
 
-        if (cancelled) return;
+        if (isStale()) {
+          console.log(`[polotno-bootstrap run=${runId}] Aborted: runId superseded during key fetch`);
+          return;
+        }
 
         if (keyFetchError) {
           throw new Error(`Failed to fetch API key: ${keyFetchError.message}`);
@@ -194,16 +221,19 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           throw new Error('Editor API key not configured');
         }
 
-        if (cancelled) return;
-
         // ---- LOAD MODULES ----
         setBootstrapStage('load_modules');
+        console.log(`[polotno-bootstrap run=${runId} stage=load_modules]`);
         await loadPolotnoModules();
 
-        if (cancelled) return;
+        if (isStale()) {
+          console.log(`[polotno-bootstrap run=${runId}] Aborted: runId superseded during module load`);
+          return;
+        }
 
         // ---- CREATE STORE ----
         setBootstrapStage('create_store');
+        console.log(`[polotno-bootstrap run=${runId} stage=create_store]`);
 
         const store = await createPolotnoStore({
           apiKey,
@@ -213,27 +243,29 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           height: mmToPixels(labelHeight),
         });
 
-        if (cancelled) return;
+        if (isStale()) {
+          console.log(`[polotno-bootstrap run=${runId}] Aborted: runId superseded during store creation`);
+          return;
+        }
 
         // Configure bleed
         try {
           if (projectType === 'label') {
             configureBleed(store, 0, false);
-            console.log('📐 Bleed disabled for label project');
           } else if (bleedMm > 0) {
             configureBleed(store, mmToPixels(bleedMm), true);
-            console.log(`📐 Bleed enabled: ${bleedMm}mm`);
           } else {
             configureBleed(store, 0, false);
           }
         } catch (bleedError) {
-          console.warn('Bleed configuration failed, continuing:', bleedError);
+          console.warn('[polotno-bootstrap] Bleed configuration failed, continuing:', bleedError);
         }
         storeRef.current = store;
-        console.log('✅ Polotno store created');
+        console.log(`[polotno-bootstrap run=${runId}] Store created`);
 
         // ---- RENDER UI ----
         setBootstrapStage('render_ui');
+        console.log(`[polotno-bootstrap run=${runId} stage=render_ui]`);
 
         if (!mountEl) {
           throw new Error('Mount element disappeared before UI render');
@@ -250,25 +282,26 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           PagesTimeline,
         } = getPolotnoComponents();
 
-        // Build custom sections - use factory functions to ensure refs stay fresh
+        // Build custom sections - use factory functions that read from refs
+        // This ensures panels always get fresh data without triggering effect re-runs
         const vdpFieldsSection = createVdpFieldsSection(VdpFieldsPanel, () => ({
           availableFields: availableFieldsRef.current || [],
-          projectImages: projectImages,
-          onInserted: () => commitToBase('vdp-insert'),
+          projectImages: projectImagesRef.current || [],
+          onInserted: () => commitToBaseRef.current?.('vdp-insert'),
         }));
 
         const barcodesSection = createBarcodesSection(BarcodePanel, () => ({
           availableFields: availableFieldsRef.current || [],
-          onInserted: () => commitToBase('barcode-insert'),
+          onInserted: () => commitToBaseRef.current?.('barcode-insert'),
         }));
 
         const imagesSection = createProjectImagesSection(ProjectImagesPanel, () => ({
-          projectImages: projectImages,
-          onInserted: () => commitToBase('image-insert'),
+          projectImages: projectImagesRef.current || [],
+          onInserted: () => commitToBaseRef.current?.('image-insert'),
         }));
 
         const sequenceSection = createSequenceSection(SequencePanel, () => ({
-          onInserted: () => commitToBase('sequence-insert'),
+          onInserted: () => commitToBaseRef.current?.('sequence-insert'),
         }));
 
         const sections = buildCustomSections([
@@ -283,7 +316,7 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           try {
             rootRef.current.unmount();
           } catch (e) {
-            console.warn('Previous root unmount failed:', e);
+            console.warn('[polotno-bootstrap] Previous root unmount failed:', e);
           }
           rootRef.current = null;
         }
@@ -309,19 +342,20 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           )
         );
 
-        console.log('✅ Polotno UI render() called');
+        console.log(`[polotno-bootstrap run=${runId}] UI render() called`);
 
         // ---- VERIFY UI MOUNTED ----
         await new Promise<void>((resolve, reject) => {
           requestAnimationFrame(() => {
             setTimeout(() => {
-              if (cancelled) {
+              if (isStale()) {
+                console.log(`[polotno-bootstrap run=${runId}] Aborted during UI verification`);
                 resolve();
                 return;
               }
 
               const childCount = mountEl?.childElementCount || 0;
-              console.log(`🔍 DOM verification: mount has ${childCount} child elements`);
+              console.log(`[polotno-bootstrap run=${runId}] DOM verification: ${childCount} children`);
 
               if (childCount === 0) {
                 reject(new Error('Polotno rendered 0 DOM nodes - render failed silently'));
@@ -329,15 +363,18 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
               }
 
               store.openSidePanel('');
-              console.log('✅ Polotno UI verified with', childCount, 'DOM nodes');
               resolve();
             }, 150);
           });
         });
 
-        if (cancelled) return;
+        if (isStale()) {
+          console.log(`[polotno-bootstrap run=${runId}] Aborted after UI verification`);
+          return;
+        }
 
         // ---- CREATE HANDLE ----
+        // Read projectImages from ref for handle methods
         const handle: PolotnoEditorHandle = {
           saveScene: async () => {
             const currentSceneJson = saveScene(store);
@@ -397,11 +434,13 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           getResolvedScene: (record: Record<string, string>, recordIndex: number) => {
             const baseScene = baseSceneRef.current || saveScene(store);
             const parsed = JSON.parse(baseScene) as PolotnoScene;
-            return resolveVdpVariables(parsed, { record, recordIndex, projectImages });
+            const images = projectImagesRef.current || [];
+            return resolveVdpVariables(parsed, { record, recordIndex, projectImages: images });
           },
           batchResolve: (records: Record<string, string>[]) => {
             const baseScene = baseSceneRef.current || saveScene(store);
-            return batchResolveVdp(baseScene, records, undefined, projectImages);
+            const images = projectImagesRef.current || [];
+            return batchResolveVdp(baseScene, records, undefined, images);
           },
           getBaseScene: () => {
             const currentSceneJson = saveScene(store);
@@ -412,16 +451,23 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
             const merged = mergeLayoutToBase(currentScene, baseScene);
             return JSON.stringify(merged);
           },
-          regenerateLayout: () => regenerateLayout(),
+          regenerateLayout: () => regenerateLayoutRef.current?.() || Promise.resolve(),
           store,
         };
 
         handleRef.current = handle;
+        
+        // Clear timeout since we succeeded
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+
         setBootstrapStage('ready');
         setError(null);
 
         onReadyRef.current?.(handle);
-        console.log('✅ Bootstrap complete - editor ready');
+        console.log(`[polotno-bootstrap run=${runId}] Bootstrap complete - editor ready`);
 
         // Track changes interval
         changeInterval = setInterval(() => {
@@ -441,24 +487,29 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
         }, 1000);
 
       } catch (e) {
-        console.error('❌ Polotno bootstrap error:', e);
-        if (!cancelled) {
+        console.error(`[polotno-bootstrap run=${runId}] Error:`, e);
+        if (!isStale()) {
           setError(String(e instanceof Error ? e.message : e));
           setBootstrapStage('error');
         }
       } finally {
-        bootstrapInFlightRef.current = false;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
     };
 
     bootstrap();
 
+    // Cleanup: increment runId to abort in-flight async chain
     return () => {
-      console.log('🧹 Bootstrap cleanup - cancelled flag set');
-      cancelled = true;
+      console.log(`[polotno-bootstrap run=${runId}] Cleanup - incrementing runId to abort`);
+      bootstrapRunIdRef.current += 1;
       if (changeInterval) clearInterval(changeInterval);
+      if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [mountEl, labelWidth, labelHeight, bleedMm, retryCount, projectType, projectImages, commitToBase, regenerateLayout]);
+  // CRITICAL: Only stable primitives in deps - no arrays/functions
+  }, [mountEl, labelWidth, labelHeight, bleedMm, projectType, retryCount]);
 
   // Cleanup root on unmount
   useEffect(() => {
@@ -467,7 +518,7 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
         try {
           rootRef.current.unmount();
         } catch (e) {
-          console.warn('Root unmount on cleanup failed:', e);
+          console.warn('[polotno-bootstrap] Root unmount on cleanup failed:', e);
         }
         rootRef.current = null;
       }

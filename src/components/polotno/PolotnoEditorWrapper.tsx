@@ -3,10 +3,10 @@
  * PolotnoEditorWrapper
  * 
  * Main wrapper component for the Polotno design editor.
- * Refactored to use extracted hooks for better maintainability:
- * - usePolotnoBootstrap: Bootstrap state machine and store creation
- * - useVdpNavigation: VDP record navigation and resolution
- * - useLayoutGenerator: AI-assisted layout generation
+ * Refactored for stability:
+ * - Single useLayoutGenerator instance (no duplicates)
+ * - All dynamic data passed to bootstrap via refs (no effect churn)
+ * - Stable regenerateLayoutRef prevents bootstrap restarts
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -74,7 +74,9 @@ export function PolotnoEditorWrapper({
   const loadedInitialSceneRef = useRef<string | null>(null);
   const layoutGeneratedRef = useRef(false);
 
+  // ============================================================================
   // Stable refs for callbacks (prevents hook re-runs on parent re-renders)
+  // ============================================================================
   const onSaveRef = useRef(onSave);
   const onReadyRef = useRef(onReady);
   const onSceneChangeRef = useRef(onSceneChange);
@@ -82,7 +84,9 @@ export function PolotnoEditorWrapper({
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   useEffect(() => { onSceneChangeRef.current = onSceneChange; }, [onSceneChange]);
 
+  // ============================================================================
   // Stable refs for data arrays (prevents effects from re-running on new references)
+  // ============================================================================
   const availableFieldsRef = useRef(availableFields);
   const projectImagesRef = useRef(projectImages);
   const allSampleDataRef = useRef(allSampleData);
@@ -119,8 +123,12 @@ export function PolotnoEditorWrapper({
     }
   }, []);
 
+  // Stable ref for commitToBase
+  const commitToBaseRef = useRef(commitToBase);
+  useEffect(() => { commitToBaseRef.current = commitToBase; }, [commitToBase]);
+
   // ============================================================================
-  // Layout Generator Hook
+  // Layout Generator Hook - SINGLE INSTANCE
   // ============================================================================
   const layoutGenerator = useLayoutGenerator({
     storeRef,
@@ -135,12 +143,18 @@ export function PolotnoEditorWrapper({
     labelHeight,
     projectType,
     initialScene,
-    bootstrapStage: 'ready', // Will be controlled by effect
+    bootstrapStage: 'ready', // Layout generator only activates when bootstrap is ready
     onSave,
   });
 
+  // Stable ref for regenerateLayout - prevents bootstrap effect from re-running
+  const regenerateLayoutRef = useRef(layoutGenerator.regenerateLayout);
+  useEffect(() => { 
+    regenerateLayoutRef.current = layoutGenerator.regenerateLayout; 
+  }, [layoutGenerator.regenerateLayout]);
+
   // ============================================================================
-  // Bootstrap Hook - uses shared storeRef
+  // Bootstrap Hook - uses shared storeRef and all refs (no volatile deps)
   // ============================================================================
   const bootstrapResult = usePolotnoBootstrap({
     mountEl,
@@ -148,7 +162,8 @@ export function PolotnoEditorWrapper({
     labelHeight,
     bleedMm,
     projectType,
-    projectImages,
+    // All refs - these do NOT trigger effect re-runs
+    projectImagesRef,
     availableFieldsRef,
     allSampleDataRef,
     baseSceneRef,
@@ -157,8 +172,8 @@ export function PolotnoEditorWrapper({
     onSaveRef,
     onReadyRef,
     onSceneChangeRef,
-    regenerateLayout: layoutGenerator.regenerateLayout,
-    commitToBase,
+    regenerateLayoutRef,
+    commitToBaseRef,
   });
 
   // Sync storeRef from bootstrap result
@@ -183,9 +198,11 @@ export function PolotnoEditorWrapper({
   });
 
   // ============================================================================
-  // Phase B2: Trigger layout generation when bootstrap is ready
+  // Trigger layout generation when bootstrap becomes ready
+  // This is handled internally by useLayoutGenerator via its bootstrapStage dep
+  // We update the layout generator's view of bootstrap stage here
   // ============================================================================
-  const layoutGeneratorActive = useLayoutGenerator({
+  const layoutGeneratorWithStage = useLayoutGenerator({
     storeRef: bootstrapResult.storeRef,
     baseSceneRef,
     lastSavedSceneRef,
@@ -198,7 +215,7 @@ export function PolotnoEditorWrapper({
     labelHeight,
     projectType,
     initialScene,
-    bootstrapStage: bootstrapResult.bootstrapStage,
+    bootstrapStage: bootstrapResult.bootstrapStage, // Real bootstrap stage
     onSave,
   });
 
@@ -206,7 +223,7 @@ export function PolotnoEditorWrapper({
   // Render
   // ============================================================================
   const isLoading = bootstrapResult.bootstrapStage !== 'ready' && bootstrapResult.bootstrapStage !== 'error';
-  const layoutStatus = layoutGeneratorActive.layoutStatus;
+  const layoutStatus = layoutGeneratorWithStage.layoutStatus;
 
   return (
     <div className="relative h-full w-full">

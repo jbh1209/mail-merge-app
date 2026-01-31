@@ -250,30 +250,26 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
           PagesTimeline,
         } = getPolotnoComponents();
 
-        // Build custom sections
-        const vdpFieldsSection = createVdpFieldsSection(
-          VdpFieldsPanel,
-          availableFieldsRef,
-          allSampleDataRef,
-          () => commitToBase('vdp-insert')
-        );
+        // Build custom sections - use factory functions to ensure refs stay fresh
+        const vdpFieldsSection = createVdpFieldsSection(VdpFieldsPanel, () => ({
+          availableFields: availableFieldsRef.current || [],
+          projectImages: projectImages,
+          onInserted: () => commitToBase('vdp-insert'),
+        }));
 
-        const barcodesSection = createBarcodesSection(
-          BarcodePanel,
-          availableFieldsRef,
-          () => commitToBase('barcode-insert')
-        );
+        const barcodesSection = createBarcodesSection(BarcodePanel, () => ({
+          availableFields: availableFieldsRef.current || [],
+          onInserted: () => commitToBase('barcode-insert'),
+        }));
 
-        const imagesSection = createProjectImagesSection(
-          ProjectImagesPanel,
-          { current: projectImages },
-          () => commitToBase('image-insert')
-        );
+        const imagesSection = createProjectImagesSection(ProjectImagesPanel, () => ({
+          projectImages: projectImages,
+          onInserted: () => commitToBase('image-insert'),
+        }));
 
-        const sequenceSection = createSequenceSection(
-          SequencePanel,
-          () => commitToBase('sequence-insert')
-        );
+        const sequenceSection = createSequenceSection(SequencePanel, () => ({
+          onInserted: () => commitToBase('sequence-insert'),
+        }));
 
         const sections = buildCustomSections([
           vdpFieldsSection,

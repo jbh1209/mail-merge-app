@@ -181,15 +181,29 @@ function normalizeFieldName(name: string): string {
  * Find a matching record key for a token (with fuzzy matching)
  */
 function findRecordValue(token: string, record: Record<string, string>): string | null {
+  // Helper to check if value is effectively empty
+  const isEmptyValue = (v: unknown): boolean => {
+    return v === null || v === undefined || v === '' || v === 'null' || v === 'undefined';
+  };
+  
   // 1. Direct match
   if (token in record) {
-    return record[token];
+    const value = record[token];
+    // Treat null, undefined, empty, and "null" string as missing → return empty string
+    if (isEmptyValue(value)) {
+      return '';
+    }
+    return value;
   }
   
   // 2. Normalized match
   const normalizedToken = normalizeFieldName(token);
   for (const [key, value] of Object.entries(record)) {
     if (normalizeFieldName(key) === normalizedToken) {
+      // Same empty value handling
+      if (isEmptyValue(value)) {
+        return '';
+      }
       return value;
     }
   }

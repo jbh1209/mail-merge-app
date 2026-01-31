@@ -6,6 +6,9 @@
  * - Applies layout with font scaling
  * - Manages fallback layouts
  * - Supports layout regeneration
+ * 
+ * STABILITY: regenerateLayout function identity is stable via useCallback([])
+ * and internal refs. This prevents parent re-renders from causing churn.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -591,14 +594,37 @@ export function useLayoutGenerator(options: UseLayoutGeneratorOptions): UseLayou
 
   const [layoutStatus, setLayoutStatus] = useState<string | null>(null);
   const layoutInFlightRef = useRef(false);
+  
+  // Store all dynamic values in refs to avoid regenerateLayout identity changes
+  const availableFieldsRef = useRef(availableFields);
+  const allSampleDataRef = useRef(allSampleData);
+  const projectImagesRef = useRef(projectImages);
+  const labelWidthRef = useRef(labelWidth);
+  const labelHeightRef = useRef(labelHeight);
+  const projectTypeRef = useRef(projectType);
   const onSaveRef = useRef(onSave);
   
+  // Keep refs up to date
+  useEffect(() => { availableFieldsRef.current = availableFields; }, [availableFields]);
+  useEffect(() => { allSampleDataRef.current = allSampleData; }, [allSampleData]);
+  useEffect(() => { projectImagesRef.current = projectImages; }, [projectImages]);
+  useEffect(() => { labelWidthRef.current = labelWidth; }, [labelWidth]);
+  useEffect(() => { labelHeightRef.current = labelHeight; }, [labelHeight]);
+  useEffect(() => { projectTypeRef.current = projectType; }, [projectType]);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
 
-  // Regenerate layout function
+  // STABLE regenerateLayout function - reads all data from refs
+  // Empty dependency array = never changes identity
   const regenerateLayout = useCallback(async () => {
     const store = storeRef.current;
-    if (!store || availableFields.length === 0 || allSampleData.length === 0) return;
+    const fields = availableFieldsRef.current;
+    const sampleData = allSampleDataRef.current;
+    const images = projectImagesRef.current;
+    const width = labelWidthRef.current;
+    const height = labelHeightRef.current;
+    const type = projectTypeRef.current;
+
+    if (!store || fields.length === 0 || sampleData.length === 0) return;
 
     setLayoutStatus('Regenerating layout...');
     console.log('🔄 Regenerating AI layout...');
@@ -611,17 +637,17 @@ export function useLayoutGenerator(options: UseLayoutGeneratorOptions): UseLayou
         }
       }
 
-      const firstRecord = allSampleData[0] || {};
+      const firstRecord = sampleData[0] || {};
 
       const generatedScene = await generateInitialLayoutPolotno(
         store,
-        availableFields,
+        fields,
         firstRecord,
-        allSampleData,
-        labelWidth,
-        labelHeight,
-        projectType,
-        projectImages
+        sampleData,
+        width,
+        height,
+        type,
+        images
       );
 
       if (generatedScene) {
@@ -632,7 +658,7 @@ export function useLayoutGenerator(options: UseLayoutGeneratorOptions): UseLayou
         const resolved = resolveVdpVariables(parsed, {
           record: firstRecord,
           recordIndex: 0,
-          projectImages,
+          projectImages: images,
           useCachedImages: true,
         });
         await store.loadJSON(resolved);
@@ -644,7 +670,7 @@ export function useLayoutGenerator(options: UseLayoutGeneratorOptions): UseLayou
     } finally {
       setLayoutStatus(null);
     }
-  }, [availableFields, allSampleData, labelWidth, labelHeight, projectType, projectImages, storeRef, baseSceneRef, lastSavedSceneRef]);
+  }, [storeRef, baseSceneRef, lastSavedSceneRef]); // Only stable refs in deps
 
   // Phase B2: Generate AI Layout (for new templates)
   useEffect(() => {

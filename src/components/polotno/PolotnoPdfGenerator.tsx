@@ -251,14 +251,16 @@ export function PolotnoPdfGenerator({
     if (progress.phase === 'error') return 0;
     if (progress.total === 0) return 0;
     
-    // Weight phases: preparing 5%, exporting 65%, uploading 15%, composing 15%
+    // Weight phases: preparing 5%, exporting 50%, converting 15%, uploading 15%, composing 15%
     const basePercent = (progress.current / progress.total) * 100;
     
     switch (progress.phase) {
       case 'preparing':
         return 5;
       case 'exporting':
-        return 5 + basePercent * 0.65;
+        return 5 + basePercent * 0.50;
+      case 'converting':
+        return 55 + basePercent * 0.15;
       case 'uploading':
         return 70 + basePercent * 0.15;
       case 'composing':
@@ -358,6 +360,7 @@ export function PolotnoPdfGenerator({
                   <span>
                     {progress.phase === 'preparing' && 'Preparing...'}
                     {progress.phase === 'exporting' && `${docName.charAt(0).toUpperCase() + docName.slice(1)} ${progress.current} of ${progress.total}`}
+                    {progress.phase === 'converting' && `Converting to CMYK...`}
                     {progress.phase === 'uploading' && 'Uploading pages...'}
                     {progress.phase === 'composing' && (isFullPage ? 'Processing...' : 'Arranging on sheets...')}
                   </span>

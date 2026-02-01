@@ -163,89 +163,6 @@ function drawBleedMask(
   });
 }
 
-/**
- * Convert PDF to CMYK using pdfRest API
- * Uses appropriate ICC profile based on region (FOGRA39 for EU, GRACoL for US)
- * Note: Ghostscript WASM packages are not compatible with Deno Edge Functions,
- * so we use pdfRest as a reliable external API for professional CMYK conversion
- */
-async function convertToCmyk(
-  pdfBytes: Uint8Array,
-  region: 'us' | 'eu' | 'other' = 'us'
-): Promise<Uint8Array> {
-  console.log(`🎨 Starting CMYK conversion with pdfRest API (region: ${region})`);
-  console.log(`Input PDF size: ${pdfBytes.length} bytes`);
-  
-  const pdfRestApiKey = Deno.env.get('PDFREST_API_KEY');
-  
-  if (!pdfRestApiKey) {
-    throw new Error('PDFREST_API_KEY not configured - CMYK conversion unavailable');
-  }
-  
-  try {
-    // Create form data with the PDF file
-    const formData = new FormData();
-    // Create ArrayBuffer copy for Blob compatibility
-    const arrayBuffer = new ArrayBuffer(pdfBytes.length);
-    new Uint8Array(arrayBuffer).set(pdfBytes);
-    const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-    formData.append('file', blob, 'input.pdf');
-    
-    // Select color profile based on region
-    // FOGRA39 for EU (ISO coated v2), GRACoL for US (commercial printing)
-    const colorProfile = region === 'eu' ? 'fogra39' : 'gracol2006_coated1v2';
-    formData.append('color_profile', colorProfile);
-    formData.append('output', 'pdfrest_cmyk');
-    
-    console.log(`Using pdfRest color profile: ${colorProfile}`);
-    
-    // Call pdfRest API
-    const response = await fetch('https://api.pdfrest.com/pdf-with-converted-colors', {
-      method: 'POST',
-      headers: {
-        'Api-Key': pdfRestApiKey,
-      },
-      body: formData,
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('pdfRest API error:', response.status, errorText);
-      throw new Error(`pdfRest API failed: ${response.status} - ${errorText}`);
-    }
-    
-    // Get the result - pdfRest returns JSON with output URL or direct binary
-    const contentType = response.headers.get('content-type');
-    
-    if (contentType?.includes('application/json')) {
-      // Response is JSON with URL to download
-      const result = await response.json();
-      console.log('pdfRest response:', JSON.stringify(result));
-      
-      if (result.outputUrl) {
-        // Download the converted PDF
-        const pdfResponse = await fetch(result.outputUrl);
-        if (!pdfResponse.ok) {
-          throw new Error(`Failed to download converted PDF: ${pdfResponse.status}`);
-        }
-        const outputBytes = new Uint8Array(await pdfResponse.arrayBuffer());
-        console.log(`✅ CMYK conversion complete: ${pdfBytes.length} → ${outputBytes.length} bytes`);
-        return outputBytes;
-      } else {
-        throw new Error('pdfRest did not return output URL');
-      }
-    } else {
-      // Response is direct binary PDF
-      const outputBytes = new Uint8Array(await response.arrayBuffer());
-      console.log(`✅ CMYK conversion complete: ${pdfBytes.length} → ${outputBytes.length} bytes`);
-      return outputBytes;
-    }
-  } catch (error) {
-    console.error('❌ CMYK conversion failed:', error);
-    throw error;
-  }
-}
-
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -268,22 +185,22 @@ serve(async (req) => {
       throw new Error('No merge job ID provided');
     }
 
-    // Check if print features and CMYK should be applied
+    // Check if print features should be applied
     // When clientRenderedMarks is true, Polotno already drew crop marks and clipped bleed
     const skipServerMarks = printConfig?.clientRenderedMarks === true;
     const applyPrintFeatures = fullPageMode && printConfig?.enablePrintMarks && !skipServerMarks;
-    const applyCmyk = printConfig?.colorMode === 'cmyk';
     
-    // Detailed logging for debugging CMYK flow
+    // Note: CMYK conversion now happens client-side using @imgly/plugin-print-ready-pdfs-web
+    // The colorMode flag is preserved for response metadata but no server-side conversion is needed
+    const cmykRequested = printConfig?.colorMode === 'cmyk';
+    
+    // Detailed logging
     console.log('[compose] printConfig received:', JSON.stringify(printConfig));
-    console.log('[compose] applyCmyk check:', { colorMode: printConfig?.colorMode, result: applyCmyk });
     console.log('[compose] skipServerMarks:', skipServerMarks, 'applyPrintFeatures:', applyPrintFeatures);
+    console.log('[compose] CMYK mode:', cmykRequested ? 'enabled (client-side)' : 'disabled');
     
     if (applyPrintFeatures) {
       console.log(`Print features enabled: ${printConfig.bleedMm}mm bleed, ${printConfig.cropMarkOffsetMm}mm crop mark offset`);
-    }
-    if (applyCmyk) {
-      console.log(`CMYK conversion requested (region: ${printConfig.region || 'us'})`);
     }
 
     // Process PDFs in small batches to manage memory
@@ -424,26 +341,12 @@ serve(async (req) => {
       console.log(`Label mode: created ${pageCount} sheets from ${processedCount} labels`);
     }
 
-    // Save the composed PDF (RGB at this point)
-    let outputBytes = await outputPdf.save();
-    let cmykApplied = false;
+    // Save the composed PDF
+    // Note: CMYK conversion now happens client-side, so PDFs arrive already converted if requested
+    const outputBytes = await outputPdf.save();
     
-    // Apply CMYK conversion if requested
-    if (applyCmyk) {
-      try {
-        console.log('Applying CMYK conversion...');
-        const cmykBytes = await convertToCmyk(
-          new Uint8Array(outputBytes), 
-          printConfig.region || 'us'
-        );
-        outputBytes = cmykBytes;
-        cmykApplied = true;
-        console.log('✅ CMYK conversion applied successfully');
-      } catch (cmykError) {
-        console.error('⚠️ CMYK conversion failed, using RGB fallback:', cmykError);
-        // Continue with RGB output
-      }
-    }
+    // cmykApplied reflects whether the client requested CMYK mode (conversion happens client-side)
+    const cmykApplied = cmykRequested;
     
     // Upload final PDF
     const filename = `merge-${mergeJobId}-${Date.now()}.pdf`;

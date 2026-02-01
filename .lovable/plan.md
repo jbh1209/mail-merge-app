@@ -1,147 +1,158 @@
 
-# Fix PDF Export Dimension Mismatch
 
-## Summary
-The PDF output shows portrait orientation when the editor displays landscape. This is because dimension changes made in the editor are not being transferred to the exported scene. Additionally, the in-app download sometimes fails while the direct URL works.
+# Fix Bleed Clipping - Prevent Artwork from Covering Crop Marks
 
----
+## Problem
+When exporting PDFs with bleed enabled (e.g., 3mm), background images or artwork that extends beyond the bleed area covers the crop marks. This makes the crop marks unusable for print finishing.
 
-## Problem 1: PDF Dimensions Don't Match Editor
+Your screenshot shows the issue clearly: the background image extends all the way to the edge and covers the crop marks in the corners.
 
-### Root Cause
-When exporting PDFs, the system calls `mergeLayoutToBase()` to combine the current scene with the template. However, this function only copies element positions and styles - it does **not** copy the root-level `width` and `height` properties from the current scene.
+## Root Cause
+In the `compose-label-sheet` edge function:
+1. The source PDF (exported from Polotno with bleed) is embedded at full size
+2. This includes any artwork that extends beyond the bleed boundary
+3. Crop marks are drawn after the embedded content
+4. But the embedded content overlaps into the crop mark area, hiding them
 
-The flow:
-1. User changes from Portrait (210×297mm) to Landscape (297×210mm)
-2. `store.setSize()` updates the live canvas - works correctly
-3. When exporting, `getBaseScene()` calls `mergeLayoutToBase(currentScene, baseScene)`
-4. `mergeLayoutToBase()` starts with `cloneScene(baseScene)` - which has **old** dimensions
-5. It never updates `merged.width` and `merged.height`
-6. PDF exports with portrait dimensions despite landscape content
+## Solution
+Draw white masking rectangles in the crop mark area (outside the bleed box) before drawing the crop marks. This effectively clips any overflowing artwork to the bleed boundary.
 
-### Solution
-Update `mergeLayoutToBase()` in `src/lib/polotno/vdpResolver.ts` to transfer root-level dimensions:
+```text
+┌──────────────────────────────────────────────┐
+│  ████ WHITE MASK ████  │  ████ WHITE ████    │
+│  ┌─────────────────────────────────────┐     │
+│  │   ┌─────────────────────────────┐   │     │
+│  │ B │                             │ B │     │
+│  │ L │     Trim Area               │ L │     │
+│  │ E │     (Visible after cut)     │ E │     │
+│  │ E │                             │ E │     │
+│  │ D │                             │ D │     │
+│  │   └─────────────────────────────┘   │     │
+│  └─────────────────────────────────────┘     │
+│  ████ WHITE MASK (hides overflow) ████       │
+└──────────────────────────────────────────────┘
 
-```typescript
-// In mergeLayoutToBase(), before returning:
-merged.width = currentScene.width;
-merged.height = currentScene.height;
-if (currentScene.unit) merged.unit = currentScene.unit;
-if (currentScene.dpi) merged.dpi = currentScene.dpi;
+Crop marks are drawn in the white mask area (outside bleed)
 ```
 
----
+## Implementation
 
-## Problem 2: In-App Download Fails
+### File: `supabase/functions/compose-label-sheet/index.ts`
 
-### Root Cause
-The signed URL works when opened directly in a browser tab, but the in-app fetch sometimes fails. This is likely due to:
-1. CORS headers not being present on the storage response
-2. The fetch timing out or being blocked
-3. Browser security restrictions on cross-origin blob creation
-
-### Solution
-Update the download handler in `PolotnoPdfGenerator.tsx` to use `window.open()` as a fallback when fetch fails:
+Add a function to draw white masking rectangles around the bleed box:
 
 ```typescript
-// In handleDownload():
-try {
-  const response = await fetch(data.signedUrl);
-  // ... existing blob download logic
-} catch (fetchError) {
-  // Fallback: Open URL directly in new tab
-  window.open(data.signedUrl, '_blank');
+/**
+ * Draw white masking rectangles to clip content to bleed area
+ * This ensures artwork doesn't extend into the crop mark area
+ */
+function drawBleedMask(
+  page: ReturnType<PDFDocument['addPage']>,
+  bleedX: number,
+  bleedY: number,
+  bleedWidth: number,
+  bleedHeight: number,
+  totalWidth: number,
+  totalHeight: number
+): void {
+  const white = rgb(1, 1, 1);
+  
+  // Left mask (from edge to bleed left)
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: bleedX,
+    height: totalHeight,
+    color: white,
+  });
+  
+  // Right mask (from bleed right to edge)
+  page.drawRectangle({
+    x: bleedX + bleedWidth,
+    y: 0,
+    width: totalWidth - (bleedX + bleedWidth),
+    height: totalHeight,
+    color: white,
+  });
+  
+  // Bottom mask (between left and right masks)
+  page.drawRectangle({
+    x: bleedX,
+    y: 0,
+    width: bleedWidth,
+    height: bleedY,
+    color: white,
+  });
+  
+  // Top mask (between left and right masks)
+  page.drawRectangle({
+    x: bleedX,
+    y: bleedY + bleedHeight,
+    width: bleedWidth,
+    height: totalHeight - (bleedY + bleedHeight),
+    color: white,
+  });
 }
 ```
 
----
-
-## Implementation Steps
-
-### Step 1: Fix Dimension Transfer
-**File**: `src/lib/polotno/vdpResolver.ts`
-
-Add dimension copying in `mergeLayoutToBase()` function, just before `return merged`:
+Modify the print features section (around lines 284-300) to:
+1. First embed the source PDF
+2. Then draw the white mask over any overflow
+3. Finally draw crop marks on top
 
 ```typescript
-// Transfer root-level properties from current scene
-merged.width = currentScene.width;
-merged.height = currentScene.height;
-if (currentScene.unit !== undefined) merged.unit = currentScene.unit;
-if (currentScene.dpi !== undefined) merged.dpi = currentScene.dpi;
-if (currentScene.fonts?.length) merged.fonts = currentScene.fonts;
+// Embed source content
+const [embeddedPage] = await outputPdf.embedPdf(sourcePdf, [pageIdx]);
+newPage.drawPage(embeddedPage, {
+  x: contentX,
+  y: contentY,
+  width: sourceWidth,
+  height: sourceHeight,
+});
 
-return merged;
+// Draw white mask to clip content to bleed area
+drawBleedMask(
+  newPage,
+  contentX,      // bleedX
+  contentY,      // bleedY
+  sourceWidth,   // bleedWidth
+  sourceHeight,  // bleedHeight
+  totalWidth,
+  totalHeight
+);
+
+// Draw crop marks on top of the mask
+drawCropMarks(newPage, trimX, trimY, trimWidthPt, trimHeightPt, cropOffsetPt);
 ```
 
-### Step 2: Fix In-App Download
-**File**: `src/components/polotno/PolotnoPdfGenerator.tsx`
+## Visual Result After Fix
 
-Improve the download handler with fallback:
-
-```typescript
-const handleDownload = async () => {
-  if (!mergeJobId) return;
-
-  setDownloading(true);
-  try {
-    const { data, error } = await supabase.functions.invoke('get-download-url', {
-      body: { mergeJobId },
-    });
-
-    if (error) throw error;
-    if (!data?.signedUrl) throw new Error('No download URL returned');
-
-    // Try fetch + blob approach first (better UX - triggers download dialog)
-    try {
-      const response = await fetch(data.signedUrl);
-      if (!response.ok) throw new Error('Fetch failed');
-      
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${docNamePlural}-${mergeJobId.slice(0, 8)}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } catch (fetchError) {
-      // Fallback: Open signed URL directly (works even with CORS issues)
-      console.warn('Blob download failed, falling back to direct URL:', fetchError);
-      window.open(data.signedUrl, '_blank');
-    }
-    
-    toast({
-      title: "Download started",
-      description: "Your PDF is downloading",
-    });
-  } catch (error) {
-    // ... existing error handling
-  } finally {
-    setDownloading(false);
-  }
-};
+```text
+┌────────────────────────────────────────────┐
+│  ┼                                    ┼    │  <- Crop marks visible
+│  ─                                    ─    │
+│  │  ┌────────────────────────────┐    │    │
+│  │  │                            │    │    │
+│     │   Background image         │         │
+│     │   clipped at bleed edge    │         │
+│     │                            │         │
+│  │  │                            │    │    │
+│  │  └────────────────────────────┘    │    │
+│  ─                                    ─    │
+│  ┼                                    ┼    │  <- Crop marks visible
+└────────────────────────────────────────────┘
 ```
-
----
 
 ## Files to Modify
 
 | File | Change |
 |------|--------|
-| `src/lib/polotno/vdpResolver.ts` | Add dimension transfer in `mergeLayoutToBase()` |
-| `src/components/polotno/PolotnoPdfGenerator.tsx` | Add download fallback for CORS issues |
+| `supabase/functions/compose-label-sheet/index.ts` | Add `drawBleedMask` function and call it after embedding content |
 
----
+## Testing
+1. Create a certificate with a full-bleed background image
+2. Enable 3mm bleed and crop marks
+3. Export to PDF
+4. Verify crop marks are visible at all four corners
+5. Verify background image is clipped at the bleed boundary
 
-## Testing Checklist
-
-1. Change a certificate from A4 Portrait to A4 Landscape
-2. Add some content and export PDF
-3. Verify the exported PDF is landscape orientation
-4. Click Download and verify it works (either via blob or direct URL)
-5. Navigate through records and verify landscape persists
-6. Re-export and confirm all pages are landscape

@@ -140,6 +140,10 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
   // Run ID pattern: each bootstrap attempt gets a unique ID
   // If runId changes mid-flight, the async chain aborts gracefully
   const bootstrapRunIdRef = useRef(0);
+  
+  // Store initial dimensions for first bootstrap - dimension changes after
+  // bootstrap is complete are handled by a separate effect (no re-init)
+  const initialDimensionsRef = useRef({ width: labelWidth, height: labelHeight });
 
   const [bootstrapStage, setBootstrapStage] = useState<BootstrapStage>('waiting_for_mount');
   const [error, setError] = useState<string | null>(null);
@@ -235,12 +239,13 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
         setBootstrapStage('create_store');
         console.log(`[polotno-bootstrap run=${runId} stage=create_store]`);
 
+        // Use initial dimensions from ref (not current props) to avoid re-init on resize
         const store = await createPolotnoStore({
           apiKey,
           unit: 'mm',
           dpi: 300,
-          width: mmToPixels(labelWidth),
-          height: mmToPixels(labelHeight),
+          width: mmToPixels(initialDimensionsRef.current.width),
+          height: mmToPixels(initialDimensionsRef.current.height),
         });
 
         if (isStale()) {
@@ -508,8 +513,24 @@ export function usePolotnoBootstrap(options: UsePolotnoBootstrapOptions): UsePol
       if (changeInterval) clearInterval(changeInterval);
       if (timeoutId) clearTimeout(timeoutId);
     };
-  // CRITICAL: Only stable primitives in deps - no arrays/functions
-  }, [mountEl, labelWidth, labelHeight, bleedMm, projectType, retryCount]);
+  // CRITICAL: Removed labelWidth/labelHeight from deps - dimension changes
+  // are handled by a separate effect below to avoid full re-bootstrap
+  }, [mountEl, bleedMm, projectType, retryCount]);
+
+  // Handle dimension changes without re-bootstrapping
+  // This effect only runs when already "ready" and dimensions change
+  useEffect(() => {
+    // Only run if already bootstrapped and store exists
+    if (bootstrapStage !== 'ready' || !storeRef.current) return;
+    
+    const store = storeRef.current;
+    const newWidthPx = mmToPixels(labelWidth);
+    const newHeightPx = mmToPixels(labelHeight);
+    
+    // Update store size directly (preserves all elements)
+    store.setSize(newWidthPx, newHeightPx);
+    console.log(`[polotno-bootstrap] Dimensions updated: ${labelWidth}mm x ${labelHeight}mm`);
+  }, [bootstrapStage, labelWidth, labelHeight]);
 
   // Cleanup root on unmount
   useEffect(() => {

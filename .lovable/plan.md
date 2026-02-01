@@ -1,40 +1,110 @@
 
-# Fix Server-Side 500 Error: Redeploy compose-label-sheet Edge Function
+## What the screenshot is telling us (root cause)
 
-## Problem Identified
-The edge function logs reveal the exact error:
+Your screenshot shows two critical console errors:
 
-```
-Composition error: ReferenceError: applyCmyk is not defined
-    at Server.<anonymous> (compose-label-sheet/index.ts:293:5)
-```
+1) **404 for the WASM binary**
+- `Failed to load /print-ready-pdfs/gs.wasm (404)`
 
-However, the **repository code** at line 293 is:
-```typescript
-const pages = await outputPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-```
+2) **Ghostscript aborts because WASM can’t be loaded**
+- `Ghostscript initialization failed: Aborted (both async and sync fetching of the wasm failed)`
 
-This means the **deployed edge function is running an older version** that still references `applyCmyk` (the pdfRest conversion function we removed). The code in the repository is correct - it just hasn't been deployed yet.
+So the CMYK pipeline is failing **before it even starts converting** because **Ghostscript’s `gs.wasm` file is missing from your deployed static assets**.
 
-## Root Cause
-When the edge function was updated to remove server-side CMYK conversion, the deployment didn't take effect. The running function is stale.
+We already host:
+- `/print-ready-pdfs/gs.js`
+- ICC profiles (`GRACoL…`, `ISOcoated…`, `sRGB…`)
 
-## Solution
-Simply redeploy the `compose-label-sheet` edge function. No code changes needed - the repository already has the correct code.
+But we do **not** currently host:
+- `/print-ready-pdfs/gs.wasm`  ✅ required
 
-## What the Fix Achieves
+This matches what I see in the repository: `public/print-ready-pdfs/` contains `gs.js` + ICCs, but **no `gs.wasm`**.
 
-| Before (stale deployment) | After (fresh deployment) |
-|---------------------------|--------------------------|
-| References `applyCmyk` function | No CMYK logic on server |
-| Crashes with ReferenceError | Clean pass-through composition |
-| 500 error on every export | Successful PDF composition |
+---
 
-## Implementation
-1. Trigger a redeployment of `compose-label-sheet`
-2. Test PDF export to confirm the 500 error is resolved
+## High-confidence fix (what we will change)
 
-## Technical Notes
-- The repository code is already correct (lines 190-200 show CMYK is noted as client-side only)
-- No code modifications needed
-- This is purely a deployment synchronization issue
+### 1) Add the missing file to public assets
+Copy:
+- `node_modules/@imgly/plugin-print-ready-pdfs-web/dist/gs.wasm`
+
+To:
+- `public/print-ready-pdfs/gs.wasm`
+
+This will make the URL in your screenshot return `200` instead of `404`.
+
+### 2) Strengthen the preflight check so we fail fast (with a clear message)
+Update `checkCmykAssetsAvailable()` in `src/lib/polotno/cmykConverter.ts` to also HEAD-check:
+- `${ASSET_PATH}gs.wasm`
+
+Right now it only checks `gs.js` and one ICC file, which is why we didn’t catch this earlier.
+
+### 3) Verify we’re actually using the fixed `assetPath` everywhere
+Confirm that every `convertToPDFX3(...)` call includes:
+- `assetPath: "/print-ready-pdfs/"`
+
+(Your file already does this; we’ll keep it consistent.)
+
+### 4) Post-fix validation steps (to confirm it’s truly resolved)
+After we add `gs.wasm`, you’ll test again and confirm in DevTools Network tab:
+- `GET /print-ready-pdfs/gs.js` → **200**
+- `GET /print-ready-pdfs/gs.wasm` → **200**
+- `GET /print-ready-pdfs/ISOcoated_v2_eci.icc` → **200**
+- `GET /print-ready-pdfs/GRACoL2013_CRPC6.icc` → **200**
+
+Then run CMYK export and verify the UI no longer shows “CMYK conversion failed”.
+
+---
+
+## Secondary check (only if it still fails after gs.wasm is present)
+
+If `gs.wasm` is loading fine (200) but conversion still fails, the next most likely blocker is **cross-origin isolation** (SharedArrayBuffer requirements).
+
+Symptoms of that issue would look like:
+- errors mentioning `SharedArrayBuffer`, `cross-origin isolation`, `COOP`, or `COEP`
+
+Your project has `public/_headers` set, but we should confirm the browser is actually receiving headers on the document response:
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Embedder-Policy: require-corp`
+
+If those headers are missing in Preview/Published, we’ll plan a hosting/header strategy that Lovable Cloud supports (since these headers must come from the server, not JS).
+
+Note: Your screenshot currently shows a straight 404 for `gs.wasm`, so **we should not jump to COOP/COEP changes until the file exists**.
+
+---
+
+## Files we will change
+
+1) **Add**
+- `public/print-ready-pdfs/gs.wasm`
+
+2) **Edit**
+- `src/lib/polotno/cmykConverter.ts`  
+  - Update `checkCmykAssetsAvailable()` to check `gs.wasm` as well
+
+(No other changes should be needed if this is the only failure.)
+
+---
+
+## Why this should fix it definitively
+
+`gs.js` is just the loader/runtime glue code. The actual Ghostscript engine is inside `gs.wasm`. If `gs.wasm` is missing, Ghostscript cannot initialize and the plugin will always abort—exactly what your screenshot shows.
+
+Once `gs.wasm` is present at the same `assetPath` we already configured, Ghostscript should initialize and CMYK conversion can proceed.
+
+---
+
+## Acceptance criteria
+
+We’ll consider it fixed when:
+- The console no longer shows any `404` for `/print-ready-pdfs/gs.wasm`
+- CMYK conversion completes without the fallback warning
+- (Optional) Acrobat shows PDF/X-3 / CMYK output intent as expected
+
+---
+
+## One quick clarification (helps target the next step if needed)
+After we add `gs.wasm`, are you testing on:
+- Preview URL, Published URL, or both?
+
+(Headers/caching can differ between them; knowing which one fails helps if we need the secondary COOP/COEP step.)

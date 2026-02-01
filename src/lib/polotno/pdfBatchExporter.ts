@@ -45,6 +45,8 @@ export interface PrintConfig {
   trimHeightMm?: number;
   colorMode?: 'rgb' | 'cmyk';
   region?: 'us' | 'eu' | 'other';
+  /** When true, client-side Polotno rendered crop marks - skip server-side drawing */
+  clientRenderedMarks?: boolean;
 }
 
 export interface BatchExportOptions {

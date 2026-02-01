@@ -29,6 +29,8 @@ interface PrintConfig {
   trimHeightMm?: number;
   colorMode?: 'rgb' | 'cmyk';
   region?: 'us' | 'eu' | 'other';
+  /** When true, client-side Polotno rendered crop marks - skip server-side drawing */
+  clientRenderedMarks?: boolean;
 }
 
 // Convert mm to PDF points (72 points per inch)
@@ -267,8 +269,15 @@ serve(async (req) => {
     }
 
     // Check if print features and CMYK should be applied
-    const applyPrintFeatures = fullPageMode && printConfig?.enablePrintMarks;
+    // When clientRenderedMarks is true, Polotno already drew crop marks and clipped bleed
+    const skipServerMarks = printConfig?.clientRenderedMarks === true;
+    const applyPrintFeatures = fullPageMode && printConfig?.enablePrintMarks && !skipServerMarks;
     const applyCmyk = printConfig?.colorMode === 'cmyk';
+    
+    // Detailed logging for debugging CMYK flow
+    console.log('[compose] printConfig received:', JSON.stringify(printConfig));
+    console.log('[compose] applyCmyk check:', { colorMode: printConfig?.colorMode, result: applyCmyk });
+    console.log('[compose] skipServerMarks:', skipServerMarks, 'applyPrintFeatures:', applyPrintFeatures);
     
     if (applyPrintFeatures) {
       console.log(`Print features enabled: ${printConfig.bleedMm}mm bleed, ${printConfig.cropMarkOffsetMm}mm crop mark offset`);

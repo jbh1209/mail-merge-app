@@ -11,13 +11,14 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PolotnoScene } from './types';
 import { resolveVdpVariables } from './vdpResolver';
+import { convertPdfsToCmyk, getProfileForRegion } from './cmykConverter';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 export interface BatchExportProgress {
-  phase: 'preparing' | 'exporting' | 'uploading' | 'composing' | 'complete' | 'error';
+  phase: 'preparing' | 'exporting' | 'converting' | 'uploading' | 'composing' | 'complete' | 'error';
   current: number;
   total: number;
   message?: string;
@@ -366,9 +367,51 @@ export async function batchExportWithPolotno(
 
     console.log(`[PolotnoExport] Generated ${pdfBlobs.length} PDFs`);
 
-    // Step 2: Convert blobs to ArrayBuffers and upload
+    // Step 2: Apply client-side CMYK conversion if requested (before upload)
+    let finalBlobs = pdfBlobs;
+    if (printConfig?.colorMode === 'cmyk') {
+      onProgress({
+        phase: 'converting',
+        current: 0,
+        total: records.length,
+        message: 'Converting to CMYK...',
+      });
+
+      const profile = getProfileForRegion(printConfig.region || 'us');
+      console.log(`[PolotnoExport] Starting CMYK conversion with profile: ${profile}`);
+      
+      try {
+        finalBlobs = await convertPdfsToCmyk(pdfBlobs, { profile }, (current, total) => {
+          onProgress({
+            phase: 'converting',
+            current,
+            total,
+            message: `CMYK conversion ${current} of ${total}...`,
+          });
+        });
+        console.log(`[PolotnoExport] CMYK conversion complete`);
+        onProgress({
+          phase: 'converting',
+          current: records.length,
+          total: records.length,
+          message: 'CMYK conversion complete',
+        });
+      } catch (cmykError) {
+        console.error('[PolotnoExport] CMYK conversion failed:', cmykError);
+        onProgress({
+          phase: 'converting',
+          current: records.length,
+          total: records.length,
+          message: 'CMYK conversion failed - using RGB',
+        });
+        // Continue with RGB blobs
+        finalBlobs = pdfBlobs;
+      }
+    }
+
+    // Step 3: Convert blobs to ArrayBuffers and upload
     const buffers: ArrayBuffer[] = [];
-    for (const blob of pdfBlobs) {
+    for (const blob of finalBlobs) {
       buffers.push(await blob.arrayBuffer());
     }
 

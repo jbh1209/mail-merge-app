@@ -203,23 +203,29 @@ export function PolotnoPdfGenerator({
       if (error) throw error;
       if (!data?.signedUrl) throw new Error('No download URL returned');
 
-      // Fetch the PDF
-      const response = await fetch(data.signedUrl);
-      if (!response.ok) throw new Error('Failed to fetch PDF');
-      
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      
-      // Create download link and trigger it
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${docNamePlural}-${mergeJobId.slice(0, 8)}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Clean up after a delay
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      // Try fetch + blob approach first (better UX - triggers download dialog with filename)
+      try {
+        const response = await fetch(data.signedUrl);
+        if (!response.ok) throw new Error('Fetch failed');
+        
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        
+        // Create download link and trigger it
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${docNamePlural}-${mergeJobId.slice(0, 8)}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Clean up after a delay
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch (fetchError) {
+        // Fallback: Open signed URL directly (works even with CORS issues)
+        console.warn('Blob download failed, falling back to direct URL:', fetchError);
+        window.open(data.signedUrl, '_blank');
+      }
       
       toast({
         title: "Download started",

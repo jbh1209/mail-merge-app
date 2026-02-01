@@ -141,6 +141,18 @@ export async function exportToPdf(store, options = {}) {
 }
 
 /**
+ * Update the store's page dimensions without recreating the store.
+ * This preserves all elements on the page.
+ * @param {object} store - Polotno store instance
+ * @param {number} widthPx - New width in pixels
+ * @param {number} heightPx - New height in pixels
+ */
+export function updateStoreSize(store, widthPx, heightPx) {
+  if (!store) return;
+  store.setSize(widthPx, heightPx);
+}
+
+/**
  * Calculate bleed size in pixels from mm, using DPI.
  * @param {number} mm - Size in millimeters
  * @param {number} dpi - Dots per inch (default 300)

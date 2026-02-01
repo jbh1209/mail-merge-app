@@ -27,13 +27,17 @@ const ASSET_PATH = '/print-ready-pdfs/';
  */
 export async function checkCmykAssetsAvailable(): Promise<{ available: boolean; error?: string }> {
   try {
-    const [gsJs, iccProfile] = await Promise.all([
+    const [gsJs, gsWasm, iccProfile] = await Promise.all([
       fetch(`${ASSET_PATH}gs.js`, { method: 'HEAD' }),
+      fetch(`${ASSET_PATH}gs.wasm`, { method: 'HEAD' }),
       fetch(`${ASSET_PATH}ISOcoated_v2_eci.icc`, { method: 'HEAD' }),
     ]);
     
     if (!gsJs.ok) {
-      return { available: false, error: 'Ghostscript WASM loader not found' };
+      return { available: false, error: 'Ghostscript WASM loader (gs.js) not found' };
+    }
+    if (!gsWasm.ok) {
+      return { available: false, error: 'Ghostscript WASM binary (gs.wasm) not found' };
     }
     if (!iccProfile.ok) {
       return { available: false, error: 'ICC color profiles not found' };

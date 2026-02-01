@@ -1,101 +1,147 @@
 
+# Fix PDF Export Dimension Mismatch
 
-# Fix PDF Generation Failure at Completion
+## Summary
+The PDF output shows portrait orientation when the editor displays landscape. This is because dimension changes made in the editor are not being transferred to the exported scene. Additionally, the in-app download sometimes fails while the direct URL works.
 
-## Problem Summary
-The PDF export appeared to complete all exporting and uploading phases but failed "at the very end." The database shows recent merge jobs completing successfully, and edge functions are responding correctly. This indicates a transient network or timeout issue during the final compose or download phase.
+---
 
-## Root Cause Analysis
-After investigation:
-1. Most recent merge jobs in database: **complete** (no errors)
-2. `compose-label-sheet` edge function: **responding correctly**
-3. `get-download-url` edge function: **responding correctly with signed URLs**
-4. Storage bucket: **accessible**
+## Problem 1: PDF Dimensions Don't Match Editor
 
-The failure was likely caused by:
-- Intermittent network issues (user reports hanging/network errors throughout the session)
-- Edge function timeout during the compose phase for complex/large PDFs
-- Session token expiration during long-running operations
+### Root Cause
+When exporting PDFs, the system calls `mergeLayoutToBase()` to combine the current scene with the template. However, this function only copies element positions and styles - it does **not** copy the root-level `width` and `height` properties from the current scene.
 
-## Proposed Fixes
+The flow:
+1. User changes from Portrait (210×297mm) to Landscape (297×210mm)
+2. `store.setSize()` updates the live canvas - works correctly
+3. When exporting, `getBaseScene()` calls `mergeLayoutToBase(currentScene, baseScene)`
+4. `mergeLayoutToBase()` starts with `cloneScene(baseScene)` - which has **old** dimensions
+5. It never updates `merged.width` and `merged.height`
+6. PDF exports with portrait dimensions despite landscape content
 
-### 1. Add Retry Logic for Edge Function Calls
-Improve resilience by adding retry logic to the `composeFromStorage` function in `src/lib/polotno/pdfBatchExporter.ts`.
+### Solution
+Update `mergeLayoutToBase()` in `src/lib/polotno/vdpResolver.ts` to transfer root-level dimensions:
 
 ```typescript
-async function composeFromStorage(...) {
-  const maxRetries = 3;
-  let lastError = null;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const { data, error } = await supabase.functions.invoke('compose-label-sheet', {...});
-      if (!error) return { success: data?.success ?? false, ... };
-      lastError = error;
-      console.warn(`Compose attempt ${attempt} failed:`, error.message);
-      if (attempt < maxRetries) await new Promise(r => setTimeout(r, 2000 * attempt));
-    } catch (e) {
-      lastError = e;
-    }
-  }
-  return { success: false, error: lastError?.message || 'Compose failed after retries' };
+// In mergeLayoutToBase(), before returning:
+merged.width = currentScene.width;
+merged.height = currentScene.height;
+if (currentScene.unit) merged.unit = currentScene.unit;
+if (currentScene.dpi) merged.dpi = currentScene.dpi;
+```
+
+---
+
+## Problem 2: In-App Download Fails
+
+### Root Cause
+The signed URL works when opened directly in a browser tab, but the in-app fetch sometimes fails. This is likely due to:
+1. CORS headers not being present on the storage response
+2. The fetch timing out or being blocked
+3. Browser security restrictions on cross-origin blob creation
+
+### Solution
+Update the download handler in `PolotnoPdfGenerator.tsx` to use `window.open()` as a fallback when fetch fails:
+
+```typescript
+// In handleDownload():
+try {
+  const response = await fetch(data.signedUrl);
+  // ... existing blob download logic
+} catch (fetchError) {
+  // Fallback: Open URL directly in new tab
+  window.open(data.signedUrl, '_blank');
 }
 ```
 
-### 2. Add Detailed Error Logging with Phase Tracking
-Improve error messages to show exactly which phase failed (exporting, uploading, or composing).
-
-### 3. Add Progress Message for CMYK Conversion (Server-Side)
-Since CMYK conversion happens on the server and can take time, add a message indicating this phase.
-
-### 4. Handle Network Timeouts Gracefully
-Add timeout handling around the compose function invocation to catch hanging requests.
-
 ---
 
-## Implementation Details
+## Implementation Steps
 
-### File: `src/lib/polotno/pdfBatchExporter.ts`
+### Step 1: Fix Dimension Transfer
+**File**: `src/lib/polotno/vdpResolver.ts`
 
-**Changes:**
-1. Add retry logic to `composeFromStorage` with exponential backoff
-2. Improve error messages to include the phase that failed
-3. Add timeout wrapper around edge function calls
+Add dimension copying in `mergeLayoutToBase()` function, just before `return merged`:
 
-### File: `src/components/polotno/PolotnoPdfGenerator.tsx`
+```typescript
+// Transfer root-level properties from current scene
+merged.width = currentScene.width;
+merged.height = currentScene.height;
+if (currentScene.unit !== undefined) merged.unit = currentScene.unit;
+if (currentScene.dpi !== undefined) merged.dpi = currentScene.dpi;
+if (currentScene.fonts?.length) merged.fonts = currentScene.fonts;
 
-**Changes:**
-1. Add better error state display showing which phase failed
-2. Add "Retry" button for transient failures
-3. Improve progress messaging for compose phase
+return merged;
+```
 
----
+### Step 2: Fix In-App Download
+**File**: `src/components/polotno/PolotnoPdfGenerator.tsx`
 
-## Technical Details
+Improve the download handler with fallback:
 
-### Retry Strategy
-- Maximum 3 attempts for compose function
-- Exponential backoff: 2s, 4s, 6s delays between retries
-- Non-retryable errors (auth, invalid data) fail immediately
+```typescript
+const handleDownload = async () => {
+  if (!mergeJobId) return;
 
-### Timeout Handling
-- Add 60-second timeout wrapper for compose function
-- Clear error message on timeout: "PDF composition timed out - please try again"
+  setDownloading(true);
+  try {
+    const { data, error } = await supabase.functions.invoke('get-download-url', {
+      body: { mergeJobId },
+    });
 
-### Edge Case Handling
-1. **Network disconnect during upload**: Individual upload retries already exist via batch processing
-2. **Token expiration**: Supabase client auto-refreshes tokens
-3. **Large PDFs timing out**: Compose function handles batching internally
+    if (error) throw error;
+    if (!data?.signedUrl) throw new Error('No download URL returned');
+
+    // Try fetch + blob approach first (better UX - triggers download dialog)
+    try {
+      const response = await fetch(data.signedUrl);
+      if (!response.ok) throw new Error('Fetch failed');
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${docNamePlural}-${mergeJobId.slice(0, 8)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (fetchError) {
+      // Fallback: Open signed URL directly (works even with CORS issues)
+      console.warn('Blob download failed, falling back to direct URL:', fetchError);
+      window.open(data.signedUrl, '_blank');
+    }
+    
+    toast({
+      title: "Download started",
+      description: "Your PDF is downloading",
+    });
+  } catch (error) {
+    // ... existing error handling
+  } finally {
+    setDownloading(false);
+  }
+};
+```
 
 ---
 
 ## Files to Modify
-1. `src/lib/polotno/pdfBatchExporter.ts` - Add retry logic and timeout handling
-2. `src/components/polotno/PolotnoPdfGenerator.tsx` - Add retry button and improved error display
+
+| File | Change |
+|------|--------|
+| `src/lib/polotno/vdpResolver.ts` | Add dimension transfer in `mergeLayoutToBase()` |
+| `src/components/polotno/PolotnoPdfGenerator.tsx` | Add download fallback for CORS issues |
+
+---
 
 ## Testing Checklist
-- Export a certificate project with a background image
-- Verify progress phases display correctly
-- Simulate network disconnect during compose to test retry
-- Verify error messages are helpful when failures occur
 
+1. Change a certificate from A4 Portrait to A4 Landscape
+2. Add some content and export PDF
+3. Verify the exported PDF is landscape orientation
+4. Click Download and verify it works (either via blob or direct URL)
+5. Navigate through records and verify landscape persists
+6. Re-export and confirm all pages are landscape

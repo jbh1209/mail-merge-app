@@ -9,10 +9,10 @@
  * - Stable regenerateLayoutRef prevents bootstrap restarts
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { saveScene } from '@/vendor/polotno-runtime.js';
+import { saveScene, mmToPixels } from '@/vendor/polotno-runtime.js';
 import { mergeLayoutToBase } from '@/lib/polotno/vdpResolver';
 import type { PolotnoScene } from '@/lib/polotno/types';
 
@@ -161,7 +161,11 @@ export function PolotnoEditorWrapper({
 
   // ============================================================================
   // VDP Navigation Hook - uses bootstrap's storeRef directly
+  // Pass current dimensions so they can be restored after loadJSON
   // ============================================================================
+  const currentWidthPx = useMemo(() => mmToPixels(labelWidth, 300), [labelWidth]);
+  const currentHeightPx = useMemo(() => mmToPixels(labelHeight, 300), [labelHeight]);
+
   useVdpNavigation({
     storeRef: bootstrapResult.storeRef,
     baseSceneRef,
@@ -173,6 +177,8 @@ export function PolotnoEditorWrapper({
     bootstrapStage: bootstrapResult.bootstrapStage,
     initialScene,
     onRecordNavigationChange,
+    currentWidthPx,
+    currentHeightPx,
   });
 
   // ============================================================================

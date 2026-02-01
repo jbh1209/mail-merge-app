@@ -36,6 +36,9 @@ export interface UseVdpNavigationOptions {
   bootstrapStage: string;
   initialScene?: string;
   onRecordNavigationChange?: (state: RecordNavigationState) => void;
+  // Current page dimensions in pixels - used to restore after loadJSON
+  currentWidthPx?: number;
+  currentHeightPx?: number;
 }
 
 export interface UseVdpNavigationResult {
@@ -56,6 +59,8 @@ export function useVdpNavigation(options: UseVdpNavigationOptions): UseVdpNaviga
     bootstrapStage,
     initialScene,
     onRecordNavigationChange,
+    currentWidthPx,
+    currentHeightPx,
   } = options;
 
   const [currentRecordIndex, setCurrentRecordIndex] = useState(0);
@@ -118,11 +123,24 @@ export function useVdpNavigation(options: UseVdpNavigationOptions): UseVdpNaviga
           });
           console.log('[B1] Calling store.loadJSON with resolved scene');
           await store.loadJSON(resolved);
+          
+          // Restore current page dimensions after loading (loadJSON resets to scene's original size)
+          if (currentWidthPx && currentHeightPx) {
+            store.setSize(currentWidthPx, currentHeightPx);
+            console.log(`[B1] Restored dimensions: ${currentWidthPx}x${currentHeightPx}px`);
+          }
+          
           initialVdpAppliedRef.current = true;
           console.log('✅ Loaded scene with VDP resolution for first record');
         } else {
           console.log('[B1] Loading scene without VDP');
           store.loadJSON(JSON.parse(initialScene));
+          
+          // Restore current page dimensions
+          if (currentWidthPx && currentHeightPx) {
+            store.setSize(currentWidthPx, currentHeightPx);
+          }
+          
           console.log('✅ Loaded scene without VDP resolution');
         }
       } catch (err) {
@@ -228,6 +246,13 @@ export function useVdpNavigation(options: UseVdpNavigationOptions): UseVdpNaviga
 
         // CRITICAL: Await store.loadJSON to ensure it completes before returning
         await store.loadJSON(resolved);
+        
+        // Restore current page dimensions after loading (loadJSON resets to scene's original size)
+        if (currentWidthPx && currentHeightPx) {
+          store.setSize(currentWidthPx, currentHeightPx);
+          console.log(`[VDP-Nav] Restored dimensions: ${currentWidthPx}x${currentHeightPx}px`);
+        }
+        
         initialVdpAppliedRef.current = true;
         console.log(`[VDP-Nav] ✅ VDP resolved for record ${currentRecordIndex + 1}`);
       } catch (err) {

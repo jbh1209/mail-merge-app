@@ -1,167 +1,190 @@
 
-
-# Use Polotno Native Bleed & Crop Marks + Fix CMYK Conversion
+# Client-Side CMYK Conversion with @imgly/plugin-print-ready-pdfs-web
 
 ## Summary
-Switch from server-side crop marks and white masking to Polotno's native PDF export with built-in crop marks and proper bleed clipping. Then ensure CMYK conversion is reliably invoked.
+Replace the server-side pdfRest CMYK conversion with a fully client-side solution using IMG.LY's print-ready PDF plugin. This eliminates the need for an external API key while providing professional-grade CMYK PDF/X-3 output.
 
 ---
 
-## Current Situation
+## Why This Works
 
-**Export Flow Today:**
-1. Polotno exports PDF with `includeBleed: true, cropMarkSize: 0`
-2. Server-side `compose-label-sheet` adds crop marks via `pdf-lib`
-3. Server-side white rectangles mask overflow (added in last fix)
-4. CMYK conversion via pdfRest (if `colorMode === 'cmyk'`)
-
-**Problems:**
-- Crop marks drawn manually are less elegant than Polotno's native implementation
-- White masking is a workaround that adds extra PDF drawing operations
-- CMYK conversion may not be triggering (needs investigation)
+The `@imgly/plugin-print-ready-pdfs-web` package:
+- **Works with any PDF Blob** - Not limited to CE.SDK, works with Polotno output
+- **100% browser-based** - Uses Ghostscript WASM, no server calls needed
+- **Vite-compatible out of the box** - Auto-resolves assets via `import.meta.url`
+- **Includes standard ICC profiles** - FOGRA39 (EU) and GRACoL (US) built-in
+- **CORS headers already configured** - The project's `_headers` file already has the required SharedArrayBuffer support
 
 ---
 
-## Proposed Changes
+## Current vs New Flow
 
-### Change 1: Use Polotno Native Crop Marks
+```text
+Current Flow (broken - needs pdfRest API key):
+Polotno → RGB PDFs → Upload → Server compose → pdfRest CMYK → Download
 
-Polotno's `cropMarkSize` option automatically:
-- Draws proper crop marks at trim corners
-- Clips bleed content correctly (no overflow)
-- Sets proper TrimBox/BleedBox metadata
-
-**Before:**
-```javascript
-// PolotnoPdfGenerator.tsx
-const exportPdf = async (scene) => {
-  return editorHandle.exportResolvedPdf(scene, {
-    includeBleed: printSettings?.enablePrintMarks ?? false,
-    includeCropMarks: false, // Server adds them
-    pixelRatio: 2,
-  });
-};
+New Flow (no API key needed):
+Polotno → RGB PDFs → Client CMYK conversion → Upload → Server compose → Download
 ```
-
-**After:**
-```javascript
-// PolotnoPdfGenerator.tsx
-const exportPdf = async (scene) => {
-  return editorHandle.exportResolvedPdf(scene, {
-    includeBleed: printSettings?.enablePrintMarks ?? false,
-    includeCropMarks: printSettings?.enablePrintMarks ?? false, // Use native
-    cropMarkSizeMm: printSettings?.cropMarkOffsetMm ?? 3,
-    pixelRatio: 2,
-  });
-};
-```
-
-### Change 2: Update Edge Function to Skip Server-Side Marks
-
-When PDFs already have crop marks from Polotno, the compose function should:
-- Skip drawing crop marks
-- Skip drawing white masks
-- Still apply CMYK conversion if requested
-
-Add a new flag `clientRenderedMarks: true` to signal pre-rendered marks.
-
-### Change 3: Verify CMYK Conversion Path
-
-The CMYK conversion in `compose-label-sheet` only triggers when:
-1. `fullPageMode === true` (certificates, not labels)
-2. `printConfig.colorMode === 'cmyk'`
-
-Current check:
-```javascript
-const applyCmyk = printConfig?.colorMode === 'cmyk';
-```
-
-This should work, but we need to verify `printConfig` is being passed correctly from the client. Add logging to trace the flow.
 
 ---
 
-## Implementation Plan
+## Implementation Steps
 
-### Step 1: Update Client-Side Export
+### Step 1: Install the Package
 
-**File:** `src/components/polotno/PolotnoPdfGenerator.tsx`
+```bash
+npm install @imgly/plugin-print-ready-pdfs-web
+```
+
+### Step 2: Add Client-Side CMYK Conversion
+
+**File:** `src/lib/polotno/cmykConverter.ts` (new file)
+
+Create a utility module to handle CMYK conversion:
 
 ```typescript
-// Create export function that uses the editor handle
-const exportPdf = async (scene: PolotnoScene): Promise<Blob> => {
-  const usePrintMarks = printSettings?.enablePrintMarks ?? false;
+import { convertToPDFX3 } from '@imgly/plugin-print-ready-pdfs-web';
+
+export type ColorProfile = 'fogra39' | 'gracol' | 'srgb';
+
+export interface CmykConversionOptions {
+  profile: ColorProfile;
+  title?: string;
+  flattenTransparency?: boolean;
+}
+
+/**
+ * Convert a single RGB PDF to CMYK PDF/X-3
+ */
+export async function convertPdfToCmyk(
+  pdfBlob: Blob,
+  options: CmykConversionOptions
+): Promise<Blob> {
+  return convertToPDFX3(pdfBlob, {
+    outputProfile: options.profile,
+    title: options.title ?? 'Print-Ready Export',
+    flattenTransparency: options.flattenTransparency ?? true,
+  });
+}
+
+/**
+ * Convert multiple RGB PDFs to CMYK PDF/X-3 (sequential processing)
+ */
+export async function convertPdfsToCmyk(
+  pdfBlobs: Blob[],
+  options: CmykConversionOptions,
+  onProgress?: (current: number, total: number) => void
+): Promise<Blob[]> {
+  const results: Blob[] = [];
   
-  return editorHandle.exportResolvedPdf(scene, {
-    includeBleed: usePrintMarks,
-    includeCropMarks: usePrintMarks,  // Enable native crop marks
-    cropMarkSizeMm: printSettings?.cropMarkOffsetMm ?? 3,
-    pixelRatio: 2,
-  });
-};
+  for (let i = 0; i < pdfBlobs.length; i++) {
+    const cmykBlob = await convertToPDFX3(pdfBlobs[i], {
+      outputProfile: options.profile,
+      title: options.title ?? 'Print-Ready Export',
+      flattenTransparency: options.flattenTransparency ?? true,
+    });
+    results.push(cmykBlob);
+    onProgress?.(i + 1, pdfBlobs.length);
+  }
+  
+  return results;
+}
+
+/**
+ * Get the appropriate color profile based on region
+ */
+export function getProfileForRegion(region: 'US' | 'EU' | 'us' | 'eu' | string): ColorProfile {
+  return region.toLowerCase() === 'eu' ? 'fogra39' : 'gracol';
+}
 ```
 
-### Step 2: Update Print Config to Signal Native Marks
+### Step 3: Integrate into PDF Export Pipeline
+
+**File:** `src/lib/polotno/pdfBatchExporter.ts`
+
+Modify the `batchExportWithPolotno` function to apply CMYK conversion before uploading:
+
+```typescript
+// After exporting PDFs from Polotno:
+const pdfBlobs: Blob[] = [];
+for (let i = 0; i < records.length; i++) {
+  // ... existing export logic
+  const blob = await exportPdf(resolvedScene);
+  pdfBlobs.push(blob);
+}
+
+// NEW: Apply CMYK conversion if requested (before upload)
+let finalBlobs = pdfBlobs;
+if (printConfig?.colorMode === 'cmyk') {
+  onProgress({
+    phase: 'exporting', // Reuse phase with different message
+    current: 0,
+    total: records.length,
+    message: 'Converting to CMYK...',
+  });
+  
+  const profile = getProfileForRegion(printConfig.region || 'us');
+  finalBlobs = await convertPdfsToCmyk(pdfBlobs, { profile }, (current, total) => {
+    onProgress({
+      phase: 'exporting',
+      current,
+      total,
+      message: `CMYK conversion ${current} of ${total}...`,
+    });
+  });
+}
+
+// Continue with upload using finalBlobs instead of pdfBlobs
+```
+
+### Step 4: Add Progress Phase for CMYK
+
+**File:** `src/lib/polotno/pdfBatchExporter.ts`
+
+Update the `BatchExportProgress` interface:
+
+```typescript
+export interface BatchExportProgress {
+  phase: 'preparing' | 'exporting' | 'converting' | 'uploading' | 'composing' | 'complete' | 'error';
+  current: number;
+  total: number;
+  message?: string;
+}
+```
+
+### Step 5: Update UI Progress Display
 
 **File:** `src/components/polotno/PolotnoPdfGenerator.tsx`
 
-Add flag to printConfig:
+Add handling for the new 'converting' phase in progress display:
+
 ```typescript
-const printConfig: PrintConfig | undefined = printSettings ? {
-  enablePrintMarks: printSettings.enablePrintMarks,
-  bleedMm: printSettings.bleedMm,
-  cropMarkOffsetMm: printSettings.cropMarkOffsetMm,
-  trimWidthMm: templateConfig.widthMm,
-  trimHeightMm: templateConfig.heightMm,
-  colorMode: printSettings.colorMode,
-  region: printSettings.region?.toLowerCase() as 'us' | 'eu' | 'other',
-  clientRenderedMarks: true,  // New: skip server-side marks
-} : undefined;
-```
-
-### Step 3: Update Edge Function
-
-**File:** `supabase/functions/compose-label-sheet/index.ts`
-
-Update PrintConfig interface:
-```typescript
-interface PrintConfig {
-  enablePrintMarks: boolean;
-  bleedMm: number;
-  cropMarkOffsetMm: number;
-  trimWidthMm?: number;
-  trimHeightMm?: number;
-  colorMode?: 'rgb' | 'cmyk';
-  region?: 'us' | 'eu' | 'other';
-  clientRenderedMarks?: boolean;  // New: skip server drawing
+switch (progress.phase) {
+  case 'preparing':
+    return 5;
+  case 'exporting':
+    return 5 + basePercent * 0.50;  // Reduced from 65%
+  case 'converting':
+    return 55 + basePercent * 0.15; // New CMYK phase
+  case 'uploading':
+    return 70 + basePercent * 0.15;
+  case 'composing':
+    return 85 + basePercent * 0.15;
+  default:
+    return basePercent;
 }
 ```
 
-Update full-page processing logic:
-```typescript
-// Check if client already rendered print marks
-const skipServerMarks = printConfig?.clientRenderedMarks === true;
-
-if (applyPrintFeatures && !skipServerMarks) {
-  // ... existing server-side bleed/crop mark logic
-} else {
-  // Just copy pages directly (marks already rendered by client)
-  const pages = await outputPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-  pages.forEach(page => outputPdf.addPage(page));
-}
-```
-
-### Step 4: Add CMYK Logging
+### Step 6: Remove Server-Side CMYK Code
 
 **File:** `supabase/functions/compose-label-sheet/index.ts`
 
-Add detailed logging:
-```typescript
-console.log('[compose] printConfig received:', JSON.stringify(printConfig));
-console.log('[compose] applyCmyk check:', {
-  colorMode: printConfig?.colorMode,
-  result: applyCmyk
-});
-```
+Since CMYK conversion now happens client-side, we can:
+- Remove the `convertToCmyk` function
+- Remove the `applyCmyk` logic block
+- Remove the pdfRest API dependency
+- Keep `cmykApplied` response field for UI feedback
 
 ---
 
@@ -169,37 +192,51 @@ console.log('[compose] applyCmyk check:', {
 
 | File | Changes |
 |------|---------|
-| `src/components/polotno/PolotnoPdfGenerator.tsx` | Enable native crop marks, add `clientRenderedMarks` flag |
-| `src/lib/polotno/pdfBatchExporter.ts` | Add `clientRenderedMarks` to PrintConfig interface |
-| `supabase/functions/compose-label-sheet/index.ts` | Skip server-side marks when client-rendered, add CMYK logging |
+| `package.json` | Add `@imgly/plugin-print-ready-pdfs-web` dependency |
+| `src/lib/polotno/cmykConverter.ts` | **NEW** - CMYK conversion utility |
+| `src/lib/polotno/pdfBatchExporter.ts` | Add CMYK conversion step, update progress phases |
+| `src/components/polotno/PolotnoPdfGenerator.tsx` | Update progress UI for CMYK phase |
+| `supabase/functions/compose-label-sheet/index.ts` | Remove pdfRest CMYK logic |
 
 ---
 
-## Result After Changes
+## Technical Details
+
+### Browser Requirements
+The plugin uses Ghostscript WASM which requires:
+- **SharedArrayBuffer support** - Already enabled via `public/_headers` (COOP/COEP headers)
+- **Modern browser** - Chrome 87+, Firefox 79+, Safari 15.2+, Edge 87+
+
+### Performance Considerations
+- CMYK conversion is sequential (one PDF at a time) to avoid overwhelming WASM
+- Each PDF typically takes 1-3 seconds to convert
+- Progress UI will show conversion status
+
+### Transparency Handling
+PDF/X-3 doesn't support transparency. The plugin flattens transparent elements by default.
+If needed, can set `flattenTransparency: false` for visual fidelity over strict compliance.
+
+---
+
+## Result After Implementation
 
 ```text
-Export Flow (New):
-1. Polotno exports PDF with includeBleed + cropMarkSize (native marks + clipping)
-2. Server-side compose-label-sheet merges pages (no additional drawing)
-3. CMYK conversion via pdfRest if requested
-4. Final PDF has proper print marks from source
-
 Benefits:
-✅ Native crop marks (cleaner implementation)
-✅ Proper bleed clipping (built into Polotno)
-✅ Simpler server code (no manual mark drawing)
-✅ CMYK verified and logged
+✅ No external API key required (pdfRest eliminated)
+✅ No server costs for CMYK conversion
+✅ Faster processing (no network round-trip to pdfRest)
+✅ Works offline once WASM is loaded
+✅ Professional PDF/X-3 compliant output
+✅ Correct ICC profiles (FOGRA39 EU / GRACoL US)
 ```
 
 ---
 
 ## Testing Checklist
 
-1. Create a certificate with full-bleed background
-2. Enable bleed (3mm) and print marks
-3. Export to PDF (RGB mode first)
-4. Verify crop marks are visible and artwork is clipped
-5. Enable CMYK mode and re-export
-6. Check edge function logs to confirm CMYK conversion triggered
-7. Download and verify CMYK output (color profile embedded)
-
+1. Create a certificate with colorful design
+2. Enable print marks and select CMYK mode
+3. Generate PDF and verify progress shows "Converting to CMYK" phase
+4. Download PDF and open in Adobe Acrobat
+5. Check Document Properties → Color Space shows "DeviceCMYK"
+6. Verify ICC profile is embedded (FOGRA39 or GRACoL based on region)

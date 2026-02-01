@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Rocket, Loader2, AlertCircle, CheckCircle2, Download } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Rocket, Loader2, AlertCircle, CheckCircle2, Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -28,6 +28,15 @@ const getDocumentName = (type: string, plural = false): string => {
   };
   const pair = names[type] || names.custom;
   return pair[plural ? 1 : 0];
+};
+
+// Determine if an error is likely transient (network/timeout)
+const isTransientError = (error: string): boolean => {
+  const transientPatterns = [
+    'network', 'timeout', 'timed out', 'fetch failed', 'Failed to fetch',
+    'connection', 'ECONNRESET', 'socket', '502', '503', '504',
+  ];
+  return transientPatterns.some(p => error.toLowerCase().includes(p.toLowerCase()));
 };
 
 interface PolotnoPdfGeneratorProps {
@@ -71,9 +80,10 @@ export function PolotnoPdfGenerator({
   } | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [cmykStatus, setCmykStatus] = useState<'pending' | 'success' | 'failed'>('pending');
+  const [lastError, setLastError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const handleGenerate = async () => {
+  const handleGenerate = useCallback(async () => {
     if (!editorHandle) {
       onError('Editor not initialized');
       return;
@@ -85,6 +95,7 @@ export function PolotnoPdfGenerator({
     }
 
     setGenerating(true);
+    setLastError(null);
     setProgress({
       phase: 'preparing',
       current: 0,
@@ -167,6 +178,7 @@ export function PolotnoPdfGenerator({
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Export failed';
       console.error('Generation error:', error);
+      setLastError(message);
       toast({
         title: "PDF generation failed",
         description: message,
@@ -176,7 +188,7 @@ export function PolotnoPdfGenerator({
     } finally {
       setGenerating(false);
     }
-  };
+  }, [editorHandle, dataRecords, isFullPage, templateConfig, printSettings, mergeJobId, toast, onComplete, onError]);
 
   const handleDownload = async () => {
     if (!mergeJobId) return;
@@ -375,6 +387,28 @@ export function PolotnoPdfGenerator({
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 Please wait for the editor to initialize before generating PDFs.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Show error with retry option for transient failures */}
+          {lastError && !generating && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="flex flex-col gap-2">
+                <span>{lastError}</span>
+                {isTransientError(lastError) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerate}
+                    disabled={!editorHandle}
+                    className="w-fit"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Retry Export
+                  </Button>
+                )}
               </AlertDescription>
             </Alert>
           )}

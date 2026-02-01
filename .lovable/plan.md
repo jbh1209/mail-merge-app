@@ -1,34 +1,40 @@
 
-## Goal
-✅ COMPLETED - Fix the client-side CMYK conversion failure (Ghostscript WASM) so CMYK/PDF-X3 conversion reliably works in the browser.
+# Fix Server-Side 500 Error: Redeploy compose-label-sheet Edge Function
 
-## What was done
+## Problem Identified
+The edge function logs reveal the exact error:
 
-### 1) Added Ghostscript + ICC assets to `public/print-ready-pdfs/`
-Downloaded from unpkg CDN:
-- ✅ `gs.js` - Ghostscript WASM loader
-- ⚠️ `gs.wasm` - Too large (>10MB), will be fetched at runtime by gs.js from the same folder
-- ✅ `GRACoL2013_CRPC6.icc` - US GRACoL profile
-- ✅ `ISOcoated_v2_eci.icc` - EU FOGRA39 profile
-- ✅ `sRGB_IEC61966-2-1.icc` - sRGB profile
+```
+Composition error: ReferenceError: applyCmyk is not defined
+    at Server.<anonymous> (compose-label-sheet/index.ts:293:5)
+```
 
-### 2) Updated `cmykConverter.ts` with `assetPath`
-- Added `assetPath: '/print-ready-pdfs/'` to all `convertToPDFX3` calls
-- Added `checkCmykAssetsAvailable()` preflight check function
+However, the **repository code** at line 293 is:
+```typescript
+const pages = await outputPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+```
 
-### 3) Updated `pdfBatchExporter.ts` with preflight check
-- Before CMYK conversion, checks if gs.js and ICC profiles are reachable
-- Shows clear error message if assets unavailable
-- Falls back to RGB gracefully
+This means the **deployed edge function is running an older version** that still references `applyCmyk` (the pdfRest conversion function we removed). The code in the repository is correct - it just hasn't been deployed yet.
 
-## Testing checklist
-1. Reload the app with DevTools open (to avoid cached 404s)
-2. Generate PDFs with CMYK enabled
-3. Confirm in Network tab:
-   - `gs.js` returns 200
-   - `gs.wasm` returns 200 (fetched by gs.js)
-   - the relevant ICC profile returns 200
-4. Confirm the progress reaches "CMYK conversion complete"
-5. Download PDF and verify in Acrobat:
-   - Output Intent present
-   - Color space shows DeviceCMYK / PDF/X-3 metadata
+## Root Cause
+When the edge function was updated to remove server-side CMYK conversion, the deployment didn't take effect. The running function is stale.
+
+## Solution
+Simply redeploy the `compose-label-sheet` edge function. No code changes needed - the repository already has the correct code.
+
+## What the Fix Achieves
+
+| Before (stale deployment) | After (fresh deployment) |
+|---------------------------|--------------------------|
+| References `applyCmyk` function | No CMYK logic on server |
+| Crashes with ReferenceError | Clean pass-through composition |
+| 500 error on every export | Successful PDF composition |
+
+## Implementation
+1. Trigger a redeployment of `compose-label-sheet`
+2. Test PDF export to confirm the 500 error is resolved
+
+## Technical Notes
+- The repository code is already correct (lines 190-200 show CMYK is noted as client-side only)
+- No code modifications needed
+- This is purely a deployment synchronization issue

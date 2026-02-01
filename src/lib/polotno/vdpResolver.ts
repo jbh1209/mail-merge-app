@@ -526,6 +526,16 @@ export function mergeLayoutToBase(
     }
   }
   
+  // CRITICAL: Transfer root-level dimensions from current scene
+  // This ensures orientation changes (portrait → landscape) are preserved in exports
+  merged.width = currentScene.width;
+  merged.height = currentScene.height;
+  if (currentScene.unit !== undefined) merged.unit = currentScene.unit;
+  if (currentScene.dpi !== undefined) merged.dpi = currentScene.dpi;
+  if (currentScene.fonts?.length) merged.fonts = currentScene.fonts;
+  
+  console.log(`📐 mergeLayoutToBase: dimensions ${merged.width}×${merged.height}`);
+  
   return merged;
 }
 

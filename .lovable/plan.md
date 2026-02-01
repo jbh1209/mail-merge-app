@@ -1,158 +1,205 @@
 
 
-# Fix Bleed Clipping - Prevent Artwork from Covering Crop Marks
+# Use Polotno Native Bleed & Crop Marks + Fix CMYK Conversion
 
-## Problem
-When exporting PDFs with bleed enabled (e.g., 3mm), background images or artwork that extends beyond the bleed area covers the crop marks. This makes the crop marks unusable for print finishing.
+## Summary
+Switch from server-side crop marks and white masking to Polotno's native PDF export with built-in crop marks and proper bleed clipping. Then ensure CMYK conversion is reliably invoked.
 
-Your screenshot shows the issue clearly: the background image extends all the way to the edge and covers the crop marks in the corners.
+---
 
-## Root Cause
-In the `compose-label-sheet` edge function:
-1. The source PDF (exported from Polotno with bleed) is embedded at full size
-2. This includes any artwork that extends beyond the bleed boundary
-3. Crop marks are drawn after the embedded content
-4. But the embedded content overlaps into the crop mark area, hiding them
+## Current Situation
 
-## Solution
-Draw white masking rectangles in the crop mark area (outside the bleed box) before drawing the crop marks. This effectively clips any overflowing artwork to the bleed boundary.
+**Export Flow Today:**
+1. Polotno exports PDF with `includeBleed: true, cropMarkSize: 0`
+2. Server-side `compose-label-sheet` adds crop marks via `pdf-lib`
+3. Server-side white rectangles mask overflow (added in last fix)
+4. CMYK conversion via pdfRest (if `colorMode === 'cmyk'`)
 
-```text
-┌──────────────────────────────────────────────┐
-│  ████ WHITE MASK ████  │  ████ WHITE ████    │
-│  ┌─────────────────────────────────────┐     │
-│  │   ┌─────────────────────────────┐   │     │
-│  │ B │                             │ B │     │
-│  │ L │     Trim Area               │ L │     │
-│  │ E │     (Visible after cut)     │ E │     │
-│  │ E │                             │ E │     │
-│  │ D │                             │ D │     │
-│  │   └─────────────────────────────┘   │     │
-│  └─────────────────────────────────────┘     │
-│  ████ WHITE MASK (hides overflow) ████       │
-└──────────────────────────────────────────────┘
+**Problems:**
+- Crop marks drawn manually are less elegant than Polotno's native implementation
+- White masking is a workaround that adds extra PDF drawing operations
+- CMYK conversion may not be triggering (needs investigation)
 
-Crop marks are drawn in the white mask area (outside bleed)
+---
+
+## Proposed Changes
+
+### Change 1: Use Polotno Native Crop Marks
+
+Polotno's `cropMarkSize` option automatically:
+- Draws proper crop marks at trim corners
+- Clips bleed content correctly (no overflow)
+- Sets proper TrimBox/BleedBox metadata
+
+**Before:**
+```javascript
+// PolotnoPdfGenerator.tsx
+const exportPdf = async (scene) => {
+  return editorHandle.exportResolvedPdf(scene, {
+    includeBleed: printSettings?.enablePrintMarks ?? false,
+    includeCropMarks: false, // Server adds them
+    pixelRatio: 2,
+  });
+};
 ```
 
-## Implementation
+**After:**
+```javascript
+// PolotnoPdfGenerator.tsx
+const exportPdf = async (scene) => {
+  return editorHandle.exportResolvedPdf(scene, {
+    includeBleed: printSettings?.enablePrintMarks ?? false,
+    includeCropMarks: printSettings?.enablePrintMarks ?? false, // Use native
+    cropMarkSizeMm: printSettings?.cropMarkOffsetMm ?? 3,
+    pixelRatio: 2,
+  });
+};
+```
 
-### File: `supabase/functions/compose-label-sheet/index.ts`
+### Change 2: Update Edge Function to Skip Server-Side Marks
 
-Add a function to draw white masking rectangles around the bleed box:
+When PDFs already have crop marks from Polotno, the compose function should:
+- Skip drawing crop marks
+- Skip drawing white masks
+- Still apply CMYK conversion if requested
+
+Add a new flag `clientRenderedMarks: true` to signal pre-rendered marks.
+
+### Change 3: Verify CMYK Conversion Path
+
+The CMYK conversion in `compose-label-sheet` only triggers when:
+1. `fullPageMode === true` (certificates, not labels)
+2. `printConfig.colorMode === 'cmyk'`
+
+Current check:
+```javascript
+const applyCmyk = printConfig?.colorMode === 'cmyk';
+```
+
+This should work, but we need to verify `printConfig` is being passed correctly from the client. Add logging to trace the flow.
+
+---
+
+## Implementation Plan
+
+### Step 1: Update Client-Side Export
+
+**File:** `src/components/polotno/PolotnoPdfGenerator.tsx`
 
 ```typescript
-/**
- * Draw white masking rectangles to clip content to bleed area
- * This ensures artwork doesn't extend into the crop mark area
- */
-function drawBleedMask(
-  page: ReturnType<PDFDocument['addPage']>,
-  bleedX: number,
-  bleedY: number,
-  bleedWidth: number,
-  bleedHeight: number,
-  totalWidth: number,
-  totalHeight: number
-): void {
-  const white = rgb(1, 1, 1);
+// Create export function that uses the editor handle
+const exportPdf = async (scene: PolotnoScene): Promise<Blob> => {
+  const usePrintMarks = printSettings?.enablePrintMarks ?? false;
   
-  // Left mask (from edge to bleed left)
-  page.drawRectangle({
-    x: 0,
-    y: 0,
-    width: bleedX,
-    height: totalHeight,
-    color: white,
+  return editorHandle.exportResolvedPdf(scene, {
+    includeBleed: usePrintMarks,
+    includeCropMarks: usePrintMarks,  // Enable native crop marks
+    cropMarkSizeMm: printSettings?.cropMarkOffsetMm ?? 3,
+    pixelRatio: 2,
   });
-  
-  // Right mask (from bleed right to edge)
-  page.drawRectangle({
-    x: bleedX + bleedWidth,
-    y: 0,
-    width: totalWidth - (bleedX + bleedWidth),
-    height: totalHeight,
-    color: white,
-  });
-  
-  // Bottom mask (between left and right masks)
-  page.drawRectangle({
-    x: bleedX,
-    y: 0,
-    width: bleedWidth,
-    height: bleedY,
-    color: white,
-  });
-  
-  // Top mask (between left and right masks)
-  page.drawRectangle({
-    x: bleedX,
-    y: bleedY + bleedHeight,
-    width: bleedWidth,
-    height: totalHeight - (bleedY + bleedHeight),
-    color: white,
-  });
+};
+```
+
+### Step 2: Update Print Config to Signal Native Marks
+
+**File:** `src/components/polotno/PolotnoPdfGenerator.tsx`
+
+Add flag to printConfig:
+```typescript
+const printConfig: PrintConfig | undefined = printSettings ? {
+  enablePrintMarks: printSettings.enablePrintMarks,
+  bleedMm: printSettings.bleedMm,
+  cropMarkOffsetMm: printSettings.cropMarkOffsetMm,
+  trimWidthMm: templateConfig.widthMm,
+  trimHeightMm: templateConfig.heightMm,
+  colorMode: printSettings.colorMode,
+  region: printSettings.region?.toLowerCase() as 'us' | 'eu' | 'other',
+  clientRenderedMarks: true,  // New: skip server-side marks
+} : undefined;
+```
+
+### Step 3: Update Edge Function
+
+**File:** `supabase/functions/compose-label-sheet/index.ts`
+
+Update PrintConfig interface:
+```typescript
+interface PrintConfig {
+  enablePrintMarks: boolean;
+  bleedMm: number;
+  cropMarkOffsetMm: number;
+  trimWidthMm?: number;
+  trimHeightMm?: number;
+  colorMode?: 'rgb' | 'cmyk';
+  region?: 'us' | 'eu' | 'other';
+  clientRenderedMarks?: boolean;  // New: skip server drawing
 }
 ```
 
-Modify the print features section (around lines 284-300) to:
-1. First embed the source PDF
-2. Then draw the white mask over any overflow
-3. Finally draw crop marks on top
-
+Update full-page processing logic:
 ```typescript
-// Embed source content
-const [embeddedPage] = await outputPdf.embedPdf(sourcePdf, [pageIdx]);
-newPage.drawPage(embeddedPage, {
-  x: contentX,
-  y: contentY,
-  width: sourceWidth,
-  height: sourceHeight,
+// Check if client already rendered print marks
+const skipServerMarks = printConfig?.clientRenderedMarks === true;
+
+if (applyPrintFeatures && !skipServerMarks) {
+  // ... existing server-side bleed/crop mark logic
+} else {
+  // Just copy pages directly (marks already rendered by client)
+  const pages = await outputPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+  pages.forEach(page => outputPdf.addPage(page));
+}
+```
+
+### Step 4: Add CMYK Logging
+
+**File:** `supabase/functions/compose-label-sheet/index.ts`
+
+Add detailed logging:
+```typescript
+console.log('[compose] printConfig received:', JSON.stringify(printConfig));
+console.log('[compose] applyCmyk check:', {
+  colorMode: printConfig?.colorMode,
+  result: applyCmyk
 });
-
-// Draw white mask to clip content to bleed area
-drawBleedMask(
-  newPage,
-  contentX,      // bleedX
-  contentY,      // bleedY
-  sourceWidth,   // bleedWidth
-  sourceHeight,  // bleedHeight
-  totalWidth,
-  totalHeight
-);
-
-// Draw crop marks on top of the mask
-drawCropMarks(newPage, trimX, trimY, trimWidthPt, trimHeightPt, cropOffsetPt);
 ```
 
-## Visual Result After Fix
-
-```text
-┌────────────────────────────────────────────┐
-│  ┼                                    ┼    │  <- Crop marks visible
-│  ─                                    ─    │
-│  │  ┌────────────────────────────┐    │    │
-│  │  │                            │    │    │
-│     │   Background image         │         │
-│     │   clipped at bleed edge    │         │
-│     │                            │         │
-│  │  │                            │    │    │
-│  │  └────────────────────────────┘    │    │
-│  ─                                    ─    │
-│  ┼                                    ┼    │  <- Crop marks visible
-└────────────────────────────────────────────┘
-```
+---
 
 ## Files to Modify
 
-| File | Change |
-|------|--------|
-| `supabase/functions/compose-label-sheet/index.ts` | Add `drawBleedMask` function and call it after embedding content |
+| File | Changes |
+|------|---------|
+| `src/components/polotno/PolotnoPdfGenerator.tsx` | Enable native crop marks, add `clientRenderedMarks` flag |
+| `src/lib/polotno/pdfBatchExporter.ts` | Add `clientRenderedMarks` to PrintConfig interface |
+| `supabase/functions/compose-label-sheet/index.ts` | Skip server-side marks when client-rendered, add CMYK logging |
 
-## Testing
-1. Create a certificate with a full-bleed background image
-2. Enable 3mm bleed and crop marks
-3. Export to PDF
-4. Verify crop marks are visible at all four corners
-5. Verify background image is clipped at the bleed boundary
+---
+
+## Result After Changes
+
+```text
+Export Flow (New):
+1. Polotno exports PDF with includeBleed + cropMarkSize (native marks + clipping)
+2. Server-side compose-label-sheet merges pages (no additional drawing)
+3. CMYK conversion via pdfRest if requested
+4. Final PDF has proper print marks from source
+
+Benefits:
+✅ Native crop marks (cleaner implementation)
+✅ Proper bleed clipping (built into Polotno)
+✅ Simpler server code (no manual mark drawing)
+✅ CMYK verified and logged
+```
+
+---
+
+## Testing Checklist
+
+1. Create a certificate with full-bleed background
+2. Enable bleed (3mm) and print marks
+3. Export to PDF (RGB mode first)
+4. Verify crop marks are visible and artwork is clipped
+5. Enable CMYK mode and re-export
+6. Check edge function logs to confirm CMYK conversion triggered
+7. Download and verify CMYK output (color profile embedded)
 

@@ -1,242 +1,113 @@
 
-# Client-Side CMYK Conversion with @imgly/plugin-print-ready-pdfs-web
+## Goal
+Fix the client-side CMYK conversion failure (Ghostscript WASM) so CMYK/PDF-X3 conversion reliably works in the browser.
 
-## Summary
-Replace the server-side pdfRest CMYK conversion with a fully client-side solution using IMG.LY's print-ready PDF plugin. This eliminates the need for an external API key while providing professional-grade CMYK PDF/X-3 output.
+## What’s happening (root cause)
+From your screenshot, the browser console shows:
 
----
+- `Ghostscript initialization failed: Failed to fetch dynamically imported module: .../assets/gs.js`
+- A 404 for `/assets/gs.js`
 
-## Why This Works
+`@imgly/plugin-print-ready-pdfs-web` computes an asset directory (often the same directory as the current JS bundle, typically `/assets/`) and then tries to dynamically import `gs.js` and fetch `gs.wasm` + ICC profiles from that directory.
 
-The `@imgly/plugin-print-ready-pdfs-web` package:
-- **Works with any PDF Blob** - Not limited to CE.SDK, works with Polotno output
-- **100% browser-based** - Uses Ghostscript WASM, no server calls needed
-- **Vite-compatible out of the box** - Auto-resolves assets via `import.meta.url`
-- **Includes standard ICC profiles** - FOGRA39 (EU) and GRACoL (US) built-in
-- **CORS headers already configured** - The project's `_headers` file already has the required SharedArrayBuffer support
+In our build, those extra files are not being emitted into `/assets/`, so the plugin can’t find them and CMYK conversion fails.
 
----
+## Approach
+Host the plugin’s runtime assets as static files in `public/` and explicitly tell the converter where to load them from using the plugin’s `assetPath` option (documented by IMG.LY).
 
-## Current vs New Flow
-
-```text
-Current Flow (broken - needs pdfRest API key):
-Polotno → RGB PDFs → Upload → Server compose → pdfRest CMYK → Download
-
-New Flow (no API key needed):
-Polotno → RGB PDFs → Client CMYK conversion → Upload → Server compose → Download
-```
+This makes the paths stable and avoids reliance on where Vite happens to place hashed bundles.
 
 ---
 
-## Implementation Steps
+## Implementation steps
 
-### Step 1: Install the Package
+### 1) Add the Ghostscript + ICC assets to `public/`
+Copy these files from:
+`node_modules/@imgly/plugin-print-ready-pdfs-web/dist/`
 
-```bash
-npm install @imgly/plugin-print-ready-pdfs-web
+Into a stable public folder, e.g.:
+`public/print-ready-pdfs/`
+
+Files needed:
+- `gs.js`
+- `gs.wasm`
+- `GRACoL2013_CRPC6.icc`
+- `ISOcoated_v2_eci.icc`
+- `sRGB_IEC61966-2-1.icc`
+
+Expected final URLs:
+- `/print-ready-pdfs/gs.js`
+- `/print-ready-pdfs/gs.wasm`
+- `/print-ready-pdfs/ISOcoated_v2_eci.icc` (EU FOGRA)
+- `/print-ready-pdfs/GRACoL2013_CRPC6.icc` (US GRACoL)
+- `/print-ready-pdfs/sRGB_IEC61966-2-1.icc`
+
+### 2) Force the plugin to use that asset folder
+Update `src/lib/polotno/cmykConverter.ts` so every `convertToPDFX3(...)` call passes:
+
+- `assetPath: '/print-ready-pdfs/'`
+
+Example shape:
+```ts
+return convertToPDFX3(pdfBlob, {
+  outputProfile: options.profile,
+  title: options.title ?? 'Print-Ready Export',
+  flattenTransparency: options.flattenTransparency ?? true,
+  assetPath: '/print-ready-pdfs/',
+});
 ```
 
-### Step 2: Add Client-Side CMYK Conversion
+This prevents the plugin from trying (and failing) to load from `/assets/`.
 
-**File:** `src/lib/polotno/cmykConverter.ts` (new file)
+### 3) (Optional but recommended) Import the browser entry explicitly
+To avoid any bundler/conditional-export weirdness, change the import to:
 
-Create a utility module to handle CMYK conversion:
+- from `@imgly/plugin-print-ready-pdfs-web/browser`
 
-```typescript
-import { convertToPDFX3 } from '@imgly/plugin-print-ready-pdfs-web';
+This ensures the browser build is always used.
 
-export type ColorProfile = 'fogra39' | 'gracol' | 'srgb';
+### 4) Add a fast preflight check (better error messaging)
+Before starting conversion, do a lightweight “are assets reachable” check:
+- `fetch('/print-ready-pdfs/gs.js', { method: 'HEAD' })`
+- `fetch('/print-ready-pdfs/gs.wasm', { method: 'HEAD' })`
 
-export interface CmykConversionOptions {
-  profile: ColorProfile;
-  title?: string;
-  flattenTransparency?: boolean;
-}
+If either fails, show a clear UI message:
+- “CMYK converter assets could not be loaded. Please refresh and try again, or use RGB export.”
 
-/**
- * Convert a single RGB PDF to CMYK PDF/X-3
- */
-export async function convertPdfToCmyk(
-  pdfBlob: Blob,
-  options: CmykConversionOptions
-): Promise<Blob> {
-  return convertToPDFX3(pdfBlob, {
-    outputProfile: options.profile,
-    title: options.title ?? 'Print-Ready Export',
-    flattenTransparency: options.flattenTransparency ?? true,
-  });
-}
+This makes failures obvious and avoids confusing “Edge Function non‑2xx” cascades.
 
-/**
- * Convert multiple RGB PDFs to CMYK PDF/X-3 (sequential processing)
- */
-export async function convertPdfsToCmyk(
-  pdfBlobs: Blob[],
-  options: CmykConversionOptions,
-  onProgress?: (current: number, total: number) => void
-): Promise<Blob[]> {
-  const results: Blob[] = [];
-  
-  for (let i = 0; i < pdfBlobs.length; i++) {
-    const cmykBlob = await convertToPDFX3(pdfBlobs[i], {
-      outputProfile: options.profile,
-      title: options.title ?? 'Print-Ready Export',
-      flattenTransparency: options.flattenTransparency ?? true,
-    });
-    results.push(cmykBlob);
-    onProgress?.(i + 1, pdfBlobs.length);
-  }
-  
-  return results;
-}
+### 5) Verify the server-side compose step isn’t failing independently
+Your screenshot also shows a 500 to the backend compose endpoint.
+After CMYK is fixed, if that 500 persists, we’ll:
+- Pull the latest backend function logs for `compose-label-sheet`
+- Confirm the deployed code matches the repository version (we previously had a historical `applyCmyk is not defined` runtime error in older deployments)
 
-/**
- * Get the appropriate color profile based on region
- */
-export function getProfileForRegion(region: 'US' | 'EU' | 'us' | 'eu' | string): ColorProfile {
-  return region.toLowerCase() === 'eu' ? 'fogra39' : 'gracol';
-}
-```
-
-### Step 3: Integrate into PDF Export Pipeline
-
-**File:** `src/lib/polotno/pdfBatchExporter.ts`
-
-Modify the `batchExportWithPolotno` function to apply CMYK conversion before uploading:
-
-```typescript
-// After exporting PDFs from Polotno:
-const pdfBlobs: Blob[] = [];
-for (let i = 0; i < records.length; i++) {
-  // ... existing export logic
-  const blob = await exportPdf(resolvedScene);
-  pdfBlobs.push(blob);
-}
-
-// NEW: Apply CMYK conversion if requested (before upload)
-let finalBlobs = pdfBlobs;
-if (printConfig?.colorMode === 'cmyk') {
-  onProgress({
-    phase: 'exporting', // Reuse phase with different message
-    current: 0,
-    total: records.length,
-    message: 'Converting to CMYK...',
-  });
-  
-  const profile = getProfileForRegion(printConfig.region || 'us');
-  finalBlobs = await convertPdfsToCmyk(pdfBlobs, { profile }, (current, total) => {
-    onProgress({
-      phase: 'exporting',
-      current,
-      total,
-      message: `CMYK conversion ${current} of ${total}...`,
-    });
-  });
-}
-
-// Continue with upload using finalBlobs instead of pdfBlobs
-```
-
-### Step 4: Add Progress Phase for CMYK
-
-**File:** `src/lib/polotno/pdfBatchExporter.ts`
-
-Update the `BatchExportProgress` interface:
-
-```typescript
-export interface BatchExportProgress {
-  phase: 'preparing' | 'exporting' | 'converting' | 'uploading' | 'composing' | 'complete' | 'error';
-  current: number;
-  total: number;
-  message?: string;
-}
-```
-
-### Step 5: Update UI Progress Display
-
-**File:** `src/components/polotno/PolotnoPdfGenerator.tsx`
-
-Add handling for the new 'converting' phase in progress display:
-
-```typescript
-switch (progress.phase) {
-  case 'preparing':
-    return 5;
-  case 'exporting':
-    return 5 + basePercent * 0.50;  // Reduced from 65%
-  case 'converting':
-    return 55 + basePercent * 0.15; // New CMYK phase
-  case 'uploading':
-    return 70 + basePercent * 0.15;
-  case 'composing':
-    return 85 + basePercent * 0.15;
-  default:
-    return basePercent;
-}
-```
-
-### Step 6: Remove Server-Side CMYK Code
-
-**File:** `supabase/functions/compose-label-sheet/index.ts`
-
-Since CMYK conversion now happens client-side, we can:
-- Remove the `convertToCmyk` function
-- Remove the `applyCmyk` logic block
-- Remove the pdfRest API dependency
-- Keep `cmykApplied` response field for UI feedback
+This is likely secondary noise caused by the client failing mid-pipeline, but we’ll confirm.
 
 ---
 
-## Files to Modify
-
-| File | Changes |
-|------|---------|
-| `package.json` | Add `@imgly/plugin-print-ready-pdfs-web` dependency |
-| `src/lib/polotno/cmykConverter.ts` | **NEW** - CMYK conversion utility |
-| `src/lib/polotno/pdfBatchExporter.ts` | Add CMYK conversion step, update progress phases |
-| `src/components/polotno/PolotnoPdfGenerator.tsx` | Update progress UI for CMYK phase |
-| `supabase/functions/compose-label-sheet/index.ts` | Remove pdfRest CMYK logic |
-
----
-
-## Technical Details
-
-### Browser Requirements
-The plugin uses Ghostscript WASM which requires:
-- **SharedArrayBuffer support** - Already enabled via `public/_headers` (COOP/COEP headers)
-- **Modern browser** - Chrome 87+, Firefox 79+, Safari 15.2+, Edge 87+
-
-### Performance Considerations
-- CMYK conversion is sequential (one PDF at a time) to avoid overwhelming WASM
-- Each PDF typically takes 1-3 seconds to convert
-- Progress UI will show conversion status
-
-### Transparency Handling
-PDF/X-3 doesn't support transparency. The plugin flattens transparent elements by default.
-If needed, can set `flattenTransparency: false` for visual fidelity over strict compliance.
+## Testing checklist (what you’ll do after the fix)
+1. Reload the app with DevTools open (to avoid cached 404s).
+2. Generate PDFs with CMYK enabled.
+3. Confirm in Network tab:
+   - `gs.js` returns 200
+   - `gs.wasm` returns 200
+   - the relevant ICC profile returns 200
+4. Confirm the progress reaches “CMYK conversion complete”.
+5. Download PDF and verify in Acrobat:
+   - Output Intent present
+   - Color space shows DeviceCMYK / PDF/X-3 metadata
 
 ---
 
-## Result After Implementation
-
-```text
-Benefits:
-✅ No external API key required (pdfRest eliminated)
-✅ No server costs for CMYK conversion
-✅ Faster processing (no network round-trip to pdfRest)
-✅ Works offline once WASM is loaded
-✅ Professional PDF/X-3 compliant output
-✅ Correct ICC profiles (FOGRA39 EU / GRACoL US)
-```
+## Files we will touch
+- `public/print-ready-pdfs/*` (new static assets)
+- `src/lib/polotno/cmykConverter.ts` (pass `assetPath`, possibly change import)
+- (Optional) `src/lib/polotno/pdfBatchExporter.ts` (preflight + friendlier errors)
+- (Only if needed) `src/components/polotno/PolotnoPdfGenerator.tsx` (surface preflight error clearly)
 
 ---
 
-## Testing Checklist
-
-1. Create a certificate with colorful design
-2. Enable print marks and select CMYK mode
-3. Generate PDF and verify progress shows "Converting to CMYK" phase
-4. Download PDF and open in Adobe Acrobat
-5. Check Document Properties → Color Space shows "DeviceCMYK"
-6. Verify ICC profile is embedded (FOGRA39 or GRACoL based on region)
+## Notes / constraints
+- This fix is compatible with both Preview and Published environments because it relies on `public/` static files.
+- Your existing COOP/COEP headers are already correct for SharedArrayBuffer/WASM workers; this issue is purely “files not found”.

@@ -1,101 +1,119 @@
 
-Goal: stop the Polotno editor from getting stuck on the “Loading editor…” spinner by eliminating the bootstrap cancellation/race condition introduced by the refactor, and align our integration with Polotno’s documented SidePanel/sections contract.
+# Fix Page Size Controls Not Updating Polotno Canvas
 
-What I can already see (root cause)
-- Your screenshot’s sequence:
-  - “Waiting for mount element…”
-  - “Bootstrap starting with mount element available”
-  - “Bootstrap cleanup – cancelled flag set”
-  - “Bootstrap already in flight, skipping”
-  strongly indicates a React effect is being re-run (due to dependency changes), which triggers cleanup (sets `cancelled = true`) while the async bootstrap is still running. Then the “new” effect run refuses to start because `bootstrapInFlightRef.current` is still true, leaving the editor stuck forever.
-- In `usePolotnoBootstrap`, the bootstrap effect depends on volatile values:
-  - `projectImages` (array identity can change frequently)
-  - `regenerateLayout` (function identity changes because it is recreated whenever `availableFields/allSampleData/projectImages/...` change)
-- In `PolotnoEditorWrapper`, we call `useLayoutGenerator` twice; the first time is effectively just to get `regenerateLayout` and it’s not stable. That doubles churn and increases chances of bootstrap cancellation.
-- Polotno documentation confirms custom section panels receive `{ store }` and should be defined as `Panel: observer(({ store }) => ...)`. Our “store prop” wiring in `polotno-sections.js` matches that contract now, so the remaining blocker is the bootstrap lifecycle itself (not Polotno’s section API). Reference: https://polotno.com/docs/side-panel-overview
+## Problem Summary
+When changing page size (e.g., A4 Portrait to A4 Landscape), the header correctly shows the new dimensions (297.0 x 210.0mm), but the Polotno canvas remains in portrait orientation. The root cause is that dimension changes trigger a **full bootstrap restart** instead of simply resizing the existing store.
 
-High-level strategy
-1) Make bootstrap “one-shot” per mount/template unless the user explicitly retries.
-2) Remove volatile dependencies from the bootstrap effect; read dynamic data via refs instead.
-3) Make `regenerateLayout` stable via refs (not via dependency-heavy `useCallback`).
-4) Remove the duplicate `useLayoutGenerator` invocation and route all interactions through a single instance.
-5) Add deterministic instrumentation so if it fails again we can point to the exact phase and why it aborted (key fetch, module load, store create, UI render, DOM verify).
+## Root Cause Analysis
+1. The bootstrap effect in `usePolotnoBootstrap.ts` (line 512) depends on `labelWidth` and `labelHeight`
+2. When dimensions change, the entire bootstrap re-runs from scratch
+3. This creates a new store and resets the canvas, losing the current scene
+4. The user sees no change because the scene isn't preserved through the restart
 
-Concrete implementation plan (code changes)
-A) Fix `usePolotnoBootstrap` effect dependency churn (main spinner fix)
-- Change `UsePolotnoBootstrapOptions` to accept:
-  - `projectImagesRef` (RefObject) instead of `projectImages` array
-  - `regenerateLayoutRef` (RefObject<() => Promise<void>>) or accept `regenerateLayout` but store it into a local ref inside `usePolotnoBootstrap` and do not include it in deps
-- Update the bootstrap effect dependencies to only include stable primitives:
-  - `mountEl`, `labelWidth`, `labelHeight`, `bleedMm`, `projectType`, `retryCount`
-  - (Avoid including arrays/functions like `projectImages`, `regenerateLayout`, etc.)
-- Inside bootstrap, whenever we need images or regenerateLayout, read from refs:
-  - `const images = projectImagesRef.current || []`
-  - `await regenerateLayoutRef.current?.()`
-- Improve cancellation logic so a cancelled run never blocks a future run:
-  - Introduce a `bootstrapRunIdRef` incremented each time we start
-  - Each awaited step checks `if (runId !== bootstrapRunIdRef.current) return;`
-  - In cleanup, increment the runId so the in-flight async chain becomes a no-op
-  - Ensure `bootstrapInFlightRef.current` is cleared even when cancelled early
+## Solution Overview
+Separate dimension-only changes from full bootstrap restarts. When the editor is already "ready" and only dimensions change, call `store.setSize()` on the existing store instead of re-initializing everything.
 
-B) Fix `PolotnoEditorWrapper` orchestration (reduce re-render churn)
-- Remove the first `useLayoutGenerator` call that uses `bootstrapStage: 'ready'`.
-- Keep only one `useLayoutGenerator` call (the one driven by the real `bootstrapStage`).
-- Create a stable `regenerateLayoutRef` in the wrapper:
-  - `const regenerateLayoutRef = useRef(async () => {});`
-  - `useEffect(() => { regenerateLayoutRef.current = layoutGenerator.regenerateLayout; }, [layoutGenerator.regenerateLayout]);`
-- Pass `regenerateLayoutRef` into `usePolotnoBootstrap` (instead of passing the function directly).
-- Pass `projectImagesRef` into `usePolotnoBootstrap` (instead of passing the array).
+---
 
-C) Make `useLayoutGenerator.regenerateLayout` stable (avoid function identity changes)
-- Convert `useLayoutGenerator` to internally use refs for:
-  - `availableFields`, `allSampleData`, `projectImages`, `labelWidth/height`, `projectType`
-- Implement `regenerateLayout` with `useCallback([])` (or a very small dependency list), reading everything from those refs.
-- This ensures:
-  - `regenerateLayout` does not change identity on data updates
-  - `usePolotnoBootstrap` won’t be retriggered by layout generator changes
+## Implementation Steps
 
-D) Add targeted bootstrap diagnostics (so this doesn’t regress silently again)
-- Add a single structured log per stage transition with a runId, e.g.:
-  - `[polotno-bootstrap run=3 stage=load_modules] ...`
-- Add a “timeout watchdog” (e.g. 20s) per run:
-  - If we don’t reach `ready`, set `error` with the stage that timed out.
-- Log the reason for abort:
-  - “aborted because mountEl changed”
-  - “aborted because runId superseded”
-  - “aborted because key fetch failed”
-- This will give us definitive proof the spinner is caused by cancellation and exactly which dependency is causing reruns (if any remain).
+### Step 1: Add `updateStoreSize` Helper to Runtime
+**File**: `src/vendor/polotno-runtime.js`
 
-E) Re-validate against Polotno docs (to satisfy the “deep dive” request)
-- Confirm we follow the documented SidePanel contract:
-  - sections array passed into `<SidePanel store={store} sections={...} />`
-  - custom section uses `Panel: observer(({ store }) => ...)`
-- Confirm our bridge pattern (isolating Polotno imports in `polotno-runtime.js`) remains intact and we’re not accidentally importing Polotno types in TS anywhere else.
-- Check if any “Polotno init” steps changed across versions (we’ll pin symptoms to our lifecycle rather than guessing).
+Add a new exported function to update store dimensions without recreating the store:
 
-Testing checklist (end-to-end, the critical part)
-1) Open any existing project → editor should reach “ready” without spinner.
-2) Confirm the Polotno UI actually renders (tabs visible, canvas visible).
-3) Record navigation:
-   - Click next/previous record; confirm text changes per record.
-4) Side panel:
-   - Click Barcodes; confirm it loads (no blank panel, no console error).
-   - Insert a barcode/QR/sequence; confirm it appears and persists when switching records.
-5) Reload the page:
-   - Confirm editor still loads (no dependency-churn regressions).
-6) Repeat in at least two different projects (one with images, one without).
+```javascript
+/**
+ * Update the store's page dimensions without recreating the store.
+ * @param {object} store - Polotno store instance
+ * @param {number} widthPx - New width in pixels
+ * @param {number} heightPx - New height in pixels
+ */
+export function updateStoreSize(store, widthPx, heightPx) {
+  if (!store) return;
+  store.setSize(widthPx, heightPx);
+}
+```
 
-Fallback / safety net
-- If we still see any instability after the above, we will:
-  - Add a “hard reset editor” button that calls `retry()` and also increments `bootstrapRunIdRef` (forces a clean restart).
-  - Provide a quick rollback path via History to the last known stable snapshot, then re-apply only the stabilization changes incrementally.
+### Step 2: Modify Bootstrap to Skip Re-Init on Dimension-Only Changes
+**File**: `src/components/polotno/hooks/usePolotnoBootstrap.ts`
 
-Files that will be modified (expected)
-- src/components/polotno/hooks/usePolotnoBootstrap.ts
-- src/components/polotno/hooks/useLayoutGenerator.ts
-- src/components/polotno/PolotnoEditorWrapper.tsx
-(plus any hook type exports if needed)
+Add a separate effect that handles dimension changes when already in "ready" state:
 
-Why this will fix the spinner
-- It removes the exact mechanism shown in your console: bootstrap cleanup happening mid-flight due to dependency churn + a “bootstrap already in flight” guard that prevents restart.
-- After these changes, data updates (fields, images, subscription banners, etc.) will not cancel bootstrap. Bootstrap will only rerun on intentional events (mount change, template change via key, or retry).
+```typescript
+// NEW EFFECT: Handle dimension changes without full re-bootstrap
+useEffect(() => {
+  // Only run if already bootstrapped and store exists
+  if (bootstrapStage !== 'ready' || !storeRef.current) return;
+  
+  const store = storeRef.current;
+  const newWidthPx = mmToPixels(labelWidth);
+  const newHeightPx = mmToPixels(labelHeight);
+  
+  // Update store size directly (no re-bootstrap)
+  store.setSize(newWidthPx, newHeightPx);
+  console.log(`[polotno-bootstrap] Dimensions updated: ${labelWidth}mm x ${labelHeight}mm`);
+}, [bootstrapStage, labelWidth, labelHeight]);
+```
+
+Update the main bootstrap effect to **exclude** `labelWidth` and `labelHeight` from its dependency array:
+
+```typescript
+// Before (line 512):
+}, [mountEl, labelWidth, labelHeight, bleedMm, projectType, retryCount]);
+
+// After:
+}, [mountEl, bleedMm, projectType, retryCount]);
+```
+
+Store initial dimensions in a ref so the first bootstrap still uses them:
+
+```typescript
+// Add at top of hook:
+const initialDimensionsRef = useRef({ width: labelWidth, height: labelHeight });
+```
+
+Use the ref values during store creation:
+
+```typescript
+const store = await createPolotnoStore({
+  apiKey,
+  unit: 'mm',
+  dpi: 300,
+  width: mmToPixels(initialDimensionsRef.current.width),
+  height: mmToPixels(initialDimensionsRef.current.height),
+});
+```
+
+### Step 3: Ensure Scene Preservation During Resize
+When `store.setSize()` is called, Polotno automatically preserves the current scene. No additional code is needed for this.
+
+---
+
+## Technical Details
+
+### Polotno's `store.setSize(width, height)` Behavior
+- Accepts dimensions in the store's configured unit (pixels after DPI conversion)
+- Preserves all elements on the page
+- Updates the canvas viewport immediately
+- Does not trigger a full scene reload
+
+### Edge Cases Handled
+1. **Initial load**: Uses `initialDimensionsRef` for first bootstrap
+2. **Dimension change while ready**: New effect calls `store.setSize()`
+3. **Bleed/project type change**: Still triggers full re-bootstrap (correct behavior)
+4. **Retry**: Still works via `retryCount` dependency
+
+---
+
+## Files to Modify
+1. `src/vendor/polotno-runtime.js` - Add `updateStoreSize` helper
+2. `src/components/polotno/hooks/usePolotnoBootstrap.ts` - Split dimension handling
+
+## Testing Checklist
+1. Open a certificate project
+2. Change from A4 Portrait to A4 Landscape - canvas should rotate
+3. Change back to Portrait - canvas should rotate back
+4. Verify all elements remain in place after rotation
+5. Verify bleed toggle still works correctly
+6. Verify editor still loads on fresh page load

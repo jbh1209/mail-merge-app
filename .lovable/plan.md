@@ -1,119 +1,101 @@
 
-# Fix Page Size Controls Not Updating Polotno Canvas
+
+# Fix PDF Generation Failure at Completion
 
 ## Problem Summary
-When changing page size (e.g., A4 Portrait to A4 Landscape), the header correctly shows the new dimensions (297.0 x 210.0mm), but the Polotno canvas remains in portrait orientation. The root cause is that dimension changes trigger a **full bootstrap restart** instead of simply resizing the existing store.
+The PDF export appeared to complete all exporting and uploading phases but failed "at the very end." The database shows recent merge jobs completing successfully, and edge functions are responding correctly. This indicates a transient network or timeout issue during the final compose or download phase.
 
 ## Root Cause Analysis
-1. The bootstrap effect in `usePolotnoBootstrap.ts` (line 512) depends on `labelWidth` and `labelHeight`
-2. When dimensions change, the entire bootstrap re-runs from scratch
-3. This creates a new store and resets the canvas, losing the current scene
-4. The user sees no change because the scene isn't preserved through the restart
+After investigation:
+1. Most recent merge jobs in database: **complete** (no errors)
+2. `compose-label-sheet` edge function: **responding correctly**
+3. `get-download-url` edge function: **responding correctly with signed URLs**
+4. Storage bucket: **accessible**
 
-## Solution Overview
-Separate dimension-only changes from full bootstrap restarts. When the editor is already "ready" and only dimensions change, call `store.setSize()` on the existing store instead of re-initializing everything.
+The failure was likely caused by:
+- Intermittent network issues (user reports hanging/network errors throughout the session)
+- Edge function timeout during the compose phase for complex/large PDFs
+- Session token expiration during long-running operations
 
----
+## Proposed Fixes
 
-## Implementation Steps
+### 1. Add Retry Logic for Edge Function Calls
+Improve resilience by adding retry logic to the `composeFromStorage` function in `src/lib/polotno/pdfBatchExporter.ts`.
 
-### Step 1: Add `updateStoreSize` Helper to Runtime
-**File**: `src/vendor/polotno-runtime.js`
-
-Add a new exported function to update store dimensions without recreating the store:
-
-```javascript
-/**
- * Update the store's page dimensions without recreating the store.
- * @param {object} store - Polotno store instance
- * @param {number} widthPx - New width in pixels
- * @param {number} heightPx - New height in pixels
- */
-export function updateStoreSize(store, widthPx, heightPx) {
-  if (!store) return;
-  store.setSize(widthPx, heightPx);
+```typescript
+async function composeFromStorage(...) {
+  const maxRetries = 3;
+  let lastError = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const { data, error } = await supabase.functions.invoke('compose-label-sheet', {...});
+      if (!error) return { success: data?.success ?? false, ... };
+      lastError = error;
+      console.warn(`Compose attempt ${attempt} failed:`, error.message);
+      if (attempt < maxRetries) await new Promise(r => setTimeout(r, 2000 * attempt));
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  return { success: false, error: lastError?.message || 'Compose failed after retries' };
 }
 ```
 
-### Step 2: Modify Bootstrap to Skip Re-Init on Dimension-Only Changes
-**File**: `src/components/polotno/hooks/usePolotnoBootstrap.ts`
+### 2. Add Detailed Error Logging with Phase Tracking
+Improve error messages to show exactly which phase failed (exporting, uploading, or composing).
 
-Add a separate effect that handles dimension changes when already in "ready" state:
+### 3. Add Progress Message for CMYK Conversion (Server-Side)
+Since CMYK conversion happens on the server and can take time, add a message indicating this phase.
 
-```typescript
-// NEW EFFECT: Handle dimension changes without full re-bootstrap
-useEffect(() => {
-  // Only run if already bootstrapped and store exists
-  if (bootstrapStage !== 'ready' || !storeRef.current) return;
-  
-  const store = storeRef.current;
-  const newWidthPx = mmToPixels(labelWidth);
-  const newHeightPx = mmToPixels(labelHeight);
-  
-  // Update store size directly (no re-bootstrap)
-  store.setSize(newWidthPx, newHeightPx);
-  console.log(`[polotno-bootstrap] Dimensions updated: ${labelWidth}mm x ${labelHeight}mm`);
-}, [bootstrapStage, labelWidth, labelHeight]);
-```
+### 4. Handle Network Timeouts Gracefully
+Add timeout handling around the compose function invocation to catch hanging requests.
 
-Update the main bootstrap effect to **exclude** `labelWidth` and `labelHeight` from its dependency array:
+---
 
-```typescript
-// Before (line 512):
-}, [mountEl, labelWidth, labelHeight, bleedMm, projectType, retryCount]);
+## Implementation Details
 
-// After:
-}, [mountEl, bleedMm, projectType, retryCount]);
-```
+### File: `src/lib/polotno/pdfBatchExporter.ts`
 
-Store initial dimensions in a ref so the first bootstrap still uses them:
+**Changes:**
+1. Add retry logic to `composeFromStorage` with exponential backoff
+2. Improve error messages to include the phase that failed
+3. Add timeout wrapper around edge function calls
 
-```typescript
-// Add at top of hook:
-const initialDimensionsRef = useRef({ width: labelWidth, height: labelHeight });
-```
+### File: `src/components/polotno/PolotnoPdfGenerator.tsx`
 
-Use the ref values during store creation:
-
-```typescript
-const store = await createPolotnoStore({
-  apiKey,
-  unit: 'mm',
-  dpi: 300,
-  width: mmToPixels(initialDimensionsRef.current.width),
-  height: mmToPixels(initialDimensionsRef.current.height),
-});
-```
-
-### Step 3: Ensure Scene Preservation During Resize
-When `store.setSize()` is called, Polotno automatically preserves the current scene. No additional code is needed for this.
+**Changes:**
+1. Add better error state display showing which phase failed
+2. Add "Retry" button for transient failures
+3. Improve progress messaging for compose phase
 
 ---
 
 ## Technical Details
 
-### Polotno's `store.setSize(width, height)` Behavior
-- Accepts dimensions in the store's configured unit (pixels after DPI conversion)
-- Preserves all elements on the page
-- Updates the canvas viewport immediately
-- Does not trigger a full scene reload
+### Retry Strategy
+- Maximum 3 attempts for compose function
+- Exponential backoff: 2s, 4s, 6s delays between retries
+- Non-retryable errors (auth, invalid data) fail immediately
 
-### Edge Cases Handled
-1. **Initial load**: Uses `initialDimensionsRef` for first bootstrap
-2. **Dimension change while ready**: New effect calls `store.setSize()`
-3. **Bleed/project type change**: Still triggers full re-bootstrap (correct behavior)
-4. **Retry**: Still works via `retryCount` dependency
+### Timeout Handling
+- Add 60-second timeout wrapper for compose function
+- Clear error message on timeout: "PDF composition timed out - please try again"
+
+### Edge Case Handling
+1. **Network disconnect during upload**: Individual upload retries already exist via batch processing
+2. **Token expiration**: Supabase client auto-refreshes tokens
+3. **Large PDFs timing out**: Compose function handles batching internally
 
 ---
 
 ## Files to Modify
-1. `src/vendor/polotno-runtime.js` - Add `updateStoreSize` helper
-2. `src/components/polotno/hooks/usePolotnoBootstrap.ts` - Split dimension handling
+1. `src/lib/polotno/pdfBatchExporter.ts` - Add retry logic and timeout handling
+2. `src/components/polotno/PolotnoPdfGenerator.tsx` - Add retry button and improved error display
 
 ## Testing Checklist
-1. Open a certificate project
-2. Change from A4 Portrait to A4 Landscape - canvas should rotate
-3. Change back to Portrait - canvas should rotate back
-4. Verify all elements remain in place after rotation
-5. Verify bleed toggle still works correctly
-6. Verify editor still loads on fresh page load
+- Export a certificate project with a background image
+- Verify progress phases display correctly
+- Simulate network disconnect during compose to test retry
+- Verify error messages are helpful when failures occur
+

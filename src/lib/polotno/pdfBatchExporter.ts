@@ -157,8 +157,60 @@ async function uploadPdfsToStorage(
   return paths;
 }
 
+// =============================================================================
+// RETRY UTILITIES
+// =============================================================================
+
+const MAX_COMPOSE_RETRIES = 3;
+const COMPOSE_TIMEOUT_MS = 60000; // 60 seconds
+
 /**
- * Call compose-label-sheet edge function
+ * Check if an error is retryable (network/timeout issues)
+ */
+function isRetryableError(error: unknown): boolean {
+  if (!error) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  const retryablePatterns = [
+    'network',
+    'timeout',
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'fetch failed',
+    'Failed to fetch',
+    'socket hang up',
+    'ENOTFOUND',
+    '502',
+    '503',
+    '504',
+  ];
+  return retryablePatterns.some(pattern => 
+    message.toLowerCase().includes(pattern.toLowerCase())
+  );
+}
+
+/**
+ * Wrap a promise with a timeout
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, phase: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${phase} timed out after ${ms / 1000}s - please try again`));
+    }, ms);
+    
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+/**
+ * Call compose-label-sheet edge function with retry logic
  */
 async function composeFromStorage(
   pdfPaths: string[],
@@ -167,28 +219,79 @@ async function composeFromStorage(
   fullPageMode: boolean,
   printConfig?: PrintConfig
 ): Promise<{ success: boolean; outputUrl?: string; pageCount?: number; cmykApplied?: boolean; error?: string }> {
-  const { data, error } = await supabase.functions.invoke('compose-label-sheet', {
-    body: {
-      pdfPaths,
-      layout,
-      mergeJobId,
-      fullPageMode,
-      printConfig,
-    },
-  });
+  let lastError: unknown = null;
 
-  if (error) {
-    console.error('Compose function error:', error);
-    return { success: false, error: error.message };
+  for (let attempt = 1; attempt <= MAX_COMPOSE_RETRIES; attempt++) {
+    try {
+      console.log(`[Compose] Attempt ${attempt}/${MAX_COMPOSE_RETRIES} for job ${mergeJobId}`);
+      
+      const invokePromise = supabase.functions.invoke('compose-label-sheet', {
+        body: {
+          pdfPaths,
+          layout,
+          mergeJobId,
+          fullPageMode,
+          printConfig,
+        },
+      });
+
+      const { data, error } = await withTimeout(
+        invokePromise,
+        COMPOSE_TIMEOUT_MS,
+        'PDF composition'
+      );
+
+      if (error) {
+        lastError = error;
+        console.warn(`[Compose] Attempt ${attempt} failed:`, error.message);
+        
+        // Don't retry auth errors
+        if (error.message?.includes('auth') || error.message?.includes('401')) {
+          return { success: false, error: 'Authentication failed - please refresh and try again' };
+        }
+        
+        if (attempt < MAX_COMPOSE_RETRIES && isRetryableError(error)) {
+          const delayMs = 2000 * attempt; // Exponential backoff: 2s, 4s, 6s
+          console.log(`[Compose] Retrying in ${delayMs}ms...`);
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
+        }
+        
+        return { success: false, error: error.message };
+      }
+
+      // Success
+      console.log(`[Compose] Success on attempt ${attempt}`);
+      return {
+        success: data?.success ?? false,
+        outputUrl: data?.outputUrl,
+        pageCount: data?.pageCount ?? data?.labelCount,
+        cmykApplied: data?.cmykApplied,
+        error: data?.error,
+      };
+    } catch (error: unknown) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[Compose] Attempt ${attempt} threw:`, message);
+      
+      if (attempt < MAX_COMPOSE_RETRIES && isRetryableError(error)) {
+        const delayMs = 2000 * attempt;
+        console.log(`[Compose] Retrying in ${delayMs}ms...`);
+        await new Promise(r => setTimeout(r, delayMs));
+        continue;
+      }
+      
+      return { 
+        success: false, 
+        error: message || 'Composition failed after retries' 
+      };
+    }
   }
 
-  return {
-    success: data?.success ?? false,
-    outputUrl: data?.outputUrl,
-    pageCount: data?.pageCount ?? data?.labelCount,
-    cmykApplied: data?.cmykApplied,
-    error: data?.error,
-  };
+  const finalMessage = lastError instanceof Error 
+    ? lastError.message 
+    : 'Composition failed after all retries';
+  return { success: false, error: finalMessage };
 }
 
 // =============================================================================

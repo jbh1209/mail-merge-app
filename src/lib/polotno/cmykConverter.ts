@@ -17,6 +17,37 @@ export interface CmykConversionOptions {
   flattenTransparency?: boolean;
 }
 
+// Asset path for Ghostscript WASM and ICC profiles
+// These are hosted in public/print-ready-pdfs/ for stable URLs
+const ASSET_PATH = '/print-ready-pdfs/';
+
+/**
+ * Preflight check to ensure CMYK converter assets are reachable
+ * Returns true if assets are available, false otherwise
+ */
+export async function checkCmykAssetsAvailable(): Promise<{ available: boolean; error?: string }> {
+  try {
+    const [gsJs, iccProfile] = await Promise.all([
+      fetch(`${ASSET_PATH}gs.js`, { method: 'HEAD' }),
+      fetch(`${ASSET_PATH}ISOcoated_v2_eci.icc`, { method: 'HEAD' }),
+    ]);
+    
+    if (!gsJs.ok) {
+      return { available: false, error: 'Ghostscript WASM loader not found' };
+    }
+    if (!iccProfile.ok) {
+      return { available: false, error: 'ICC color profiles not found' };
+    }
+    
+    return { available: true };
+  } catch (err) {
+    return { 
+      available: false, 
+      error: `Asset check failed: ${err instanceof Error ? err.message : 'Network error'}` 
+    };
+  }
+}
+
 /**
  * Convert a single RGB PDF to CMYK PDF/X-3
  */
@@ -28,6 +59,7 @@ export async function convertPdfToCmyk(
     outputProfile: options.profile,
     title: options.title ?? 'Print-Ready Export',
     flattenTransparency: options.flattenTransparency ?? true,
+    assetPath: ASSET_PATH,
   });
 }
 
@@ -47,6 +79,7 @@ export async function convertPdfsToCmyk(
       outputProfile: options.profile,
       title: options.title ?? 'Print-Ready Export',
       flattenTransparency: options.flattenTransparency ?? true,
+      assetPath: ASSET_PATH,
     });
     results.push(cmykBlob);
     onProgress?.(i + 1, pdfBlobs.length);

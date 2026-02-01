@@ -11,7 +11,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PolotnoScene } from './types';
 import { resolveVdpVariables } from './vdpResolver';
-import { convertPdfsToCmyk, getProfileForRegion } from './cmykConverter';
+import { convertPdfsToCmyk, getProfileForRegion, checkCmykAssetsAvailable } from './cmykConverter';
 
 // =============================================================================
 // TYPES
@@ -370,42 +370,62 @@ export async function batchExportWithPolotno(
     // Step 2: Apply client-side CMYK conversion if requested (before upload)
     let finalBlobs = pdfBlobs;
     if (printConfig?.colorMode === 'cmyk') {
+      // Preflight check: ensure CMYK assets are available
       onProgress({
         phase: 'converting',
         current: 0,
         total: records.length,
-        message: 'Converting to CMYK...',
+        message: 'Checking CMYK converter...',
       });
 
-      const profile = getProfileForRegion(printConfig.region || 'us');
-      console.log(`[PolotnoExport] Starting CMYK conversion with profile: ${profile}`);
-      
-      try {
-        finalBlobs = await convertPdfsToCmyk(pdfBlobs, { profile }, (current, total) => {
-          onProgress({
-            phase: 'converting',
-            current,
-            total,
-            message: `CMYK conversion ${current} of ${total}...`,
-          });
-        });
-        console.log(`[PolotnoExport] CMYK conversion complete`);
+      const assetCheck = await checkCmykAssetsAvailable();
+      if (!assetCheck.available) {
+        console.error('[PolotnoExport] CMYK assets not available:', assetCheck.error);
         onProgress({
           phase: 'converting',
           current: records.length,
           total: records.length,
-          message: 'CMYK conversion complete',
-        });
-      } catch (cmykError) {
-        console.error('[PolotnoExport] CMYK conversion failed:', cmykError);
-        onProgress({
-          phase: 'converting',
-          current: records.length,
-          total: records.length,
-          message: 'CMYK conversion failed - using RGB',
+          message: `CMYK conversion failed - ${assetCheck.error}`,
         });
         // Continue with RGB blobs
-        finalBlobs = pdfBlobs;
+      } else {
+        onProgress({
+          phase: 'converting',
+          current: 0,
+          total: records.length,
+          message: 'Converting to CMYK...',
+        });
+
+        const profile = getProfileForRegion(printConfig.region || 'us');
+        console.log(`[PolotnoExport] Starting CMYK conversion with profile: ${profile}`);
+        
+        try {
+          finalBlobs = await convertPdfsToCmyk(pdfBlobs, { profile }, (current, total) => {
+            onProgress({
+              phase: 'converting',
+              current,
+              total,
+              message: `CMYK conversion ${current} of ${total}...`,
+            });
+          });
+          console.log(`[PolotnoExport] CMYK conversion complete`);
+          onProgress({
+            phase: 'converting',
+            current: records.length,
+            total: records.length,
+            message: 'CMYK conversion complete',
+          });
+        } catch (cmykError) {
+          console.error('[PolotnoExport] CMYK conversion failed:', cmykError);
+          onProgress({
+            phase: 'converting',
+            current: records.length,
+            total: records.length,
+            message: 'CMYK conversion failed - using RGB',
+          });
+          // Continue with RGB blobs
+          finalBlobs = pdfBlobs;
+        }
       }
     }
 

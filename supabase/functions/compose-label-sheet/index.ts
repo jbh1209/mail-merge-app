@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { PDFDocument, grayscale } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, grayscale, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -106,6 +106,58 @@ function drawCropMarks(
     end: { x: trimX + trimWidth + offsetPt + markLength, y: trimY },
     thickness: CROP_MARK_STROKE_WIDTH,
     color,
+  });
+}
+
+/**
+ * Draw white masking rectangles to clip content to bleed area
+ * This ensures artwork doesn't extend into the crop mark area
+ */
+function drawBleedMask(
+  page: ReturnType<PDFDocument['addPage']>,
+  bleedX: number,
+  bleedY: number,
+  bleedWidth: number,
+  bleedHeight: number,
+  totalWidth: number,
+  totalHeight: number
+): void {
+  const white = rgb(1, 1, 1);
+  
+  // Left mask (from edge to bleed left)
+  page.drawRectangle({
+    x: 0,
+    y: 0,
+    width: bleedX,
+    height: totalHeight,
+    color: white,
+  });
+  
+  // Right mask (from bleed right to edge)
+  page.drawRectangle({
+    x: bleedX + bleedWidth,
+    y: 0,
+    width: totalWidth - (bleedX + bleedWidth),
+    height: totalHeight,
+    color: white,
+  });
+  
+  // Bottom mask (between left and right masks)
+  page.drawRectangle({
+    x: bleedX,
+    y: 0,
+    width: bleedWidth,
+    height: bleedY,
+    color: white,
+  });
+  
+  // Top mask (between left and right masks)
+  page.drawRectangle({
+    x: bleedX,
+    y: bleedY + bleedHeight,
+    width: bleedWidth,
+    height: totalHeight - (bleedY + bleedHeight),
+    color: white,
   });
 }
 
@@ -289,9 +341,21 @@ serve(async (req) => {
                   height: sourceHeight,
                 });
                 
+                // Draw white mask to clip artwork to bleed area (prevents overflow into crop mark area)
+                drawBleedMask(
+                  newPage,
+                  contentX,      // bleedX
+                  contentY,      // bleedY
+                  sourceWidth,   // bleedWidth
+                  sourceHeight,  // bleedHeight
+                  totalWidth,
+                  totalHeight
+                );
+                
                 const trimX = contentX + bleedPt;
                 const trimY = contentY + bleedPt;
                 
+                // Draw crop marks on top of the mask
                 drawCropMarks(newPage, trimX, trimY, trimWidthPt, trimHeightPt, cropOffsetPt);
                 
                 newPage.setTrimBox(trimX, trimY, trimWidthPt, trimHeightPt);

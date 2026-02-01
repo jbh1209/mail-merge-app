@@ -118,6 +118,8 @@ export function PolotnoPdfGenerator({
       }
 
       // Convert print settings to PrintConfig format
+      // Include clientRenderedMarks flag when using Polotno native crop marks
+      const usePrintMarks = printSettings?.enablePrintMarks ?? false;
       const printConfig: PrintConfig | undefined = printSettings ? {
         enablePrintMarks: printSettings.enablePrintMarks,
         bleedMm: printSettings.bleedMm,
@@ -126,13 +128,15 @@ export function PolotnoPdfGenerator({
         trimHeightMm: templateConfig.heightMm,
         colorMode: printSettings.colorMode,
         region: printSettings.region?.toLowerCase() as 'us' | 'eu' | 'other',
+        clientRenderedMarks: usePrintMarks, // Skip server-side marks when client renders them
       } : undefined;
 
-      // Create export function that uses the editor handle
+      // Create export function that uses Polotno's native crop marks and bleed clipping
       const exportPdf = async (scene: PolotnoScene): Promise<Blob> => {
         return editorHandle.exportResolvedPdf(scene, {
-          includeBleed: printSettings?.enablePrintMarks ?? false,
-          includeCropMarks: false, // Crop marks added server-side
+          includeBleed: usePrintMarks,
+          includeCropMarks: usePrintMarks, // Use Polotno native crop marks
+          cropMarkSizeMm: printSettings?.cropMarkOffsetMm ?? 3,
           pixelRatio: 2,
         });
       };

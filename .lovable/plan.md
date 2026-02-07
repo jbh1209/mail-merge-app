@@ -1,164 +1,77 @@
 
 
-# Fix: Vector PDF Service Integration via Edge Function Proxy
+# Fix: VPS API Secret Not Being Read Correctly
 
-## Problem Identified
+## Root Cause Identified
 
-The vector PDF export is falling back to client-side CMYK conversion because the environment variables aren't accessible in the browser.
+The 401 error is happening because the Edge Function is looking for secrets with the **wrong names**.
 
-**Technical Root Cause:**
-- Secrets added via Lovable's secrets system (`VITE_PDF_EXPORT_SERVICE_URL`, `VITE_PDF_EXPORT_API_SECRET`) are available to **edge functions** via `Deno.env.get()`
-- They are **NOT** available to client-side browser code via `import.meta.env`
-- The `VITE_` prefix convention only works for actual `.env` file entries, not Lovable project secrets
-- Result: `isVectorServiceAvailable()` returns `false` because `SERVICE_URL` and `API_SECRET` are both undefined in the browser
-
----
-
-## Solution: Edge Function Proxy
-
-Create a new edge function that proxies requests to your VPS microservice. This approach:
-- Keeps the API secret secure (never exposed to browser)
-- Follows the existing pattern used by `get-polotno-key`
-- Provides better security than exposing credentials to the client
-
----
-
-## Architecture After Fix
-
-```text
-Browser (Client)                          Lovable Edge Functions                        Your VPS
-┌─────────────────────┐                   ┌────────────────────────┐                   ┌─────────────────────┐
-│ pdfBatchExporter.ts │  POST /render     │ render-vector-pdf      │  POST /render     │ pdf.jaimar.dev      │
-│                     │ ─────────────────→│                        │ ─────────────────→│                     │
-│ (scene JSON)        │                   │ Reads secrets from     │ (+ x-api-key)     │ @polotno/pdf-export │
-│                     │←─────────────────│ Deno.env.get()         │←─────────────────│                     │
-│ (PDF blob)          │  PDF bytes        │ Forwards request       │  PDF bytes        │ Returns vector PDF  │
-└─────────────────────┘                   └────────────────────────┘                   └─────────────────────┘
+**Current code in `render-vector-pdf/index.ts`:**
+```typescript
+const SERVICE_URL = Deno.env.get('VITE_PDF_EXPORT_SERVICE_URL');  // ❌ Wrong name
+const API_SECRET = Deno.env.get('VITE_PDF_EXPORT_API_SECRET');   // ❌ Wrong name
 ```
 
----
+**Secrets actually configured in Lovable Cloud:**
+- `VITE_PDF_EXPORT_SERVICE_URL` ✓ (matches by coincidence)
+- `VITE_PDF_EXPORT_API_SECRET` ✓ (matches by coincidence)
 
-## Files to Create
+Wait - they DO match! Let me check the logs more carefully...
 
-### 1. New Edge Function: `supabase/functions/render-vector-pdf/index.ts`
+Actually, the **health check passes** which means `SERVICE_URL` is being read correctly (the URL is correct). But the **render fails with 401** which means the VPS is rejecting the API key.
 
-A proxy edge function that:
-- Reads `PDF_EXPORT_SERVICE_URL` and `PDF_EXPORT_API_SECRET` from environment
-- Accepts scene JSON from the client
-- Forwards the request to your VPS with the API key
-- Returns the PDF bytes to the client
-- Includes error handling and logging
+**The real issue:** The API key stored in Lovable Cloud (`VITE_PDF_EXPORT_API_SECRET`) does NOT match the `API_SECRET` configured in your Coolify VPS.
 
 ---
 
-## Files to Modify
+## Evidence
 
-### 2. Update: `src/lib/polotno/vectorPdfExporter.ts`
-
-Change the implementation to:
-- Remove direct VPS calls (no more `import.meta.env` reading)
-- Call the new edge function instead
-- The edge function handles authentication with the VPS
-- Keep the same public API (`isVectorServiceAvailable`, `exportVectorPdf`, etc.)
-
-### 3. Update Secrets Configuration
-
-The secrets need to be renamed without the `VITE_` prefix since they're now edge-function-only:
-- `PDF_EXPORT_SERVICE_URL` - The VPS URL
-- `PDF_EXPORT_API_SECRET` - The API key
+1. Health check passes → URL is correct, VPS is reachable
+2. Render returns 401 → VPS received the request but the `x-api-key` header value was rejected
+3. VPS responded `{"error":"Unauthorized"}` → This is your VPS's auth middleware rejecting the key
 
 ---
 
-## Technical Details
+## Solution
 
-### Edge Function Implementation
+The API secret stored in Lovable Cloud needs to match exactly what's configured in Coolify. Since you have the key available, we need to **update the secret** in Lovable Cloud.
+
+### What I'll Do
+
+1. **Request to update the secret** `VITE_PDF_EXPORT_API_SECRET` with the correct value
+2. **Redeploy the edge function** to pick up the updated secret
+3. **Test the render endpoint** to confirm it works
+
+---
+
+## Technical Detail
+
+The Edge Function code is correct - it's reading the secret and passing it to your VPS:
 
 ```typescript
-// supabase/functions/render-vector-pdf/index.ts
-
-// Read secrets (not exposed to browser)
-const SERVICE_URL = Deno.env.get('PDF_EXPORT_SERVICE_URL');
-const API_SECRET = Deno.env.get('PDF_EXPORT_API_SECRET');
-
-// Health check endpoint for availability detection
-if (path === '/health') {
-  // Forward health check to VPS
-  const vpsResponse = await fetch(`${SERVICE_URL}/health`);
-  return vpsResponse;
-}
-
-// Render endpoint - forward scene to VPS
-if (path === '/render') {
-  const response = await fetch(`${SERVICE_URL}/render`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': API_SECRET,
-    },
-    body: JSON.stringify(requestBody),
-  });
-  
-  // Return PDF bytes
-  return new Response(await response.arrayBuffer(), {
-    headers: { 'Content-Type': 'application/pdf' }
-  });
-}
-```
-
-### Client-Side Changes
-
-```typescript
-// src/lib/polotno/vectorPdfExporter.ts
-
-// Instead of calling VPS directly, call edge function
-const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-vector-pdf`;
-
-export async function isVectorServiceAvailable(): Promise<boolean> {
-  try {
-    const response = await fetch(`${EDGE_FUNCTION_URL}/health`);
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-export async function exportVectorPdf(scene, options): Promise<VectorExportResult> {
-  const response = await fetch(`${EDGE_FUNCTION_URL}/render`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scene, options }),
-  });
-  // ...
-}
+// Line 68-75 in render-vector-pdf/index.ts
+const vpsResponse = await fetch(`${SERVICE_URL}/render`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': API_SECRET,  // This value must match VPS's API_SECRET
+  },
+  body: JSON.stringify(body),
+});
 ```
 
 ---
 
-## Why This Approach?
-
-| Aspect | Direct VPS Call (Failed) | Edge Function Proxy (Solution) |
-|--------|-------------------------|-------------------------------|
-| API Secret Location | Browser (exposed) | Edge function (secure) |
-| Secret Access | `import.meta.env` (doesn't work with Lovable secrets) | `Deno.env.get()` (works) |
-| Security | API key visible in network tab | API key never leaves server |
-| CORS | Requires VPS CORS config | Handled by edge function |
-
----
-
-## Summary of Changes
-
-| File | Action | Purpose |
-|------|--------|---------|
-| `supabase/functions/render-vector-pdf/index.ts` | Create | Proxy requests to VPS with secure API key |
-| `src/lib/polotno/vectorPdfExporter.ts` | Modify | Call edge function instead of VPS directly |
-
----
-
-## Testing After Implementation
+## Verification Steps After Fix
 
 1. Export a small batch of labels (2-3 records)
-2. Console should show `[VectorExport] Service is available`
-3. Progress modal should NOT show "Converting to CMYK (fallback)..."
-4. Instead, it should show "Generating vector PDF X of Y (CMYK)..."
-5. Verify the final PDF has selectable text (vector, not raster)
+2. Console should show `[render-vector-pdf] Render successful, returning X bytes`
+3. No more "VPS error: 401" messages
+4. PDF generation completes successfully
+
+---
+
+## Action Required From You
+
+When I request the secret update, please paste the **exact API_SECRET value** from your Coolify environment variables for the pdf-export-service.
 

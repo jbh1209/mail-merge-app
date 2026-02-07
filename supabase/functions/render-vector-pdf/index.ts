@@ -1,7 +1,7 @@
 import { corsHeaders } from '../_shared/cors.ts';
 
-const SERVICE_URL = Deno.env.get('VITE_PDF_EXPORT_SERVICE_URL');
-const API_SECRET = Deno.env.get('VITE_PDF_EXPORT_API_SECRET');
+const SERVICE_URL = Deno.env.get('PDF_EXPORT_SERVICE_URL');
+const API_SECRET = Deno.env.get('PDF_EXPORT_API_SECRET');
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
   }
 
   const url = new URL(req.url);
-  const path = url.pathname.split('/').pop(); // Get last segment: health, render, or batch-render
+  const path = url.pathname.split('/').pop(); // Get last segment
 
   // Check configuration
   if (!SERVICE_URL || !API_SECRET) {
@@ -22,7 +22,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Health check endpoint
+    // ==========================================================================
+    // HEALTH CHECK
+    // ==========================================================================
     if (path === 'health') {
       console.log('[render-vector-pdf] Health check request');
       
@@ -37,9 +39,10 @@ Deno.serve(async (req) => {
         clearTimeout(timeoutId);
         
         if (vpsResponse.ok) {
-          console.log('[render-vector-pdf] VPS is healthy');
+          const healthData = await vpsResponse.json();
+          console.log('[render-vector-pdf] VPS is healthy:', healthData);
           return new Response(
-            JSON.stringify({ status: 'ok', service: 'available' }),
+            JSON.stringify({ status: 'ok', service: 'available', ...healthData }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -59,9 +62,100 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Render single PDF endpoint
+    // ==========================================================================
+    // CMYK CONVERSION (New primary endpoint)
+    // ==========================================================================
+    if (path === 'convert-cmyk') {
+      console.log('[render-vector-pdf] CMYK conversion request');
+      
+      // Get profile from query params (default: gracol)
+      const profile = url.searchParams.get('profile') || 'gracol';
+      
+      // Read raw PDF bytes from request
+      const pdfBytes = await req.arrayBuffer();
+      
+      if (!pdfBytes || pdfBytes.byteLength === 0) {
+        return new Response(
+          JSON.stringify({ error: 'No PDF data provided' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      console.log(`[render-vector-pdf] Forwarding ${pdfBytes.byteLength} bytes for CMYK conversion (profile: ${profile})`);
+      
+      const vpsResponse = await fetch(`${SERVICE_URL}/convert-cmyk?profile=${profile}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/pdf',
+          'x-api-key': API_SECRET,
+        },
+        body: pdfBytes,
+      });
+
+      if (!vpsResponse.ok) {
+        const errorText = await vpsResponse.text();
+        console.error('[render-vector-pdf] VPS CMYK conversion failed:', vpsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `VPS error: ${vpsResponse.status}`, details: errorText }),
+          { status: vpsResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Return CMYK PDF bytes
+      const cmykPdfBuffer = await vpsResponse.arrayBuffer();
+      const conversionTime = vpsResponse.headers.get('X-Conversion-Time-Ms') || 'unknown';
+      
+      console.log(`[render-vector-pdf] CMYK conversion successful: ${cmykPdfBuffer.byteLength} bytes in ${conversionTime}ms`);
+      
+      return new Response(cmykPdfBuffer, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/pdf',
+          'Content-Length': cmykPdfBuffer.byteLength.toString(),
+          'X-Conversion-Time-Ms': conversionTime,
+        },
+      });
+    }
+
+    // ==========================================================================
+    // BATCH CMYK CONVERSION
+    // ==========================================================================
+    if (path === 'batch-convert-cmyk') {
+      console.log('[render-vector-pdf] Batch CMYK conversion request');
+      
+      const body = await req.json();
+      
+      const vpsResponse = await fetch(`${SERVICE_URL}/batch-convert-cmyk`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!vpsResponse.ok) {
+        const errorText = await vpsResponse.text();
+        console.error('[render-vector-pdf] VPS batch CMYK conversion failed:', vpsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `VPS error: ${vpsResponse.status}`, details: errorText }),
+          { status: vpsResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const result = await vpsResponse.json();
+      console.log(`[render-vector-pdf] Batch CMYK conversion successful: ${result.results?.filter((r: any) => r.success).length}/${result.results?.length}`);
+      
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ==========================================================================
+    // LEGACY: Render single PDF (kept for backward compatibility)
+    // ==========================================================================
     if (path === 'render') {
-      console.log('[render-vector-pdf] Render request');
+      console.log('[render-vector-pdf] Legacy render request');
       
       const body = await req.json();
       
@@ -83,7 +177,6 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Return PDF bytes
       const pdfBuffer = await vpsResponse.arrayBuffer();
       console.log('[render-vector-pdf] Render successful, returning', pdfBuffer.byteLength, 'bytes');
       
@@ -96,9 +189,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Batch render endpoint
+    // ==========================================================================
+    // LEGACY: Batch render (kept for backward compatibility)
+    // ==========================================================================
     if (path === 'batch-render') {
-      console.log('[render-vector-pdf] Batch render request');
+      console.log('[render-vector-pdf] Legacy batch render request');
       
       const body = await req.json();
       
@@ -120,7 +215,6 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Return JSON response with base64 PDFs
       const result = await vpsResponse.json();
       console.log('[render-vector-pdf] Batch render successful:', result.successful, '/', result.total);
       
@@ -131,7 +225,7 @@ Deno.serve(async (req) => {
 
     // Unknown endpoint
     return new Response(
-      JSON.stringify({ error: 'Unknown endpoint. Use /health, /render, or /batch-render' }),
+      JSON.stringify({ error: 'Unknown endpoint. Use /health, /convert-cmyk, /batch-convert-cmyk, /render, or /batch-render' }),
       { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

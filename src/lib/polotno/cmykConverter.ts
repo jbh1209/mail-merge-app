@@ -1,75 +1,93 @@
 /**
- * Client-Side CMYK Conversion Utility
+ * CMYK Conversion Utility
  * 
- * Uses @imgly/plugin-print-ready-pdfs-web for browser-based PDF/X-3 conversion
- * with professional ICC profiles (FOGRA39 for EU, GRACoL for US).
- * 
- * This eliminates the need for external API services like pdfRest.
+ * Sends RGB PDFs to the VPS microservice for professional CMYK conversion
+ * using Ghostscript with ICC profiles (FOGRA39 for EU, GRACoL for US).
  */
 
-import { convertToPDFX3 } from '@imgly/plugin-print-ready-pdfs-web';
-
-export type ColorProfile = 'fogra39' | 'gracol' | 'srgb';
+export type ColorProfile = 'fogra39' | 'gracol';
 
 export interface CmykConversionOptions {
   profile: ColorProfile;
-  title?: string;
-  flattenTransparency?: boolean;
 }
 
-// Asset path for Ghostscript WASM and ICC profiles
-// These are hosted in public/print-ready-pdfs/ for stable URLs
-const ASSET_PATH = '/print-ready-pdfs/';
+// Edge function URL for CMYK conversion proxy
+const EDGE_FUNCTION_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-vector-pdf`;
 
 /**
- * Preflight check to ensure CMYK converter assets are reachable
- * Returns true if assets are available, false otherwise
+ * Check if the CMYK conversion service is available
  */
-export async function checkCmykAssetsAvailable(): Promise<{ available: boolean; error?: string }> {
+export async function checkCmykServiceAvailable(): Promise<{ available: boolean; error?: string }> {
+  if (!import.meta.env.VITE_SUPABASE_URL) {
+    return { available: false, error: 'Backend URL not configured' };
+  }
+
   try {
-    const [gsJs, gsWasm, iccProfile] = await Promise.all([
-      fetch(`${ASSET_PATH}gs.js`, { method: 'HEAD' }),
-      fetch(`${ASSET_PATH}gs.wasm`, { method: 'HEAD' }),
-      fetch(`${ASSET_PATH}ISOcoated_v2_eci.icc`, { method: 'HEAD' }),
-    ]);
-    
-    if (!gsJs.ok) {
-      return { available: false, error: 'Ghostscript WASM loader (gs.js) not found' };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/health`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      // Check if both ICC profiles are available
+      if (data.profiles?.gracol && data.profiles?.fogra39) {
+        console.log('[CMYK] Service available with ICC profiles');
+        return { available: true };
+      }
+      return { available: false, error: 'ICC profiles not available on server' };
     }
-    if (!gsWasm.ok) {
-      return { available: false, error: 'Ghostscript WASM binary (gs.wasm) not found' };
-    }
-    if (!iccProfile.ok) {
-      return { available: false, error: 'ICC color profiles not found' };
-    }
-    
-    return { available: true };
+
+    return { available: false, error: `Service returned ${response.status}` };
   } catch (err) {
     return { 
       available: false, 
-      error: `Asset check failed: ${err instanceof Error ? err.message : 'Network error'}` 
+      error: `Service check failed: ${err instanceof Error ? err.message : 'Network error'}` 
     };
   }
 }
 
 /**
- * Convert a single RGB PDF to CMYK PDF/X-3
+ * Convert a single RGB PDF to CMYK via the VPS microservice
  */
 export async function convertPdfToCmyk(
   pdfBlob: Blob,
   options: CmykConversionOptions
 ): Promise<Blob> {
-  return convertToPDFX3(pdfBlob, {
-    outputProfile: options.profile,
-    title: options.title ?? 'Print-Ready Export',
-    flattenTransparency: options.flattenTransparency ?? true,
-    assetPath: ASSET_PATH,
+  if (!import.meta.env.VITE_SUPABASE_URL) {
+    throw new Error('Backend URL not configured');
+  }
+
+  console.log(`[CMYK] Converting PDF (${pdfBlob.size} bytes) with profile: ${options.profile}`);
+
+  const response = await fetch(`${EDGE_FUNCTION_BASE}/convert-cmyk?profile=${options.profile}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/pdf',
+    },
+    body: pdfBlob,
   });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `CMYK conversion failed: ${response.status}`);
+  }
+
+  const cmykBlob = await response.blob();
+  const conversionTime = response.headers.get('X-Conversion-Time-Ms');
+  
+  console.log(`[CMYK] Conversion complete: ${cmykBlob.size} bytes in ${conversionTime || 'unknown'}ms`);
+  
+  return cmykBlob;
 }
 
 /**
- * Convert multiple RGB PDFs to CMYK PDF/X-3 (sequential processing)
- * Sequential to avoid overwhelming WASM memory
+ * Convert multiple RGB PDFs to CMYK (sequential to avoid server overload)
  */
 export async function convertPdfsToCmyk(
   pdfBlobs: Blob[],
@@ -79,16 +97,84 @@ export async function convertPdfsToCmyk(
   const results: Blob[] = [];
   
   for (let i = 0; i < pdfBlobs.length; i++) {
-    const cmykBlob = await convertToPDFX3(pdfBlobs[i], {
-      outputProfile: options.profile,
-      title: options.title ?? 'Print-Ready Export',
-      flattenTransparency: options.flattenTransparency ?? true,
-      assetPath: ASSET_PATH,
-    });
+    const cmykBlob = await convertPdfToCmyk(pdfBlobs[i], options);
     results.push(cmykBlob);
     onProgress?.(i + 1, pdfBlobs.length);
   }
   
+  return results;
+}
+
+/**
+ * Batch convert PDFs using the batch endpoint (more efficient for large batches)
+ */
+export async function batchConvertPdfsToCmyk(
+  pdfBlobs: Blob[],
+  options: CmykConversionOptions,
+  onProgress?: (current: number, total: number) => void
+): Promise<Blob[]> {
+  if (!import.meta.env.VITE_SUPABASE_URL) {
+    throw new Error('Backend URL not configured');
+  }
+
+  // For small batches, use sequential conversion
+  if (pdfBlobs.length < 5) {
+    return convertPdfsToCmyk(pdfBlobs, options, onProgress);
+  }
+
+  console.log(`[CMYK] Batch converting ${pdfBlobs.length} PDFs with profile: ${options.profile}`);
+
+  // Convert blobs to base64 for batch endpoint
+  const base64Pdfs = await Promise.all(
+    pdfBlobs.map(async (blob) => {
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    })
+  );
+
+  const response = await fetch(`${EDGE_FUNCTION_BASE}/batch-convert-cmyk`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      pdfs: base64Pdfs,
+      profile: options.profile,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Batch CMYK conversion failed: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const results: Blob[] = [];
+
+  for (const result of data.results || []) {
+    if (result.success && result.data) {
+      // Decode base64 back to Blob
+      const binaryString = atob(result.data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let j = 0; j < binaryString.length; j++) {
+        bytes[j] = binaryString.charCodeAt(j);
+      }
+      results.push(new Blob([bytes], { type: 'application/pdf' }));
+    } else {
+      // Push empty blob to maintain index alignment
+      console.warn(`[CMYK] Conversion failed for PDF: ${result.error}`);
+      results.push(new Blob([], { type: 'application/pdf' }));
+    }
+    onProgress?.(results.length, pdfBlobs.length);
+  }
+
+  console.log(`[CMYK] Batch complete: ${results.filter(b => b.size > 0).length}/${pdfBlobs.length} successful`);
+
   return results;
 }
 

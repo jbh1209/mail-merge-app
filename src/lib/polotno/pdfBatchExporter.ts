@@ -11,7 +11,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PolotnoScene } from './types';
 import { resolveVdpVariables } from './vdpResolver';
-import { convertPdfsToCmyk, getProfileForRegion, checkCmykAssetsAvailable } from './cmykConverter';
+import { convertPdfsToCmyk, getProfileForRegion, checkCmykServiceAvailable } from './cmykConverter';
 import { isVectorServiceAvailable, exportVectorPdf } from './vectorPdfExporter';
 
 // =============================================================================
@@ -429,7 +429,7 @@ export async function batchExportWithPolotno(
         message: 'Checking CMYK converter...',
       });
 
-      const assetCheck = await checkCmykAssetsAvailable();
+      const assetCheck = await checkCmykServiceAvailable();
       if (!assetCheck.available) {
         console.error('[PolotnoExport] CMYK assets not available:', assetCheck.error);
         onProgress({

@@ -1,16 +1,15 @@
 /**
  * Vector PDF Export Client
  * 
- * Calls the self-hosted pdf-export-service to generate true vector PDFs
- * with optional PDF/X-1a CMYK conversion. This replaces client-side raster
- * export for professional print-quality output.
+ * Calls the edge function proxy which forwards requests to the self-hosted
+ * pdf-export-service for true vector PDF generation with optional PDF/X-1a
+ * CMYK conversion.
  */
 
 import type { PolotnoScene } from './types';
 
-// Read service configuration from environment
-const SERVICE_URL = import.meta.env.VITE_PDF_EXPORT_SERVICE_URL as string | undefined;
-const API_SECRET = import.meta.env.VITE_PDF_EXPORT_API_SECRET as string | undefined;
+// Edge function URL (routes through Supabase to keep API secret secure)
+const EDGE_FUNCTION_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-vector-pdf`;
 
 // =============================================================================
 // TYPES
@@ -41,19 +40,19 @@ export interface BatchVectorExportResult {
 // =============================================================================
 
 /**
- * Check if the vector PDF service is configured in environment
+ * Check if the Supabase URL is configured (required for edge function calls)
  */
 export function isVectorServiceConfigured(): boolean {
-  return Boolean(SERVICE_URL && API_SECRET);
+  return Boolean(import.meta.env.VITE_SUPABASE_URL);
 }
 
 /**
- * Check if the vector PDF service is available and responding
+ * Check if the vector PDF service is available via the edge function proxy
  * Performs a health check with 5-second timeout
  */
 export async function isVectorServiceAvailable(): Promise<boolean> {
-  if (!SERVICE_URL || !API_SECRET) {
-    console.log('[VectorExport] Service not configured');
+  if (!import.meta.env.VITE_SUPABASE_URL) {
+    console.log('[VectorExport] Supabase URL not configured');
     return false;
   }
 
@@ -61,7 +60,7 @@ export async function isVectorServiceAvailable(): Promise<boolean> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch(`${SERVICE_URL}/health`, {
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/health`, {
       method: 'GET',
       signal: controller.signal,
     });
@@ -86,7 +85,7 @@ export async function isVectorServiceAvailable(): Promise<boolean> {
 // =============================================================================
 
 /**
- * Export a single scene to vector PDF via the microservice
+ * Export a single scene to vector PDF via the edge function proxy
  * 
  * @param scene - Polotno scene JSON (with VDP already resolved)
  * @param options - Export options (cmyk, title)
@@ -96,19 +95,18 @@ export async function exportVectorPdf(
   scene: PolotnoScene,
   options: VectorExportOptions = {}
 ): Promise<VectorExportResult> {
-  if (!SERVICE_URL || !API_SECRET) {
+  if (!import.meta.env.VITE_SUPABASE_URL) {
     return { 
       success: false, 
-      error: 'Vector PDF service not configured' 
+      error: 'Supabase URL not configured' 
     };
   }
 
   try {
-    const response = await fetch(`${SERVICE_URL}/render`, {
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/render`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': API_SECRET,
       },
       body: JSON.stringify({
         scene,
@@ -156,10 +154,10 @@ export async function batchExportVectorPdfs(
   options: VectorExportOptions = {},
   onProgress?: (current: number, total: number) => void
 ): Promise<BatchVectorExportResult> {
-  if (!SERVICE_URL || !API_SECRET) {
+  if (!import.meta.env.VITE_SUPABASE_URL) {
     return {
       blobs: [],
-      errors: ['Vector PDF service not configured'],
+      errors: ['Supabase URL not configured'],
       successful: 0,
       total: scenes.length,
     };
@@ -216,23 +214,13 @@ async function batchExportViaEndpoint(
   options: VectorExportOptions,
   onProgress?: (current: number, total: number) => void
 ): Promise<BatchVectorExportResult> {
-  if (!SERVICE_URL || !API_SECRET) {
-    return {
-      blobs: [],
-      errors: ['Vector PDF service not configured'],
-      successful: 0,
-      total: scenes.length,
-    };
-  }
-
   try {
     console.log(`[VectorExport] Batch exporting ${scenes.length} scenes`);
 
-    const response = await fetch(`${SERVICE_URL}/batch-render`, {
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/batch-render`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': API_SECRET,
       },
       body: JSON.stringify({
         scenes,

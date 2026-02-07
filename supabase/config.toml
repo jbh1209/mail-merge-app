@@ -53,3 +53,6 @@ verify_jwt = true
 
 [functions.get-polotno-key]
 verify_jwt = false
+
+[functions.render-vector-pdf]
+verify_jwt = false

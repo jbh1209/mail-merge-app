@@ -1,32 +1,23 @@
 
 
-# Fix: Update API Secret to Match Coolify Value
+# Update Lovable Cloud Secret to Match VPS
 
-## Confirmed Values
+## Current Status
 
-| Location | Variable Name | Value |
-|----------|---------------|-------|
-| Coolify VPS | `API_SECRET` | `V9!rQm7@L2x#A$Pz` |
-| Lovable Cloud | `VITE_PDF_EXPORT_API_SECRET` | (needs to match above) |
-
-## Root Cause Confirmed
-
-The secret values between Lovable Cloud and Coolify don't match. This is why:
-- Health check passes (no auth required)
-- Render fails with 401 (auth required, secret mismatch)
-
-## Fix Steps
-
-### Step 1: Update Secret in Lovable Cloud
-
-Update `VITE_PDF_EXPORT_API_SECRET` with the exact value:
-```text
-V9!rQm7@L2x#A$Pz
+You've redeployed your VPS with the new alphanumeric secret:
 ```
+V9rQm7L2xAPz8K4nW6bY3cJ5
+```
+
+## Implementation Steps
+
+### Step 1: Update Lovable Cloud Secret
+
+Update `VITE_PDF_EXPORT_API_SECRET` to match the new alphanumeric value.
 
 ### Step 2: Redeploy Edge Function
 
-Redeploy `render-vector-pdf` to pick up the new secret value.
+Deploy `render-vector-pdf` to pick up the new secret value.
 
 ### Step 3: Test Vector PDF Export
 
@@ -35,12 +26,13 @@ Export a small batch (2-3 records) to verify the 401 error is resolved.
 ## Expected Result
 
 Console should show:
-```text
+```
 [render-vector-pdf] Render successful, returning X bytes
 ```
 
-Instead of:
-```text
-[render-vector-pdf] VPS render failed: 401 {"error":"Unauthorized"}
-```
+## Technical Notes
+
+- Alphanumeric secrets eliminate any potential encoding issues with special characters
+- Both VPS and Edge Function will now have byte-for-byte matching values
+- No shell escaping, URL encoding, or JSON serialization issues possible
 

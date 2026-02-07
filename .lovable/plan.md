@@ -1,77 +1,46 @@
 
 
-# Fix: VPS API Secret Not Being Read Correctly
+# Fix: Update API Secret to Match Coolify Value
 
-## Root Cause Identified
+## Confirmed Values
 
-The 401 error is happening because the Edge Function is looking for secrets with the **wrong names**.
+| Location | Variable Name | Value |
+|----------|---------------|-------|
+| Coolify VPS | `API_SECRET` | `V9!rQm7@L2x#A$Pz` |
+| Lovable Cloud | `VITE_PDF_EXPORT_API_SECRET` | (needs to match above) |
 
-**Current code in `render-vector-pdf/index.ts`:**
-```typescript
-const SERVICE_URL = Deno.env.get('VITE_PDF_EXPORT_SERVICE_URL');  // ❌ Wrong name
-const API_SECRET = Deno.env.get('VITE_PDF_EXPORT_API_SECRET');   // ❌ Wrong name
+## Root Cause Confirmed
+
+The secret values between Lovable Cloud and Coolify don't match. This is why:
+- Health check passes (no auth required)
+- Render fails with 401 (auth required, secret mismatch)
+
+## Fix Steps
+
+### Step 1: Update Secret in Lovable Cloud
+
+Update `VITE_PDF_EXPORT_API_SECRET` with the exact value:
+```text
+V9!rQm7@L2x#A$Pz
 ```
 
-**Secrets actually configured in Lovable Cloud:**
-- `VITE_PDF_EXPORT_SERVICE_URL` ✓ (matches by coincidence)
-- `VITE_PDF_EXPORT_API_SECRET` ✓ (matches by coincidence)
+### Step 2: Redeploy Edge Function
 
-Wait - they DO match! Let me check the logs more carefully...
+Redeploy `render-vector-pdf` to pick up the new secret value.
 
-Actually, the **health check passes** which means `SERVICE_URL` is being read correctly (the URL is correct). But the **render fails with 401** which means the VPS is rejecting the API key.
+### Step 3: Test Vector PDF Export
 
-**The real issue:** The API key stored in Lovable Cloud (`VITE_PDF_EXPORT_API_SECRET`) does NOT match the `API_SECRET` configured in your Coolify VPS.
+Export a small batch (2-3 records) to verify the 401 error is resolved.
 
----
+## Expected Result
 
-## Evidence
-
-1. Health check passes → URL is correct, VPS is reachable
-2. Render returns 401 → VPS received the request but the `x-api-key` header value was rejected
-3. VPS responded `{"error":"Unauthorized"}` → This is your VPS's auth middleware rejecting the key
-
----
-
-## Solution
-
-The API secret stored in Lovable Cloud needs to match exactly what's configured in Coolify. Since you have the key available, we need to **update the secret** in Lovable Cloud.
-
-### What I'll Do
-
-1. **Request to update the secret** `VITE_PDF_EXPORT_API_SECRET` with the correct value
-2. **Redeploy the edge function** to pick up the updated secret
-3. **Test the render endpoint** to confirm it works
-
----
-
-## Technical Detail
-
-The Edge Function code is correct - it's reading the secret and passing it to your VPS:
-
-```typescript
-// Line 68-75 in render-vector-pdf/index.ts
-const vpsResponse = await fetch(`${SERVICE_URL}/render`, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'x-api-key': API_SECRET,  // This value must match VPS's API_SECRET
-  },
-  body: JSON.stringify(body),
-});
+Console should show:
+```text
+[render-vector-pdf] Render successful, returning X bytes
 ```
 
----
-
-## Verification Steps After Fix
-
-1. Export a small batch of labels (2-3 records)
-2. Console should show `[render-vector-pdf] Render successful, returning X bytes`
-3. No more "VPS error: 401" messages
-4. PDF generation completes successfully
-
----
-
-## Action Required From You
-
-When I request the secret update, please paste the **exact API_SECRET value** from your Coolify environment variables for the pdf-export-service.
+Instead of:
+```text
+[render-vector-pdf] VPS render failed: 401 {"error":"Unauthorized"}
+```
 

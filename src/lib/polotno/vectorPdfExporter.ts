@@ -12,6 +12,12 @@
  */
 
 import type { PolotnoScene } from './types';
+import {
+  sanitizePolotnoSceneForVps,
+  logSanitizationReport,
+  formatSanitizationForError,
+  type SanitizationResult,
+} from './sceneSanitizer';
 
 // Edge function URL (routes through Supabase to keep API secret secure)
 const EDGE_FUNCTION_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/render-vector-pdf`;
@@ -143,8 +149,25 @@ export async function exportMultiPagePdf(
     };
   }
 
+  // Safety net: sanitize scene before sending to VPS
+  let sanitizationResult: SanitizationResult | null = null;
+  let sanitizedScene: PolotnoScene;
+  
   try {
-    console.log(`[VectorExport] Exporting multi-page PDF: ${scene.pages.length} pages (CMYK: ${options.cmyk})`);
+    sanitizationResult = sanitizePolotnoSceneForVps(scene);
+    sanitizedScene = sanitizationResult.sanitizedScene;
+    
+    if (sanitizationResult.changedCount > 0) {
+      logSanitizationReport(sanitizationResult);
+      console.warn(`[VectorExport] Preflight fixed ${sanitizationResult.changedCount} invalid values before multi-page export`);
+    }
+  } catch (sanitizeError) {
+    console.error('[VectorExport] Scene sanitization failed:', sanitizeError);
+    sanitizedScene = scene; // Fall back to original if sanitization itself fails
+  }
+
+  try {
+    console.log(`[VectorExport] Exporting multi-page PDF: ${sanitizedScene.pages.length} pages (CMYK: ${options.cmyk})`);
     
     const response = await fetch(`${EDGE_FUNCTION_BASE}/export-multipage`, {
       method: 'POST',
@@ -152,7 +175,7 @@ export async function exportMultiPagePdf(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        scene,
+        scene: sanitizedScene,
         options: {
           cmyk: options.cmyk ?? false,
           title: options.title ?? 'MergeKit Export',
@@ -169,17 +192,21 @@ export async function exportMultiPagePdf(
       // Surface details for debugging (truncated to avoid huge UI strings)
       const detailsSnippet = details ? ` — ${details.slice(0, 500)}` : '';
       const message = (errorData?.error as string) || `Service returned ${response.status}`;
+      
+      // Include preflight info if we fixed anything
+      const preflightInfo = sanitizationResult ? formatSanitizationForError(sanitizationResult) : '';
+      const preflightNote = preflightInfo ? ` [${preflightInfo}]` : '';
 
       console.error('[VectorExport] export-multipage failed:', response.status, message, detailsSnippet);
 
       return {
         success: false,
-        error: `${message}${detailsSnippet}`,
+        error: `${message}${detailsSnippet}${preflightNote}`,
       };
     }
 
     const blob = await response.blob();
-    const pageCount = parseInt(response.headers.get('X-Page-Count') || '0', 10) || scene.pages.length;
+    const pageCount = parseInt(response.headers.get('X-Page-Count') || '0', 10) || sanitizedScene.pages.length;
     
     console.log(`[VectorExport] Multi-page PDF received: ${blob.size} bytes, ${pageCount} pages`);
     
@@ -190,8 +217,11 @@ export async function exportMultiPagePdf(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Network error';
+    const preflightInfo = sanitizationResult ? formatSanitizationForError(sanitizationResult) : '';
+    const preflightNote = preflightInfo ? ` [${preflightInfo}]` : '';
+    
     console.error('[VectorExport] Multi-page export failed:', error);
-    return { success: false, error: message };
+    return { success: false, error: `${message}${preflightNote}` };
   }
 }
 
@@ -220,8 +250,25 @@ export async function exportLabelsWithImposition(
     };
   }
 
+  // Safety net: sanitize scene before sending to VPS
+  let sanitizationResult: SanitizationResult | null = null;
+  let sanitizedScene: PolotnoScene;
+  
   try {
-    console.log(`[VectorExport] Exporting ${scene.pages.length} labels for imposition (CMYK: ${options.cmyk})`);
+    sanitizationResult = sanitizePolotnoSceneForVps(scene);
+    sanitizedScene = sanitizationResult.sanitizedScene;
+    
+    if (sanitizationResult.changedCount > 0) {
+      logSanitizationReport(sanitizationResult);
+      console.warn(`[VectorExport] Preflight fixed ${sanitizationResult.changedCount} invalid values before label export`);
+    }
+  } catch (sanitizeError) {
+    console.error('[VectorExport] Scene sanitization failed:', sanitizeError);
+    sanitizedScene = scene;
+  }
+
+  try {
+    console.log(`[VectorExport] Exporting ${sanitizedScene.pages.length} labels for imposition (CMYK: ${options.cmyk})`);
     
     const response = await fetch(`${EDGE_FUNCTION_BASE}/export-labels`, {
       method: 'POST',
@@ -229,7 +276,7 @@ export async function exportLabelsWithImposition(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        scene,
+        scene: sanitizedScene,
         layout,
         options: {
           cmyk: options.cmyk ?? false,
@@ -242,14 +289,16 @@ export async function exportLabelsWithImposition(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      const preflightInfo = sanitizationResult ? formatSanitizationForError(sanitizationResult) : '';
+      const preflightNote = preflightInfo ? ` [${preflightInfo}]` : '';
       return {
         success: false,
-        error: errorData.error || `Service returned ${response.status}`,
+        error: (errorData.error || `Service returned ${response.status}`) + preflightNote,
       };
     }
 
     const blob = await response.blob();
-    const labelCount = parseInt(response.headers.get('X-Label-Count') || '0', 10) || scene.pages.length;
+    const labelCount = parseInt(response.headers.get('X-Label-Count') || '0', 10) || sanitizedScene.pages.length;
     
     console.log(`[VectorExport] Label export received: ${blob.size} bytes, ${labelCount} labels`);
     
@@ -260,8 +309,10 @@ export async function exportLabelsWithImposition(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Network error';
+    const preflightInfo = sanitizationResult ? formatSanitizationForError(sanitizationResult) : '';
+    const preflightNote = preflightInfo ? ` [${preflightInfo}]` : '';
     console.error('[VectorExport] Label export failed:', error);
-    return { success: false, error: message };
+    return { success: false, error: `${message}${preflightNote}` };
   }
 }
 

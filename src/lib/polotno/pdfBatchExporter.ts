@@ -30,6 +30,11 @@ import {
   batchExportVectorPdfs,
   type AveryLayoutConfig as VectorAveryLayout,
 } from './vectorPdfExporter';
+import {
+  sanitizePolotnoSceneForVps,
+  logSanitizationReport,
+  formatSanitizationForError,
+} from './sceneSanitizer';
 
 // =============================================================================
 // TYPES
@@ -527,8 +532,34 @@ export async function batchExportWithPolotno(
       );
 
       // Optional: inject crop marks client-side and avoid VPS crop-mark code path
-      const combinedScene = injectClientCropMarksIfNeeded(combinedSceneRaw, printConfig);
+      const sceneWithMarks = injectClientCropMarksIfNeeded(combinedSceneRaw, printConfig);
       const sendCropMarksToVps = Boolean(printConfig?.enablePrintMarks && !printConfig?.clientRenderedMarks);
+
+      // Step 1.5: Run preflight sanitization to catch NaN/Infinity values
+      onProgress({
+        phase: 'preparing',
+        current: records.length,
+        total: records.length,
+        message: 'Running preflight validation...',
+      });
+
+      const sanitizationResult = sanitizePolotnoSceneForVps(sceneWithMarks);
+      logSanitizationReport(sanitizationResult);
+
+      // Use the sanitized scene for export
+      const combinedScene = sanitizationResult.sanitizedScene;
+
+      // Surface warning if we fixed any values
+      if (sanitizationResult.changedCount > 0) {
+        onProgress({
+          phase: 'preparing',
+          current: records.length,
+          total: records.length,
+          message: `Preflight: fixed ${sanitizationResult.changedCount} invalid numeric value(s)`,
+        });
+        // Small delay so user sees the message
+        await new Promise(r => setTimeout(r, 500));
+      }
 
       // Step 2: Export via VPS (full-page or labels)
       onProgress({
@@ -553,7 +584,10 @@ export async function batchExportWithPolotno(
         });
 
         if (!result.success || !result.blob) {
-          throw new Error(result.error || 'Multi-page export failed');
+          // Include preflight info in error for better diagnostics
+          const preflightInfo = formatSanitizationForError(sanitizationResult);
+          const errorMsg = result.error || 'Multi-page export failed';
+          throw new Error(preflightInfo ? `${errorMsg} (${preflightInfo})` : errorMsg);
         }
 
         pdfBlob = result.blob;
@@ -573,7 +607,10 @@ export async function batchExportWithPolotno(
         );
 
         if (!result.success || !result.blob) {
-          throw new Error(result.error || 'Label export failed');
+          // Include preflight info in error for better diagnostics
+          const preflightInfo = formatSanitizationForError(sanitizationResult);
+          const errorMsg = result.error || 'Label export failed';
+          throw new Error(preflightInfo ? `${errorMsg} (${preflightInfo})` : errorMsg);
         }
 
         pdfBlob = result.blob;

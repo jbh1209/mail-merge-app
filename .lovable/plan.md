@@ -1,222 +1,181 @@
 
-# Server-Side Vector PDF Rendering with @polotno/pdf-export
 
-## Overview
+# Fix Vector PDF Fidelity: Multi-Page Export Architecture
 
-This plan restructures the PDF export pipeline to use Polotno's official Node.js package for true vector PDF generation with native PDF/X-1a CMYK conversion. Instead of client-side rasterization + Ghostscript CMYK conversion, we'll send the Polotno JSON scene to the VPS and let `@polotno/pdf-export` handle everything.
+## Problem Summary
 
-## Current vs Proposed Architecture
+The exported CMYK PDFs are flattened raster images instead of vector graphics with editable text. The root cause is an over-complicated export pipeline:
 
+**Current (Broken) Flow:**
 ```text
-CURRENT (broken):
-  Client Polotno → toPDFDataURL() → Rasterized PDF → VPS Ghostscript → CMYK fails (strict PDF/X mode)
-
-PROPOSED (correct):
-  Client Polotno JSON → VPS @polotno/pdf-export → Vector PDF/X-1a with native CMYK → Return to client
+Client → 6 records → 6 separate PDF exports → Upload 6 files → pdf-lib merges → FLATTENED OUTPUT
 ```
 
-The key insight from the documentation:
-- `@polotno/pdf-export` produces **true vector PDFs**
-- Setting `pdfx1a: true` handles CMYK conversion, transparency flattening, and font embedding
-- It uses Ghostscript internally (which we already have installed)
-- Simple API: `jsonToPDF(scene, outputPath, { pdfx1a: true })`
+Even though the VPS uses `@polotno/pdf-export` to produce true vector PDFs, the `compose-label-sheet` edge function uses **pdf-lib** to merge them. pdf-lib cannot preserve complex PDF/X-1a structures (CMYK color spaces, outlined fonts, XObjects), causing the "flattening."
 
-## Implementation Scope
+## Key Insight from Polotno Documentation
 
-### VPS Server (Your GitHub Repository)
+From the official `@polotno/pdf-export` docs:
+> **"it will export all pages in the JSON"** - `jsonToPDFBase64(json)`
 
-**1. Install the package**
-```bash
-npm install @polotno/pdf-export
+The `@polotno/pdf-export` package can export a **multi-page Polotno JSON** directly into a **single multi-page PDF**. There is no need to export records individually and merge them afterward!
+
+## Solution Architecture
+
+### For Full-Page Exports (Certificates, Cards, Badges)
+
+**New Flow:**
+```text
+Client → Resolve ALL records → Create multi-page scene JSON → Send to VPS → VPS exports single multi-page PDF → Done (no merging!)
 ```
 
-**2. Add new endpoint `/render-vector`**
+1. Client resolves VDP variables for all records
+2. Combine resolved pages into a single multi-page PolotnoScene
+3. Send the combined JSON to VPS
+4. VPS calls `jsonToPDF(combinedScene, outputPath, { pdfx1a: true })`
+5. Return the single multi-page PDF directly (no composition step)
+
+### For Label Exports (Imposition Required)
+
+Labels still need post-processing to tile onto sheets, but we move that to the VPS to preserve vector fidelity:
+
+**New Flow:**
+```text
+Client → Resolve ALL records → Create multi-page scene JSON → VPS exports multi-page PDF → VPS imposes onto sheets with qpdf/Ghostscript → Done
+```
+
+1. Client resolves VDP for all records
+2. Send combined JSON to VPS
+3. VPS exports as multi-page PDF (each page = one label)
+4. VPS uses `qpdf` or Ghostscript to impose labels onto sheets (vector-preserving)
+5. Return final imposed PDF
+
+## Implementation Changes
+
+### Phase 1: New VPS Endpoint for Multi-Page Export
+
+| File | Change |
+|------|--------|
+| `server.js` (VPS) | Add `/export-multipage` endpoint that accepts multi-page scene JSON |
+
+**How it works:**
 ```javascript
-import { jsonToPDF } from '@polotno/pdf-export';
-import fs from 'fs/promises';
-import path from 'path';
-import { v4 as uuidv4 } from 'uuid';
-
-app.post('/render-vector', async (req, res) => {
-  // Validate API key
-  if (req.headers['x-api-key'] !== process.env.API_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const { scene, options = {} } = req.body;
-  const tempDir = `/tmp/render-${uuidv4()}`;
-  const outputPath = path.join(tempDir, 'output.pdf');
-
-  try {
-    await fs.mkdir(tempDir, { recursive: true });
-
-    // Use @polotno/pdf-export for true vector PDF
-    await jsonToPDF(scene, outputPath, {
-      pdfx1a: options.cmyk ?? false,  // Native CMYK via PDF/X-1a
-      metadata: {
-        title: options.title || 'Export',
-        application: 'MergeKit VPS',
-      },
-    });
-
-    // Read and return PDF
-    const pdfBuffer = await fs.readFile(outputPath);
-    res.set('Content-Type', 'application/pdf');
-    res.set('Content-Length', pdfBuffer.length);
-    res.send(pdfBuffer);
-
-    // Cleanup
-    await fs.rm(tempDir, { recursive: true, force: true });
-  } catch (error) {
-    console.error('Render error:', error);
-    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    res.status(500).json({ 
-      error: 'Render failed', 
-      details: error.message 
-    });
-  }
-});
-```
-
-**3. Add batch endpoint `/batch-render-vector`**
-```javascript
-app.post('/batch-render-vector', async (req, res) => {
-  // Validate API key
-  if (req.headers['x-api-key'] !== process.env.API_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const { scenes, options = {} } = req.body;
-  const results = [];
-
-  for (let i = 0; i < scenes.length; i++) {
-    const tempDir = `/tmp/batch-${uuidv4()}`;
-    const outputPath = path.join(tempDir, 'output.pdf');
-
-    try {
-      await fs.mkdir(tempDir, { recursive: true });
-      await jsonToPDF(scenes[i], outputPath, {
-        pdfx1a: options.cmyk ?? false,
-      });
-
-      const pdfBuffer = await fs.readFile(outputPath);
-      results.push({
-        index: i,
-        success: true,
-        pdf: pdfBuffer.toString('base64'),
-      });
-
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch (error) {
-      results.push({
-        index: i,
-        success: false,
-        error: error.message,
-      });
-    }
-  }
-
-  res.json({
-    results,
-    successful: results.filter(r => r.success).length,
-    total: scenes.length,
+app.post('/export-multipage', async (req, res) => {
+  const { scene, options } = req.body;
+  // scene.pages contains all VDP-resolved pages
+  
+  await jsonToPDF(scene, outputPath, { 
+    pdfx1a: options.cmyk 
   });
+  
+  // Return single multi-page PDF
+  res.sendFile(outputPath);
 });
 ```
 
-### Supabase Edge Function Update
+### Phase 2: New VPS Endpoint for Label Imposition
 
-Update `supabase/functions/render-vector-pdf/index.ts` to add handlers for the new endpoints:
+| File | Change |
+|------|--------|
+| `server.js` (VPS) | Add `/export-labels` endpoint that exports + imposes |
+| `Dockerfile` (VPS) | Add `qpdf` package for vector-safe PDF manipulation |
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /render-vector` | Single scene → Vector PDF (with optional CMYK) |
-| `POST /batch-render-vector` | Multiple scenes → Base64 PDFs |
-
-The edge function will proxy requests to the VPS, forwarding the Polotno JSON scenes.
-
-### Client-Side Changes
-
-**1. Update `vectorPdfExporter.ts`**
-- Change endpoint from `/render` to `/render-vector`
-- Keep the same request format (scene JSON + options)
-
-**2. Update `pdfBatchExporter.ts`**
-- Add logic to check if vector service is available
-- If available and CMYK requested: send scene JSON to VPS for rendering
-- If not available: fall back to client-side rasterized export (current behavior)
-
-### Flow Comparison
-
-**For CMYK Export:**
-```text
-1. User clicks "Export with CMYK"
-2. Client resolves VDP variables for each record
-3. Client sends resolved scene JSON to edge function
-4. Edge function proxies to VPS /render-vector
-5. VPS uses @polotno/pdf-export with pdfx1a: true
-6. VPS returns vector PDF with native CMYK
-7. Client uploads to Supabase Storage
-8. compose-label-sheet merges into final output
+**How it works:**
+```javascript
+app.post('/export-labels', async (req, res) => {
+  const { scene, layout, options } = req.body;
+  
+  // Step 1: Export multi-page PDF (each page = one label)
+  await jsonToPDF(scene, labelsPath, { pdfx1a: options.cmyk });
+  
+  // Step 2: Use qpdf/Ghostscript to impose onto sheets
+  // qpdf preserves PDF internals without re-rendering
+  await imposeLabelsOntoSheets(labelsPath, layout, outputPath);
+  
+  res.sendFile(outputPath);
+});
 ```
 
-**For RGB Export:**
-```text
-1. User clicks "Export"
-2. Client uses Polotno store.toPDFDataURL() (rasterized but fast)
-3. Client uploads to Supabase Storage
-4. compose-label-sheet merges into final output
-```
+### Phase 3: Update Client Export Logic
 
-## Technical Requirements
+| File | Change |
+|------|--------|
+| `pdfBatchExporter.ts` | Create combined multi-page scene instead of exporting per-record |
+| `vectorPdfExporter.ts` | Add `exportMultiPagePdf()` function that calls new VPS endpoint |
 
-### VPS Dependencies
-```json
-{
-  "dependencies": {
-    "@polotno/pdf-export": "^0.1.36",
-    "express": "^4.18.2",
-    "uuid": "^9.0.0"
-  }
+**Key change - combine all pages into one scene:**
+```typescript
+// Instead of: resolve → export → repeat for each record
+// Do: resolve ALL → combine into single scene → export once
+
+function combineRecordsIntoMultiPageScene(
+  baseScene: PolotnoScene,
+  records: Record<string, string>[]
+): PolotnoScene {
+  const pages = records.flatMap((record, index) => {
+    const resolved = resolveVdpVariables(baseScene, { record, recordIndex: index });
+    return resolved.pages; // May be multiple pages per record (front/back)
+  });
+  
+  return {
+    ...baseScene,
+    pages, // All resolved pages combined
+  };
 }
 ```
 
-### VPS Environment
-- Node.js 18+ (required by @polotno/pdf-export)
-- Ghostscript installed (already present)
-- ICC profiles for CMYK (already present: GRACoL, FOGRA39)
+### Phase 4: Simplify Edge Function
 
-### Key Benefits
+| File | Change |
+|------|--------|
+| `compose-label-sheet/index.ts` | For full-page CMYK exports, simply proxy to VPS (no pdf-lib) |
+| `render-vector-pdf/index.ts` | Add proxy for new `/export-multipage` and `/export-labels` endpoints |
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| PDF Type | Rasterized (bitmap in PDF wrapper) | True vector (scalable, smaller files) |
-| CMYK Conversion | Ghostscript on raw PDF (fails) | Native PDF/X-1a (built-in) |
-| Font Handling | Embedded as raster | Outlined/embedded vectors |
-| Transparency | Flattened at export | Properly handled by PDF/X-1a |
-| Print Quality | Pixel-dependent | Resolution-independent |
+## Benefits of This Approach
 
-## Files to Modify
+| Aspect | Current | Proposed |
+|--------|---------|----------|
+| **Vector fidelity** | Lost during pdf-lib merge | Preserved (no re-rendering) |
+| **Network calls** | N calls for N records | 1 call for all records |
+| **VPS processing** | N separate PDF exports | 1 combined export |
+| **Complexity** | Upload/download dance | Direct export |
+| **Memory usage** | N blobs in browser | 1 blob |
 
-| Location | File | Changes |
-|----------|------|---------|
-| VPS (GitHub) | `server.js` | Add `/render-vector` and `/batch-render-vector` endpoints |
-| VPS (GitHub) | `package.json` | Add `@polotno/pdf-export` dependency |
-| Lovable | `supabase/functions/render-vector-pdf/index.ts` | Add proxy handlers for new endpoints |
-| Lovable | `src/lib/polotno/vectorPdfExporter.ts` | Update to call new endpoints |
-| Lovable | `src/lib/polotno/pdfBatchExporter.ts` | Integrate vector export path for CMYK |
+## File Changes Summary
 
-## Implementation Order
+### VPS (Your GitHub Repository)
 
-1. **VPS First**: Update your GitHub repository with the new endpoints and `@polotno/pdf-export`
-2. **Deploy**: Push to trigger Coolify rebuild
-3. **Edge Function**: Update proxy to forward to new endpoints
-4. **Client**: Update exporters to use vector path when CMYK is requested
+| File | Action |
+|------|--------|
+| `server.js` | Add `/export-multipage` endpoint |
+| `server.js` | Add `/export-labels` endpoint with imposition |
+| `Dockerfile` | Add `qpdf` package |
 
-## Summary
+### Lovable (This Project)
 
-This is the correct architectural approach:
-- Polotno JSON goes to server
-- `@polotno/pdf-export` handles vector rendering + CMYK natively
-- No more broken Ghostscript conversion on rasterized PDFs
-- Professional print-ready output with true vectors
+| File | Action |
+|------|--------|
+| `src/lib/polotno/pdfBatchExporter.ts` | Combine records into multi-page scene, call new VPS endpoint |
+| `src/lib/polotno/vectorPdfExporter.ts` | Add `exportMultiPagePdf()` function |
+| `supabase/functions/render-vector-pdf/index.ts` | Add proxy for new endpoints |
+| `supabase/functions/compose-label-sheet/index.ts` | Simplify to just route CMYK exports to VPS |
+
+## Expected Outcome
+
+After implementation:
+- **PDF Creator/Producer**: Shows `@polotno/pdf-export` and Ghostscript (not pdf-lib)
+- **Text**: Preserved as outlined vector paths (selectable in PDF viewers that support it)
+- **Graphics**: True vector shapes, not rasterized
+- **CMYK**: Native color space preserved throughout
+- **Bleed/Crops**: Professional print marks intact
+
+## Verification Steps
+
+1. Export a 6-record certificate project with CMYK enabled
+2. Open in Adobe Acrobat
+3. Check PDF properties - should show Polotno/Ghostscript as producer
+4. Use Acrobat's "Output Preview" or "Preflight" to verify:
+   - CMYK color space (no RGB fallback)
+   - Vector objects (not rasterized images)
+   - Font outlines preserved
+

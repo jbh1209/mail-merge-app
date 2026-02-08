@@ -179,8 +179,8 @@ export async function exportMultiPagePdf(
         options: {
           cmyk: options.cmyk ?? false,
           title: options.title ?? 'MergeKit Export',
-          bleed: options.bleed,
-          cropMarks: options.cropMarks,
+          bleed: Number.isFinite(options.bleed) ? options.bleed : 0,
+          cropMarks: options.cropMarks ?? false,
         },
       }),
     });
@@ -281,8 +281,8 @@ export async function exportLabelsWithImposition(
         options: {
           cmyk: options.cmyk ?? false,
           title: options.title ?? 'Labels Export',
-          bleed: options.bleed,
-          cropMarks: options.cropMarks,
+          bleed: Number.isFinite(options.bleed) ? options.bleed : 0,
+          cropMarks: options.cropMarks ?? false,
         },
       }),
     });

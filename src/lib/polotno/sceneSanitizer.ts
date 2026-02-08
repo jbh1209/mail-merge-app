@@ -49,21 +49,51 @@ const MAX_TRACKED_ISSUES = 50;
 /** Default replacement value for invalid numbers */
 const DEFAULT_REPLACEMENT = 0;
 
+/** 
+ * Keys that are expected to be numeric in Polotno scene objects.
+ * When these keys have null values, they should be replaced with 0.
+ * This handles cases where JSON.stringify converts NaN → null.
+ */
+const NUMERIC_KEYS = new Set([
+  'x', 'y', 'width', 'height', 'rotation', 'opacity', 'fontSize',
+  'strokeWidth', 'cropX', 'cropY', 'cropWidth', 'cropHeight', 'bleed',
+  'dpi', 'letterSpacing', 'lineHeight', 'cornerRadius', 'scaleX', 'scaleY',
+  'skewX', 'skewY', 'shadowOffsetX', 'shadowOffsetY', 'shadowBlur',
+  'borderSize', 'padding', 'blurRadius', 'angle', 'brightness', 'contrast',
+]);
+
 // =============================================================================
 // CORE SANITIZATION LOGIC
 // =============================================================================
 
 /**
  * Deep-walk an object and sanitize any non-finite numeric values.
+ * Also replaces null values for known numeric keys (handles NaN → null from JSON.stringify).
  * Returns a new object (does not mutate the original).
  */
 function deepSanitize(
   obj: unknown,
   path: string,
-  issues: SanitizationIssue[]
+  issues: SanitizationIssue[],
+  parentKey?: string
 ): unknown {
-  // Handle primitives
-  if (obj === null || obj === undefined) {
+  // Handle null - check if this is a numeric key that should default to 0
+  if (obj === null) {
+    if (parentKey && NUMERIC_KEYS.has(parentKey)) {
+      if (issues.length < MAX_TRACKED_ISSUES) {
+        issues.push({
+          path,
+          originalValue: null,
+          replacedWith: DEFAULT_REPLACEMENT,
+        });
+      }
+      return DEFAULT_REPLACEMENT;
+    }
+    return obj;
+  }
+  
+  // Handle undefined
+  if (obj === undefined) {
     return obj;
   }
 
@@ -99,7 +129,7 @@ function deepSanitize(
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     const childPath = path ? `${path}.${key}` : key;
-    result[key] = deepSanitize(value, childPath, issues);
+    result[key] = deepSanitize(value, childPath, issues, key);
   }
   return result;
 }

@@ -595,10 +595,12 @@ export async function batchExportWithPolotno(
 
       if (fullPageMode) {
         // Full-page export: Single multi-page PDF
+        // Coerce bleed to 0 if not a finite number to prevent VPS NaN errors
+        const safeBleed = Number.isFinite(printConfig?.bleedMm) ? printConfig.bleedMm : 0;
         const result = await exportMultiPagePdf(combinedScene, {
           cmyk: true,
           title: 'MergeKit Export',
-          bleed: printConfig?.bleedMm,
+          bleed: safeBleed,
           cropMarks: sendCropMarksToVps,
         });
 
@@ -614,13 +616,15 @@ export async function batchExportWithPolotno(
         console.log(`[PolotnoExport] Multi-page PDF complete: ${pdfBlob.size} bytes, ${pageCount} pages`);
       } else {
         // Label export: VPS handles imposition
+        // Coerce bleed to 0 if not a finite number to prevent VPS NaN errors
+        const safeBleed = Number.isFinite(printConfig?.bleedMm) ? printConfig.bleedMm : 0;
         const result = await exportLabelsWithImposition(
           combinedScene,
           layout as VectorAveryLayout,
           {
             cmyk: true,
             title: 'Labels Export',
-            bleed: printConfig?.bleedMm,
+            bleed: safeBleed,
             cropMarks: sendCropMarksToVps,
           }
         );

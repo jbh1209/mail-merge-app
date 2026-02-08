@@ -1,127 +1,154 @@
 
-# Fix: CMYK Export NaN Error — Root Cause and Solution
+## What’s actually happening (and why it still fails)
 
-## Summary
+The VPS error `"unsupported number: NaN"` is being thrown inside `@polotno/pdf-export` while writing the PDF. That means **some numeric value in the scene is still ending up as NaN at render-time**, even after our client-side sanitization.
 
-The VPS continues to crash with `"unsupported number: NaN"` despite:
-1. Client-side sanitizer being implemented
-2. `cropMarks: false` being explicitly sent
+From code inspection, there’s a high-probability culprit:
 
-**The sanitizer is running on the correct combined scene, but the VPS is still receiving NaN values.** This means either:
-- The sanitizer is not being applied at the right point in the export flow
-- `JSON.stringify` is converting `NaN` → `null`, but the VPS expects numeric values and crashes when calculating with `null`
-- There's a timing/caching issue where the stale code is still running in the preview
+- `src/lib/polotno/vdpResolver.ts` copies **root-level geometry** from the “current scene” into the merged/base scene without validation:
 
-## Root Cause Identification
+  - `merged.width = currentScene.width;`
+  - `merged.height = currentScene.height;`
+  - `if (currentScene.dpi !== undefined) merged.dpi = currentScene.dpi;`
 
-After reviewing the code in detail, I found the following flow issues:
+If `currentScene.width/height/dpi` are `null` (or some invalid non-number) at any point, they get propagated into the final multi-page scene we send to the VPS.
 
-### Problem 1: VPS `pdfx1a` Option
-The deployed VPS (`tmp/vps/server.js` line 173–176) uses:
-```javascript
-await jsonToPDF(scene, outputPath, {
-  pdfx1a: options.cmyk,
-  title: options.title || 'MergeKit Export',
-});
-```
+Then the sanitizer currently does:
+- `width: null` → `0`
+- `height: null` → `0`
+- `dpi: null` → `0`
 
-When `pdfx1a: true` is passed, `@polotno/pdf-export` internally runs Ghostscript with prepress settings that can fail on edge-case numeric values.
+Those “fixed” values are **not safe defaults** for PDF rendering (especially `dpi=0`), and they can easily cause internal `px -> pt` conversions to produce Infinity/NaN.
 
-### Problem 2: Bleed/CropMarks Options Passed to VPS
-The client sends `bleed: printConfig?.bleedMm` (line 601 in pdfBatchExporter.ts). If `bleedMm` is `undefined` or `null`, the VPS may interpret this as `NaN` during internal calculations (mm → px conversion).
+So the system is doing what we told it to do (sanitize), but the **default replacement policy is wrong for critical root keys**, and `vdpResolver` is likely introducing the invalid root geometry in the first place.
 
-### Problem 3: Scene Dimensions After Clone
-The `resolveVdpVariables` function uses `JSON.parse(JSON.stringify(scene))` for cloning. If any numeric property is `NaN`, this converts it to `null` in the JSON. The VPS may then read `null` as a number and get `NaN` during arithmetic.
+## Goal
 
-## Recommended Fix
+Make the “Professional print output” pipeline robust and boring:
+1) Never allow invalid `scene.width/height/dpi` into the exported scene.
+2) Sanitize with **key-specific safe defaults** (especially for dpi/scale/opacity).
+3) Fail early with a clear, actionable error if the scene’s root geometry is still broken.
 
-A single, surgical change: **Don't send `bleed` to the VPS if it's falsy, and ensure the VPS receives zero-safe defaults for all print options.**
+---
 
-### Step 1: Patch `pdfBatchExporter.ts` Export Options (Primary Fix)
+## Implementation approach (small, targeted, and debuggable)
 
-When calling `exportMultiPagePdf`, sanitize the options object itself:
+### A) Fix the source: validate root-level geometry propagation (vdpResolver)
 
-```typescript
-// Before sending to VPS, ensure numeric options are always valid numbers
-const result = await exportMultiPagePdf(combinedScene, {
-  cmyk: true,
-  title: 'MergeKit Export',
-  bleed: Number.isFinite(printConfig?.bleedMm) ? printConfig.bleedMm : 0,
-  cropMarks: false, // Already forced to false
-});
-```
+**File:** `src/lib/polotno/vdpResolver.ts`
 
-Same for `exportLabelsWithImposition`.
+In `mergeLayoutToBase(...)`, change root transfers to:
 
-### Step 2: Patch `vectorPdfExporter.ts` Request Body
+- Only copy `width/height` if they are finite and > 0.
+- Only copy `dpi` if finite and > 0 (and likely clamp to a sane range, e.g. 72–1200).
+- Only copy `unit` if it’s one of the allowed values (`'mm' | 'cm' | 'in' | 'pt' | 'px'`).
+- If invalid, **keep the base/merged values** (do not overwrite).
 
-In the fetch request body, coerce `bleed` to 0 if it's not a valid finite number:
+This prevents “bad root geometry” from ever reaching export.
 
-```typescript
-body: JSON.stringify({
-  scene: sanitizedScene,
-  options: {
-    cmyk: options.cmyk ?? false,
-    title: options.title ?? 'MergeKit Export',
-    bleed: Number.isFinite(options.bleed) ? options.bleed : 0,
-    cropMarks: options.cropMarks ?? false,
-  },
-}),
-```
+**Why this matters:** even a single record/preview scene with a transient invalid root dimension can poison the merged scene and crash the VPS.
 
-### Step 3: Enhance Sanitizer to Handle `null` Values
+---
 
-The current sanitizer only checks `Number.isFinite(obj)` for numbers. But when the scene is cloned, `NaN` becomes `null` in JSON. Extend the sanitizer to also detect numeric keys that are `null`:
+### B) Fix the sanitizer defaults: schema-aware replacements
 
-```typescript
-// In deepSanitize, after the primitives check:
-// If a key is expected to be numeric (like x, y, width, height, fontSize, etc.)
-// and the value is null, replace with 0
-const NUMERIC_KEYS = new Set([
-  'x', 'y', 'width', 'height', 'rotation', 'opacity', 'fontSize',
-  'strokeWidth', 'cropX', 'cropY', 'cropWidth', 'cropHeight', 'bleed',
-  'dpi', 'letterSpacing', 'lineHeight', 'cornerRadius',
-]);
+**File:** `src/lib/polotno/sceneSanitizer.ts`
 
-// When value is null and key is in NUMERIC_KEYS, replace with 0
-```
+Update sanitization to replace invalid values with **correct defaults per key**, not a blanket `0`.
 
-### Step 4: Add Pre-flight Scene Dump for Debugging
+Proposed defaults:
+- `dpi`: **300** (never 0)
+- `opacity`: **1**
+- `scaleX`, `scaleY`: **1**
+- `lineHeight`: **1.2** (or 1)
+- `strokeWidth`: **1** (or 0.75 if you prefer)
+- `rotation`, `skewX`, `skewY`, `x`, `y`: **0**
+- `width`, `height`: **0** is acceptable for *some* elements, but **root-level scene.width/scene.height must be > 0**, so we should not rely on sanitizer to “fix” root geometry—validate it separately (next step).
 
-Before the VPS call, log the first 500 characters of the stringified scene so we can see exactly what's being sent:
+Mechanics:
+- Replace `DEFAULT_REPLACEMENT` with a function like `getReplacement(parentKey, path)`:
+  - If `parentKey === 'dpi'` return 300
+  - If `parentKey === 'opacity'` return 1
+  - etc.
 
-```typescript
-const sceneStr = JSON.stringify(combinedScene);
-console.log('[PolotnoExport] Scene preview (first 500 chars):', sceneStr.slice(0, 500));
-```
+Also improve array handling so `parentKey` can be threaded into nested objects consistently (it’s fine as-is, but the replacements should be more correct).
 
-This helps identify the actual source of `null`/`NaN` values.
+---
 
-## Files to Modify
+### C) Add a hard “export preflight assert” for root geometry (fail fast, clear error)
 
-1. `src/lib/polotno/pdfBatchExporter.ts`
-   - Lines 598–603: Coerce `bleed` to 0 if not finite
-   - Lines 621–625: Same for label export path
+**File:** `src/lib/polotno/pdfBatchExporter.ts`
 
-2. `src/lib/polotno/vectorPdfExporter.ts`
-   - Lines 178–184: Coerce `bleed` in fetch body
-   - Lines 280–286: Same for label export
+Right before calling `exportMultiPagePdf` / `exportLabelsWithImposition`, validate:
 
-3. `src/lib/polotno/sceneSanitizer.ts`
-   - Enhance `deepSanitize` to replace `null` with `0` for known numeric keys
+- `scene.width` finite and > 0
+- `scene.height` finite and > 0
+- `scene.dpi` finite and > 0 (if missing, set 300 before export; if invalid, set 300 or error)
 
-## Expected Outcome
+If invalid, stop export with a message like:
+- “Export failed before sending to render service: invalid document dimensions (width/height/dpi). Please refresh the editor and try again.”
 
-1. VPS no longer receives `null` or `undefined` for numeric fields
-2. The sanitizer catches any remaining `NaN` values from upstream logic
-3. Export succeeds with proper CMYK conversion
-4. Console shows preflight report confirming no issues (or issues that were fixed)
+Also log a compact “root geometry snapshot”:
+- width, height, dpi, unit, pages count
+- first page’s child count
 
-## Verification Steps
+This makes the next failure actionable immediately without guessing.
 
-1. Hard refresh the preview app
-2. Open browser console
-3. Click "Export" with Professional print output ON
-4. Check for the "SCENE PREFLIGHT VALIDATION REPORT" in console
-5. Verify the export completes successfully
-6. Open the PDF to confirm it rendered correctly
+---
+
+### D) Keep the “safeBleed” and `cropMarks` handling consistent
+
+You already added `safeBleed` and `cropMarks ?? false` in the exporter. As part of this pass we’ll ensure:
+
+- Professional export always uses:
+  - `bleed: safeBleed` (finite number)
+  - `cropMarks: false` (since client injects marks when enabled OR we bypass VPS crop mark logic)
+
+If the UI toggle says “Include 3mm bleed + crop marks”, we should:
+- Inject client marks when enabled
+- Still send `cropMarks: false` to VPS to avoid server-side injection paths
+
+(From your screenshot the call is `/export-multipage`, and VPS is crashing inside `jsonToPDF`, so keeping the VPS option surface minimal is still good.)
+
+---
+
+## Files that will be changed
+
+1) `src/lib/polotno/vdpResolver.ts`
+   - Guard root geometry propagation in `mergeLayoutToBase`.
+
+2) `src/lib/polotno/sceneSanitizer.ts`
+   - Implement key-specific replacements (especially `dpi`, `opacity`, `scaleX/Y`).
+
+3) `src/lib/polotno/pdfBatchExporter.ts`
+   - Add export-time “root geometry preflight assert”
+   - Ensure `cropMarks` is never sent as `true` to VPS for professional path (client is source of truth)
+   - Keep the existing `safeBleed` coercion
+
+---
+
+## Verification procedure (what we should see after this)
+
+1) In Preview app, hard refresh.
+2) Run “Generate PDFs” with:
+   - Professional print output: ON
+   - Color mode: CMYK
+3) If it fails:
+   - The UI should now show a clear *preflight* error if root geometry is invalid (instead of a mysterious VPS NaN).
+4) If it succeeds:
+   - The VPS call `/export-multipage` should return 200.
+   - The resulting PDF should include bleed/crops (via client-injected marks) and CMYK mode.
+
+---
+
+## Why this should finally stop the NaN loop
+
+- Right now the pipeline can “successfully sanitize” a broken dpi/width/height into values that still break rendering (notably `dpi=0`).
+- By preventing invalid root geometry from being written (vdpResolver) and using sane replacements (sanitizer), we remove the major class of NaN-producing math at the rendering layer.
+- By asserting root geometry right before export, we prevent silent corruption from ever reaching the VPS again.
+
+---
+
+## One critical unknown (we’ll handle without extra back-and-forth)
+
+We don’t currently know *why* `currentScene.width/height/dpi` is becoming `null`/invalid—however, the above changes make that irrelevant for reliability, and the new logs will tell us exactly when it happens so we can optionally trace it later without blocking exports.

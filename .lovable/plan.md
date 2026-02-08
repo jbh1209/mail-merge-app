@@ -1,103 +1,106 @@
 
-# Fix Missing Crop Marks in CMYK PDF Export
 
-## Problem Summary
-Crop marks are not appearing in the CMYK vector PDF output despite the VPS passing `cropMarkSize` to `@polotno/pdf-export`.
+# Fix: VPS Crop Mark Injection Using Scene-Level Dimensions
 
-## Root Cause Analysis
-The `@polotno/pdf-export` Node.js package has **different options** than the browser-side `store.saveAsPDF()`:
+## Problem Identified
+The VPS `server.js` crashes with `"unsupported number: NaN"` because the crop mark injection code reads `page.width` and `page.height`, but in Polotno, page dimensions are stored at the **scene level**, not on individual pages.
 
-| Option | `store.saveAsPDF()` (Browser) | `jsonToPDF()` (Node) |
-|--------|------------------------------|----------------------|
-| `includeBleed` | ✅ Supported | ❌ NOT Supported |
-| `cropMarkSize` | ✅ Supported | ❌ NOT Supported |
-| `pdfx1a` | ❌ | ✅ Supported |
-| `spotColors` | ❌ | ✅ Supported |
-| `metadata` | ❌ | ✅ Supported |
-
-The VPS currently passes `cropMarkSize: 42` to `jsonToPDF()`, but this option is **silently ignored** because the Node package doesn't support it.
-
-Bleed works because it's stored on the **page JSON data** (`page.bleed`), which the Node package respects when rendering.
-
-## Solution Options
-
-### Option A: Draw Crop Marks via Polotno Elements (Recommended)
-Add invisible crop mark elements directly to the scene JSON before rendering:
-- Add thin line elements at each corner of the trim box
-- Position them in the bleed area (outside trim, inside media)
-- Use registration black color
-- These render as true vectors through Polotno
-
-**Pros:** True vectors, no post-processing needed
-**Cons:** Slightly more complex scene modification
-
-### Option B: Post-Process with Ghostscript
-After Polotno generates the PDF, use Ghostscript's `-dUseCropBox` or manual PostScript injection to add crop marks.
-
-**Pros:** Separate from scene data
-**Cons:** More complex, may affect vector quality
-
-### Option C: Use PDF-lib to Add Marks After Ghostscript
-After CMYK conversion, use a PDF library to draw crop marks on each page.
-
-**Pros:** Clean separation of concerns
-**Cons:** Adds another processing step
-
-## Recommended Approach: Option A
-
-Inject crop mark line elements into the Polotno scene JSON before calling `jsonToPDF()`. This produces native vector crop marks without post-processing.
-
-## Implementation Plan
-
-### 1. VPS Server Update (`server.js`)
-
-Add a helper function to inject crop mark elements into the scene:
-
-```text
-┌─────────────────────────────────────────────────────────┐
-│  Request arrives with scene JSON + options.cropMarks   │
-│                                                         │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │ If cropMarks enabled:                           │   │
-│  │   For each page:                                │   │
-│  │     - Calculate trim box corners                │   │
-│  │     - Add 8 line elements (2 per corner)       │   │
-│  │     - Position in bleed zone (offset from trim) │   │
-│  │     - Set color to registration black          │   │
-│  └─────────────────────────────────────────────────┘   │
-│                                                         │
-│  Pass modified scene to jsonToPDF()                     │
-└─────────────────────────────────────────────────────────┘
+**Current broken code in `server.js`:**
+```javascript
+const trimWidth = page.width;   // ← undefined!
+const trimHeight = page.height; // ← undefined!
 ```
 
-**Crop mark geometry (per corner):**
-- Mark length: 10mm (~42px at 300 DPI)
-- Mark offset: 3mm (~35px at 300 DPI) from trim edge
-- Stroke width: 0.25pt (hairline)
-- Color: `#000000` (registration black)
+## Solution
+Update the `injectCropMarks()` function to:
+1. Read dimensions from `scene.width` and `scene.height` (the correct source)
+2. Pass scene dimensions as parameters to the injection helper
+3. Fall back gracefully if dimensions are missing
 
-### 2. Updated `/export-multipage` Endpoint Logic
+## Technical Details
 
+### Current (Broken) Flow
+```text
+scene.pages.map(page => {
+  const trimWidth = page.width;   // undefined
+  const trimHeight = page.height; // undefined
+  // Math with undefined → NaN
+  // Polotno export crashes on NaN coordinates
+})
+```
+
+### Fixed Flow
+```text
+injectCropMarks(scene, bleedPx, enableCropMarks)
+  ↓
+Read scene.width and scene.height (defined!)
+  ↓
+For each page, use scene dimensions for mark positioning
+  ↓
+Valid coordinates → PDF exports successfully
+```
+
+## Implementation
+
+### File to Update
+`docs/VPS_SERVER_JS_COMPLETE.js` (and subsequently deploy to VPS)
+
+### Change Summary
+1. Modify `injectCropMarks()` signature to accept scene dimensions
+2. Read `scene.width` and `scene.height` at the top of the function
+3. Pass those dimensions to each page's crop mark generation
+4. Add validation to skip injection if dimensions are missing/invalid
+
+### Code Fix (lines 171-204)
+
+**Before:**
 ```javascript
-// Pseudo-code for crop mark injection
-function injectCropMarks(scene, bleedPx, cropMarkLengthPx, cropMarkOffsetPx) {
-  const modifiedPages = scene.pages.map(page => {
-    const { width, height } = page;
+function injectCropMarks(scene, bleedPx, enableCropMarks) {
+  // ...
+  const modifiedPages = scene.pages.map((page, pageIndex) => {
+    const trimWidth = page.width;    // ← UNDEFINED
+    const trimHeight = page.height;  // ← UNDEFINED
+    // ...
+  });
+}
+```
+
+**After:**
+```javascript
+function injectCropMarks(scene, bleedPx, enableCropMarks) {
+  if (!enableCropMarks || !scene.pages) {
+    return scene;
+  }
+  
+  // Read dimensions from SCENE level (correct Polotno structure)
+  const trimWidth = scene.width;
+  const trimHeight = scene.height;
+  
+  // Validate dimensions to prevent NaN
+  if (!trimWidth || !trimHeight || isNaN(trimWidth) || isNaN(trimHeight)) {
+    console.warn('[crop-marks] Scene dimensions missing, skipping crop marks');
+    return scene;
+  }
+  
+  // Mark dimensions at 300 DPI
+  const markLength = Math.round(10 * (300 / 25.4)); // ~118px
+  const markOffset = Math.round(3 * (300 / 25.4));  // ~35px
+  
+  const modifiedPages = scene.pages.map((page, pageIndex) => {
     const bleed = page.bleed || bleedPx;
     
-    // Trim box is the original page size
-    // Crop marks go in the bleed zone
-    const cropMarkElements = generateCropMarkLines(
-      width,      // trim width
-      height,     // trim height  
-      bleed,      // bleed extension
-      cropMarkLengthPx,
-      cropMarkOffsetPx
-    );
+    const cropMarkElements = [
+      ...generateCornerCropMarks('tl', trimWidth, trimHeight, bleed, markLength, markOffset),
+      ...generateCornerCropMarks('tr', trimWidth, trimHeight, bleed, markLength, markOffset),
+      ...generateCornerCropMarks('bl', trimWidth, trimHeight, bleed, markLength, markOffset),
+      ...generateCornerCropMarks('br', trimWidth, trimHeight, bleed, markLength, markOffset),
+    ];
+    
+    console.log(`[crop-marks] Page ${pageIndex + 1}: Added ${cropMarkElements.length} marks at ${trimWidth}x${trimHeight}px`);
     
     return {
       ...page,
-      children: [...(page.children || []), ...cropMarkElements]
+      children: [...(page.children || []), ...cropMarkElements],
     };
   });
   
@@ -105,70 +108,9 @@ function injectCropMarks(scene, bleedPx, cropMarkLengthPx, cropMarkOffsetPx) {
 }
 ```
 
-### 3. Crop Mark Line Elements
+## Verification After Deploy
+1. Run a CMYK export with crop marks enabled
+2. Console should log: `[crop-marks] Page 1: Added 8 marks at XXXXxYYYYpx`
+3. Open PDF in Acrobat — crop marks should appear at corners
+4. Zoom in on marks — they should be sharp vectors (no pixelation)
 
-Each corner gets two perpendicular lines:
-
-```javascript
-// Example: Top-left corner
-const topLeftHorizontal = {
-  id: 'crop-tl-h',
-  type: 'line',
-  x: -bleed - cropMarkOffset - cropMarkLength,
-  y: 0,
-  width: cropMarkLength,
-  height: 0,
-  stroke: '#000000',
-  strokeWidth: 0.75,  // ~0.25pt
-};
-
-const topLeftVertical = {
-  id: 'crop-tl-v',
-  type: 'line',
-  x: 0,
-  y: -bleed - cropMarkOffset - cropMarkLength,
-  width: 0,
-  height: cropMarkLength,
-  stroke: '#000000',
-  strokeWidth: 0.75,
-};
-```
-
-### 4. Client-Side Changes (None Required)
-
-The client already sends `cropMarks: true` in the options. No frontend changes needed.
-
-## Files to Update
-
-| File | Change |
-|------|--------|
-| `docs/VPS_SERVER_JS_COMPLETE.js` | Add `injectCropMarks()` helper function |
-| VPS `server.js` | Call `injectCropMarks()` when `options.cropMarks` is true |
-
-## UX Improvement: Progress Bar
-
-As a secondary improvement, the progress bar jumps from 0% to 100% because the VPS processes everything in one request. To improve this:
-
-1. Add streaming progress updates via SSE/WebSocket (complex)
-2. Or show an indeterminate spinner during the "Generating vector PDF" phase with estimated time
-
-This is a lower priority than fixing crop marks.
-
-## Technical Notes
-
-- Polotno's `line` element type renders as true vector paths
-- Crop marks should be positioned using negative coordinates (in the bleed zone)
-- The DPI conversion (300 DPI scene) means 1mm ≈ 11.8px
-- Registration black (#000000) converts to 100% K in CMYK mode
-
-## Testing Verification
-
-After deployment:
-1. Export a CMYK multi-page PDF with bleed and crop marks enabled
-2. Open in Adobe Acrobat
-3. Verify:
-   - File > Properties shows "Ghostscript" as Producer
-   - Output Preview shows CMYK color space
-   - Crop marks appear at each corner as thin lines
-   - Marks are vectors (zoom in - no pixelation)
-   - Text remains selectable/vector (not flattened)

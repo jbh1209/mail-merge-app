@@ -1,27 +1,42 @@
 /**
  * Polotno PDF Batch Exporter
  * 
- * Exports multiple VDP-resolved labels to a single PDF, following the same
- * pipeline as the CESDK exporter:
- * 1. Export per-record PDFs (client-side for RGB, server-side for CMYK)
- * 2. Upload to temporary storage
- * 3. Invoke compose-label-sheet edge function for final merging
+ * NEW ARCHITECTURE: Multi-page export for maximum vector fidelity
  * 
- * For CMYK exports, scenes are sent to the VPS which uses @polotno/pdf-export
- * to produce true vector PDFs with native PDF/X-1a conversion.
+ * Instead of exporting individual PDFs and merging them (which loses vector data),
+ * we now:
+ * 1. Resolve VDP variables for ALL records
+ * 2. Combine resolved pages into a single multi-page Polotno scene
+ * 3. Send the combined scene to the VPS for native multi-page PDF export
+ * 4. VPS uses @polotno/pdf-export to produce a single vector PDF
+ * 
+ * For labels, the VPS also handles imposition (tiling onto sheets) using
+ * vector-preserving tools (qpdf) instead of pdf-lib.
+ * 
+ * This preserves:
+ * - True vector graphics (not rasterized)
+ * - Native CMYK color space (PDF/X-1a)
+ * - Outlined fonts as vector paths
+ * - Professional print marks and bleed
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import type { PolotnoScene } from './types';
+import type { PolotnoScene, PolotnoPage } from './types';
 import { resolveVdpVariables } from './vdpResolver';
-import { isVectorServiceAvailable, batchExportVectorPdfs } from './vectorPdfExporter';
+import { 
+  isVectorServiceAvailable, 
+  exportMultiPagePdf,
+  exportLabelsWithImposition,
+  batchExportVectorPdfs,
+  type AveryLayoutConfig as VectorAveryLayout,
+} from './vectorPdfExporter';
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 export interface BatchExportProgress {
-  phase: 'preparing' | 'exporting' | 'converting' | 'uploading' | 'composing' | 'complete' | 'error';
+  phase: 'preparing' | 'resolving' | 'exporting' | 'converting' | 'uploading' | 'composing' | 'complete' | 'error';
   current: number;
   total: number;
   message?: string;
@@ -58,7 +73,7 @@ export interface BatchExportOptions {
   baseScene: PolotnoScene | string;
   /** Data records to export */
   records: Record<string, string>[];
-  /** Export function from Polotno store */
+  /** Export function from Polotno store (fallback for RGB) */
   exportPdf: (scene: PolotnoScene) => Promise<Blob>;
   /** Avery layout configuration (null for full-page mode) */
   layout?: AveryLayoutConfig | null;
@@ -301,43 +316,52 @@ async function composeFromStorage(
 }
 
 // =============================================================================
-// CLIENT-SIDE EXPORT HELPER
+// COMBINE RECORDS INTO MULTI-PAGE SCENE
 // =============================================================================
 
 /**
- * Export scenes using client-side Polotno rendering (for RGB)
+ * Combine all VDP-resolved records into a single multi-page Polotno scene.
+ * Each record becomes one or more pages in the combined scene.
  */
-async function exportClientSide(
-  parsedScene: PolotnoScene,
+function combineRecordsIntoMultiPageScene(
+  baseScene: PolotnoScene,
   records: Record<string, string>[],
-  exportPdf: (scene: PolotnoScene) => Promise<Blob>,
   imageBaseUrl: string | undefined,
   onProgress: (progress: BatchExportProgress) => void
-): Promise<Blob[]> {
-  const pdfBlobs: Blob[] = [];
-
+): PolotnoScene {
+  const allPages: PolotnoPage[] = [];
+  
   for (let i = 0; i < records.length; i++) {
     onProgress({
-      phase: 'exporting',
+      phase: 'resolving',
       current: i + 1,
       total: records.length,
-      message: `Generating PDF ${i + 1} of ${records.length}...`,
+      message: `Resolving record ${i + 1} of ${records.length}...`,
     });
 
     // Resolve VDP variables for this record
-    const resolvedScene = resolveVdpVariables(parsedScene, {
+    const resolvedScene = resolveVdpVariables(baseScene, {
       record: records[i],
       recordIndex: i,
       imageBaseUrl,
     });
 
-    // Export to PDF using Polotno client-side
-    const blob = await exportPdf(resolvedScene);
-    pdfBlobs.push(blob);
+    // Add all pages from this record (supports multi-page per record, e.g., front/back)
+    for (const page of resolvedScene.pages) {
+      // Give each page a unique ID to avoid conflicts
+      allPages.push({
+        ...page,
+        id: `${page.id}-record-${i}`,
+      });
+    }
   }
 
-  console.log(`[PolotnoExport] Generated ${pdfBlobs.length} PDFs client-side`);
-  return pdfBlobs;
+  console.log(`[PolotnoExport] Combined ${records.length} records into ${allPages.length} pages`);
+
+  return {
+    ...baseScene,
+    pages: allPages,
+  };
 }
 
 // =============================================================================
@@ -347,11 +371,13 @@ async function exportClientSide(
 /**
  * Batch export Polotno scenes to a single PDF
  * 
- * This function orchestrates the full export pipeline:
- * 1. Resolve VDP variables for each record
- * 2. Export each resolved scene as a PDF blob
- * 3. Upload PDFs to temporary storage
- * 4. Invoke compose-label-sheet to merge into final output
+ * NEW FLOW (for CMYK):
+ * 1. Resolve VDP variables for ALL records
+ * 2. Combine into a single multi-page scene
+ * 3. Send to VPS for native multi-page PDF export
+ * 4. VPS returns single vector PDF (no merging needed!)
+ * 
+ * For labels, VPS also handles imposition with vector-preserving tools.
  */
 export async function batchExportWithPolotno(
   options: BatchExportOptions
@@ -372,9 +398,10 @@ export async function batchExportWithPolotno(
     : baseScene;
 
   const fullPageMode = !layout;
+  const wantCmyk = printConfig?.colorMode === 'cmyk';
 
   try {
-    // Step 0: Get workspace ID
+    // Step 0: Get workspace ID and check service
     onProgress({
       phase: 'preparing',
       current: 0,
@@ -383,20 +410,17 @@ export async function batchExportWithPolotno(
     });
 
     const workspaceId = await getCurrentWorkspaceId();
-    console.log(`[PolotnoExport] Starting batch export for ${records.length} records`);
+    console.log(`[PolotnoExport] Starting batch export for ${records.length} records (CMYK: ${wantCmyk}, fullPage: ${fullPageMode})`);
 
-    // Step 1: Determine export strategy
-    const wantCmyk = printConfig?.colorMode === 'cmyk';
-    console.log(`[PolotnoExport] CMYK requested: ${wantCmyk}`);
-
-    let finalBlobs: Blob[] = [];
-
+    // ==========================================================================
+    // NEW: CMYK PATH - Use multi-page export for maximum vector fidelity
+    // ==========================================================================
     if (wantCmyk) {
-      // CMYK path: Use server-side vector rendering via @polotno/pdf-export
-      console.log('[PolotnoExport] Using server-side vector rendering for CMYK');
+      console.log('[PolotnoExport] Using multi-page vector export for CMYK');
       
+      // Check if VPS is available
       onProgress({
-        phase: 'exporting',
+        phase: 'preparing',
         current: 0,
         total: records.length,
         message: 'Checking vector PDF service...',
@@ -405,129 +429,142 @@ export async function batchExportWithPolotno(
       const serviceAvailable = await isVectorServiceAvailable();
       
       if (!serviceAvailable) {
-        console.warn('[PolotnoExport] Vector service unavailable, falling back to client-side RGB');
-        onProgress({
-          phase: 'exporting',
-          current: 0,
-          total: records.length,
-          message: 'Vector service unavailable - using RGB fallback...',
-        });
-        // Fall through to client-side export below
-        finalBlobs = await exportClientSide(parsedScene, records, exportPdf, imageBaseUrl, onProgress);
-      } else {
-        // Resolve all scenes first
-        onProgress({
-          phase: 'exporting',
-          current: 0,
-          total: records.length,
-          message: 'Preparing scenes for vector rendering...',
+        console.warn('[PolotnoExport] Vector service unavailable, falling back to legacy flow');
+        return exportWithLegacyFlow(options, parsedScene, workspaceId);
+      }
+
+      // Step 1: Combine all records into a single multi-page scene
+      const combinedScene = combineRecordsIntoMultiPageScene(
+        parsedScene,
+        records,
+        imageBaseUrl,
+        onProgress
+      );
+
+      // Step 2: Export via VPS (full-page or labels)
+      onProgress({
+        phase: 'exporting',
+        current: 0,
+        total: records.length,
+        message: fullPageMode 
+          ? 'Generating vector PDF...' 
+          : 'Generating labels with imposition...',
+      });
+
+      let pdfBlob: Blob;
+      let pageCount: number;
+
+      if (fullPageMode) {
+        // Full-page export: Single multi-page PDF
+        const result = await exportMultiPagePdf(combinedScene, {
+          cmyk: true,
+          title: 'MergeKit Export',
+          bleed: printConfig?.bleedMm,
+          cropMarks: printConfig?.enablePrintMarks,
         });
 
-        const resolvedScenes: PolotnoScene[] = [];
-        for (let i = 0; i < records.length; i++) {
-          const resolvedScene = resolveVdpVariables(parsedScene, {
-            record: records[i],
-            recordIndex: i,
-            imageBaseUrl,
-          });
-          resolvedScenes.push(resolvedScene);
+        if (!result.success || !result.blob) {
+          throw new Error(result.error || 'Multi-page export failed');
         }
 
-        // Send to VPS for server-side vector PDF generation with native CMYK
-        onProgress({
-          phase: 'converting',
-          current: 0,
-          total: records.length,
-          message: 'Rendering vector PDFs with CMYK...',
-        });
-
-        const vectorResult = await batchExportVectorPdfs(
-          resolvedScenes,
+        pdfBlob = result.blob;
+        pageCount = result.pageCount || combinedScene.pages.length;
+        console.log(`[PolotnoExport] Multi-page PDF complete: ${pdfBlob.size} bytes, ${pageCount} pages`);
+      } else {
+        // Label export: VPS handles imposition
+        const result = await exportLabelsWithImposition(
+          combinedScene,
+          layout as VectorAveryLayout,
           {
             cmyk: true,
-            title: 'MergeKit Export',
+            title: 'Labels Export',
             bleed: printConfig?.bleedMm,
             cropMarks: printConfig?.enablePrintMarks,
-          },
-          (current, total) => {
-            onProgress({
-              phase: 'converting',
-              current,
-              total,
-              message: `Vector rendering ${current} of ${total}...`,
-            });
           }
         );
 
-        if (vectorResult.errors.length > 0) {
-          console.warn('[PolotnoExport] Some vector exports failed:', vectorResult.errors);
+        if (!result.success || !result.blob) {
+          throw new Error(result.error || 'Label export failed');
         }
 
-        // Filter out empty blobs (failed exports)
-        finalBlobs = vectorResult.blobs.filter(b => b.size > 0);
-        
-        if (finalBlobs.length === 0) {
-          throw new Error('All vector PDF exports failed');
-        }
-
-        console.log(`[PolotnoExport] Vector rendering complete: ${vectorResult.successful}/${vectorResult.total}`);
+        pdfBlob = result.blob;
+        pageCount = result.labelCount || combinedScene.pages.length;
+        console.log(`[PolotnoExport] Label PDF complete: ${pdfBlob.size} bytes, ${pageCount} labels`);
       }
-    } else {
-      // RGB path: Use client-side Polotno export (faster for RGB)
-      console.log('[PolotnoExport] Using client-side export for RGB');
-      finalBlobs = await exportClientSide(parsedScene, records, exportPdf, imageBaseUrl, onProgress);
+
+      // Step 3: Upload the single PDF directly to storage
+      onProgress({
+        phase: 'uploading',
+        current: records.length,
+        total: records.length,
+        message: 'Uploading PDF...',
+      });
+
+      const filename = `${workspaceId}/${mergeJobId}/output.pdf`;
+      const { error: uploadError } = await supabase.storage
+        .from('generated-pdfs')
+        .upload(filename, pdfBlob, {
+          contentType: 'application/pdf',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw new Error(`Failed to upload PDF: ${uploadError.message}`);
+      }
+
+      // Step 4: Update job status
+      const { error: updateError } = await supabase
+        .from('merge_jobs')
+        .update({
+          status: 'complete',
+          output_url: filename,
+          processed_pages: pageCount,
+          processing_completed_at: new Date().toISOString(),
+        })
+        .eq('id', mergeJobId);
+
+      if (updateError) {
+        console.error('Job update error:', updateError);
+      }
+
+      // Update workspace usage
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('pages_used_this_month')
+        .eq('id', workspaceId)
+        .single();
+      
+      if (workspace) {
+        await supabase
+          .from('workspaces')
+          .update({
+            pages_used_this_month: (workspace.pages_used_this_month || 0) + pageCount,
+          })
+          .eq('id', workspaceId);
+      }
+
+      onProgress({
+        phase: 'complete',
+        current: records.length,
+        total: records.length,
+        message: 'Export complete!',
+      });
+
+      console.log(`[PolotnoExport] CMYK export complete: ${filename}`);
+
+      return {
+        success: true,
+        outputUrl: filename,
+        pageCount,
+        cmykApplied: true,
+      };
     }
 
-    // Step 3: Convert blobs to ArrayBuffers and upload
-    const buffers: ArrayBuffer[] = [];
-    for (const blob of finalBlobs) {
-      buffers.push(await blob.arrayBuffer());
-    }
+    // ==========================================================================
+    // RGB PATH - Use legacy flow (client-side export + server-side merge)
+    // ==========================================================================
+    return exportWithLegacyFlow(options, parsedScene, workspaceId);
 
-    const pdfPaths = await uploadPdfsToStorage(
-      buffers,
-      workspaceId,
-      mergeJobId,
-      onProgress
-    );
-
-    console.log(`[PolotnoExport] Uploaded ${pdfPaths.length} PDFs to storage`);
-
-    // Step 3: Compose final PDF
-    onProgress({
-      phase: 'composing',
-      current: records.length,
-      total: records.length,
-      message: 'Composing final PDF...',
-    });
-
-    const composeResult = await composeFromStorage(
-      pdfPaths,
-      layout,
-      mergeJobId,
-      fullPageMode,
-      printConfig
-    );
-
-    if (!composeResult.success) {
-      throw new Error(composeResult.error || 'Composition failed');
-    }
-
-    onProgress({
-      phase: 'complete',
-      current: records.length,
-      total: records.length,
-      message: 'Export complete!',
-    });
-
-    console.log(`[PolotnoExport] Export complete: ${composeResult.outputUrl}`);
-
-    return {
-      success: true,
-      outputUrl: composeResult.outputUrl,
-      pageCount: composeResult.pageCount ?? records.length,
-      cmykApplied: composeResult.cmykApplied,
-    };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Export failed';
     console.error('[PolotnoExport] Error:', error);
@@ -554,6 +591,107 @@ export async function batchExportWithPolotno(
       pageCount: 0,
     };
   }
+}
+
+// =============================================================================
+// LEGACY EXPORT FLOW (for RGB and fallback)
+// =============================================================================
+
+/**
+ * Legacy export flow using individual PDF exports and server-side merging.
+ * Used for RGB exports and as fallback when VPS is unavailable.
+ */
+async function exportWithLegacyFlow(
+  options: BatchExportOptions,
+  parsedScene: PolotnoScene,
+  workspaceId: string
+): Promise<BatchExportResult> {
+  const {
+    records,
+    exportPdf,
+    layout,
+    printConfig,
+    mergeJobId,
+    onProgress = () => {},
+    imageBaseUrl,
+  } = options;
+
+  const fullPageMode = !layout;
+
+  console.log('[PolotnoExport] Using legacy flow (client-side export + server-side merge)');
+
+  // Export each record individually
+  const pdfBlobs: Blob[] = [];
+  for (let i = 0; i < records.length; i++) {
+    onProgress({
+      phase: 'exporting',
+      current: i + 1,
+      total: records.length,
+      message: `Generating PDF ${i + 1} of ${records.length}...`,
+    });
+
+    const resolvedScene = resolveVdpVariables(parsedScene, {
+      record: records[i],
+      recordIndex: i,
+      imageBaseUrl,
+    });
+
+    const blob = await exportPdf(resolvedScene);
+    pdfBlobs.push(blob);
+  }
+
+  console.log(`[PolotnoExport] Generated ${pdfBlobs.length} PDFs client-side`);
+
+  // Convert blobs to ArrayBuffers and upload
+  const buffers: ArrayBuffer[] = [];
+  for (const blob of pdfBlobs) {
+    buffers.push(await blob.arrayBuffer());
+  }
+
+  const pdfPaths = await uploadPdfsToStorage(
+    buffers,
+    workspaceId,
+    mergeJobId,
+    onProgress
+  );
+
+  console.log(`[PolotnoExport] Uploaded ${pdfPaths.length} PDFs to storage`);
+
+  // Compose final PDF via edge function
+  onProgress({
+    phase: 'composing',
+    current: records.length,
+    total: records.length,
+    message: 'Composing final PDF...',
+  });
+
+  const composeResult = await composeFromStorage(
+    pdfPaths,
+    layout,
+    mergeJobId,
+    fullPageMode,
+    printConfig
+  );
+
+  if (!composeResult.success) {
+    throw new Error(composeResult.error || 'Composition failed');
+  }
+
+  onProgress({
+    phase: 'complete',
+    current: records.length,
+    total: records.length,
+    message: 'Export complete!',
+  });
+
+  console.log(`[PolotnoExport] Legacy export complete: ${composeResult.outputUrl}`);
+
+  return {
+    success: true,
+    outputUrl: composeResult.outputUrl,
+    pageCount: composeResult.pageCount ?? records.length,
+    cmykApplied: false,
+  };
 }
 
 /**

@@ -53,6 +53,19 @@ export type {
   PrintConfig,
 } from '@/lib/polotno/pdfBatchExporter';
 
+// Vector PDF Export
+export {
+  isVectorServiceAvailable,
+  exportMultiPagePdf,
+  exportLabelsWithImposition,
+  exportVectorPdf,
+} from '@/lib/polotno/vectorPdfExporter';
+export type {
+  VectorExportOptions,
+  MultiPageExportResult,
+  LabelExportResult,
+} from '@/lib/polotno/vectorPdfExporter';
+
 // PDF Generator Component
 export { PolotnoPdfGenerator } from './PolotnoPdfGenerator';
 

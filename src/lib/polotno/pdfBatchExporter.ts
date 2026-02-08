@@ -566,7 +566,37 @@ export async function batchExportWithPolotno(
       console.log('━'.repeat(60));
 
       // Use the sanitized scene for export
-      const combinedScene = sanitizationResult.sanitizedScene;
+      let combinedScene = sanitizationResult.sanitizedScene;
+
+      // =========================================================================
+      // HARD PREFLIGHT ASSERT: Root geometry must be valid before export
+      // =========================================================================
+      const rootWidth = combinedScene.width;
+      const rootHeight = combinedScene.height;
+      let rootDpi = combinedScene.dpi;
+
+      // Check width
+      if (!Number.isFinite(rootWidth) || rootWidth <= 0) {
+        const errorMsg = `Export failed: invalid document width (${rootWidth}). Please refresh the editor and try again.`;
+        console.error(`❌ PREFLIGHT ASSERT FAILED: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      // Check height
+      if (!Number.isFinite(rootHeight) || rootHeight <= 0) {
+        const errorMsg = `Export failed: invalid document height (${rootHeight}). Please refresh the editor and try again.`;
+        console.error(`❌ PREFLIGHT ASSERT FAILED: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      // Check/fix DPI - if missing or invalid, set to 300 (don't fail, just fix)
+      if (!Number.isFinite(rootDpi) || rootDpi < 72 || rootDpi > 1200) {
+        console.warn(`⚠️ PREFLIGHT: Invalid DPI (${rootDpi}), setting to 300`);
+        combinedScene = { ...combinedScene, dpi: 300 };
+        rootDpi = 300;
+      }
+
+      console.log(`✅ PREFLIGHT PASSED: ${rootWidth}×${rootHeight} @ ${rootDpi}dpi, ${combinedScene.pages.length} pages`);
 
       // Surface warning if we fixed any values
       if (sanitizationResult.changedCount > 0) {

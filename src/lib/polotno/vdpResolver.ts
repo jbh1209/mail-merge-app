@@ -528,13 +528,52 @@ export function mergeLayoutToBase(
   
   // CRITICAL: Transfer root-level dimensions from current scene
   // This ensures orientation changes (portrait → landscape) are preserved in exports
-  merged.width = currentScene.width;
-  merged.height = currentScene.height;
-  if (currentScene.unit !== undefined) merged.unit = currentScene.unit;
-  if (currentScene.dpi !== undefined) merged.dpi = currentScene.dpi;
+  // ONLY copy if values are valid finite numbers > 0 to prevent NaN propagation
+  
+  const VALID_UNITS = ['mm', 'cm', 'in', 'pt', 'px'];
+  
+  // Width: only copy if finite and > 0
+  if (Number.isFinite(currentScene.width) && currentScene.width > 0) {
+    merged.width = currentScene.width;
+  } else if (!Number.isFinite(merged.width) || merged.width <= 0) {
+    // Base is also invalid - use a safe default (A4 width in px at 300dpi ≈ 2480)
+    console.warn(`⚠️ mergeLayoutToBase: invalid width (current=${currentScene.width}, base=${merged.width}), using 2480`);
+    merged.width = 2480;
+  }
+  
+  // Height: only copy if finite and > 0
+  if (Number.isFinite(currentScene.height) && currentScene.height > 0) {
+    merged.height = currentScene.height;
+  } else if (!Number.isFinite(merged.height) || merged.height <= 0) {
+    // Base is also invalid - use a safe default (A4 height in px at 300dpi ≈ 3508)
+    console.warn(`⚠️ mergeLayoutToBase: invalid height (current=${currentScene.height}, base=${merged.height}), using 3508`);
+    merged.height = 3508;
+  }
+  
+  // DPI: only copy if finite and in sane range (72-1200)
+  if (Number.isFinite(currentScene.dpi) && currentScene.dpi >= 72 && currentScene.dpi <= 1200) {
+    merged.dpi = currentScene.dpi;
+  } else if (currentScene.dpi !== undefined) {
+    // Current has invalid dpi - keep base or use 300
+    console.warn(`⚠️ mergeLayoutToBase: invalid dpi (${currentScene.dpi}), using base or 300`);
+    if (!Number.isFinite(merged.dpi) || merged.dpi < 72) {
+      merged.dpi = 300;
+    }
+  }
+  
+  // Unit: only copy if it's a valid unit string
+  if (currentScene.unit !== undefined) {
+    if (VALID_UNITS.includes(currentScene.unit)) {
+      merged.unit = currentScene.unit;
+    } else {
+      console.warn(`⚠️ mergeLayoutToBase: invalid unit (${currentScene.unit}), keeping base`);
+    }
+  }
+  
+  // Fonts: transfer if present
   if (currentScene.fonts?.length) merged.fonts = currentScene.fonts;
   
-  console.log(`📐 mergeLayoutToBase: dimensions ${merged.width}×${merged.height}`);
+  console.log(`📐 mergeLayoutToBase: dimensions ${merged.width}×${merged.height} dpi=${merged.dpi || 'undefined'}`);
   
   return merged;
 }

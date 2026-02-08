@@ -1,138 +1,102 @@
 
-## What the screenshot proves (and why previous “crop mark” changes didn’t help)
-The VPS is still returning:
 
-- `VPS error: 500 — {"error":"unsupported number: NaN"}`
+# Fix: Persistent VPS NaN Error in Professional Print Export
 
-That error is thrown by `@polotno/pdf-export` when **any numeric field anywhere in the scene JSON** is `NaN` (or `Infinity`). This is not “crop marks missing” anymore — it’s “the JSON we send contains at least one invalid number”.
+## Problem Summary
 
-Even if we turn crop-marks off on the server, this error will still happen if **any element** has an invalid numeric value (x/y/width/height/rotation/fontSize/strokeWidth/cropWidth/etc), or if `scene.width/scene.height` are invalid.
+The VPS continues to return `"unsupported number: NaN"` when exporting with Professional print output (CMYK mode + crop marks), despite multiple fix attempts. The user has a simple template with one image and one text box.
 
-So the next correct step is not “tweak crop mark geometry again”. The correct step is:
-1) **find the exact path(s) that are NaN**, and  
-2) **make the export path resilient** by sanitizing/repairing them (or failing with a precise report).
+## Root Cause Analysis
 
-## Do I know what the issue is?
-I know what the issue *is* at a system level: the scene JSON being sent to the VPS includes one or more non‑finite numbers.  
-I do *not yet* know which exact field(s) in your scene become NaN for your template/data combination — we need deterministic detection.
+After thorough investigation, I identified a **version mismatch** between deployed components:
 
-## Strategy (careful, minimal-risk, and reversible)
-We will add a **scene preflight validator + sanitizer** on the client, right before we call the VPS.
+### The Deployed VPS (`tmp/vps/server.js`)
+- Uses the **simple** implementation that directly calls `jsonToPDF`
+- Does **NOT** have the `injectCropMarks` function
+- Does **NOT** have the two-pass CMYK Ghostscript conversion
+- Any `cropMarks: true` option sent to it is silently ignored
 
-### Goals
-- **Never** send NaN/Infinity to the VPS.
-- Produce **actionable diagnostics** (e.g. “pages[0].children[12].fontSize = NaN”) so we can fix root causes after the export succeeds again.
-- Keep behavior stable: sanitize only non-finite numbers; do not otherwise change the scene.
+### The Documented VPS (`docs/VPS_SERVER_JS_COMPLETE.js`)  
+- Has full crop mark injection logic
+- Has two-pass rendering (Polotno then Ghostscript for CMYK)
+- Has dimension validation to prevent NaN
 
-### Default behavior choice (since you said “I have no idea”)
-We’ll implement **Auto-fix + diagnostics**:
-- Replace `NaN/Infinity` with safe defaults (usually `0`) *only at the invalid fields*.
-- Log a compact report to the console.
-- Surface a user-visible warning like “Fixed 3 invalid numeric values before export” (so you know it happened).
-- If export still fails, show the first ~10 offending paths in the error UI.
+### The Client Code (Latest)
+- Has scene preflight sanitizer
+- Has client-side crop mark injection with validation
+- Edge function logs show a **successful export at 14:51:57Z** (13.9MB, 6 pages)
 
-This avoids blocking you while still giving us the evidence to fix the root cause later.
+## The Real Issue
 
-## Implementation steps (exactly what will change)
+The error persists because:
 
-### 1) Add a new utility: `sanitizePolotnoSceneForVps(scene)`
-Create a small utility that:
-- Deep-walks the entire scene object (including pages, children, custom fields).
-- Detects any number that fails `Number.isFinite(n)`.
-- Replaces it with `0` (or another safe fallback where appropriate).
-- Returns:
-  - `sanitizedScene`
-  - `issues`: list of `{ path: string; value: unknown }`
-  - `changedCount`
+1. **VPS Out of Sync**: The running VPS server doesn't match the documented version
+2. **Possible Stale Frontend**: The user may be running cached frontend code without the latest sanitizer
+3. **Timing**: The screenshot may be from before the latest deployment completed
 
-Important details:
-- We will **not** clamp normal values.
-- We will **not** mutate the original scene object (clone first).
-- We will cap diagnostics output to avoid huge payloads (e.g., first 50 issues).
+## Recommended Fix Strategy
 
-**Files:**
-- Create: `src/lib/polotno/sceneSanitizer.ts` (new)
+### Option A: Quick Fix (Minimal Changes)
+Ensure the VPS being used is the simple version (`tmp/vps/server.js`) which does NOT attempt crop mark injection, and rely entirely on:
+- Client-side crop mark injection (already implemented)
+- Client-side scene sanitization (already implemented)
+- Send `cropMarks: false` to VPS always
 
-### 2) Run sanitizer immediately before VPS export (CMYK path)
-In `src/lib/polotno/pdfBatchExporter.ts`, in the CMYK path right after:
+### Option B: Full Fix (Recommended)
+Deploy the complete VPS server (`docs/VPS_SERVER_JS_COMPLETE.js`) to the production VPS, which includes:
+- Scene dimension validation before any processing
+- Proper error handling with detailed diagnostics
+- Two-pass CMYK conversion
 
-- `combineRecordsIntoMultiPageScene(...)`
-- `injectClientCropMarksIfNeeded(...)`
+## Implementation Steps
 
-…we will run:
-- `sanitizePolotnoSceneForVps(combinedScene)`
+### Step 1: Verify Frontend Code is Live
+Add visible confirmation that the sanitizer ran:
+- Log sanitization results prominently in browser console
+- Show a visible indicator in the UI when preflight validation completes
 
-Then:
-- use `sanitizedScene` for `exportMultiPagePdf(...)` / `exportLabelsWithImposition(...)`
-- if `changedCount > 0`:
-  - `console.warn` with a summarized table of issue paths
-  - update progress message (non-blocking) e.g. “Preflight: fixed invalid numeric values”
-  - optionally trigger a toast (non-destructive)
+### Step 2: Force `cropMarks: false` to VPS
+Since the deployed VPS doesn't handle crop marks, ensure we never send `cropMarks: true`:
 
-**Files:**
-- Update: `src/lib/polotno/pdfBatchExporter.ts`
+```typescript
+// In pdfBatchExporter.ts CMYK path
+const result = await exportMultiPagePdf(combinedScene, {
+  cmyk: true,
+  title: 'MergeKit Export',
+  bleed: printConfig?.bleedMm,
+  cropMarks: false, // Always false - client handles marks
+});
+```
 
-### 3) Add a second safety net in `vectorPdfExporter.ts`
-Even if another call site exports a scene directly, we should protect it.
+### Step 3: Add Deployment Verification
+Add version info to the VPS health endpoint and display it in the export UI so you can verify which VPS version is running.
 
-We’ll integrate the same sanitizer into:
-- `exportMultiPagePdf`
-- `exportLabelsWithImposition`
-- (optional) `exportVectorPdf`
+## Technical Details
 
-So **every** VPS call path is protected.
+### Files to Modify
 
-**Files:**
-- Update: `src/lib/polotno/vectorPdfExporter.ts`
+1. **`src/lib/polotno/pdfBatchExporter.ts`**
+   - Force `cropMarks: false` in VPS calls
+   - Add more visible logging for debugging
 
-### 4) Improve “what failed” messaging (so you aren’t blind again)
-When the VPS returns 500:
-- we already attach `details` from the proxy.
-- We’ll additionally include the client-side preflight summary in the thrown error, e.g.:
+2. **`src/components/polotno/PolotnoPdfGenerator.tsx`** (optional)
+   - Display preflight validation results in UI during export
 
-`VPS error: 500 … (Preflight fixed 2 invalid numbers; first issue: pages[0].children[5].fontSize was NaN)`
+## Verification Steps
 
-This makes it immediately obvious whether:
-- the sanitizer found something and fixed it, or
-- the NaN is coming from somewhere else (e.g., VPS-side processing).
+After implementation:
+1. Clear browser cache and hard refresh
+2. Run Professional print export with CMYK + crop marks enabled
+3. Check browser console for `[SceneSanitizer]` logs
+4. Verify the export completes successfully
+5. Open the PDF in Adobe Acrobat to verify crop marks appear
 
-**Files:**
-- Update: `src/lib/polotno/pdfBatchExporter.ts` (error formatting)
+## Why This Should Work
 
-### 5) (Optional but recommended) Add a one-click “Export Diagnostics” drawer
-If you want maximum clarity with minimal back-and-forth:
-- Add an “Export diagnostics” expandable section in the Generate PDFs modal that shows:
-  - page count
-  - scene width/height/dpi
-  - print settings
-  - count of preflight fixes
-  - first N offending paths
+The successful export logged at 14:51:57Z proves the pipeline CAN work when:
+- Frontend sanitizer is running
+- Client-side crop marks are injected
+- VPS receives clean data with `cropMarks: false`
 
-This is optional; the console + error string may be enough.
+The remaining task is ensuring this code is consistently deployed and the user is running the latest version.
 
-**Files (optional):**
-- Update: `src/components/polotno/PolotnoPdfGenerator.tsx`
-
-## Why this is the safest next change
-- It does not guess about crop marks or bleed behavior.
-- It addresses the *actual crash condition* (`NaN` in JSON) directly.
-- It gives us proof of the real upstream culprit, which could be:
-  - an element with `width/height` getting corrupted,
-  - a font scaling edge case producing `NaN` fontSize,
-  - an image crop property becoming `NaN`,
-  - a plugin/element type injecting unexpected numeric fields.
-
-Once we know the exact offending paths, we can then fix the root cause properly (instead of playing whack-a-mole).
-
-## Acceptance criteria (how we’ll know it’s fixed)
-1) Export with Professional print output ON no longer 500s.
-2) If any invalid numbers existed, you see a warning like “Preflight fixed X invalid numeric values”.
-3) The resulting PDF generates successfully.
-4) Next step after that: re-enable/verify crop mark rendering, now that the pipeline is stable.
-
-## “Next things you might want” (after this is stable)
-1) End-to-end test pass: export 1 record, 10 records, and 100+ records to ensure no regressions.
-2) Add a persistent “Export diagnostics” panel (copy/paste report) for faster support.
-3) Add progress phases for VPS export (“uploading scene”, “rendering”, “converting CMYK”, “finalizing”) via backend-side progress events (if you want smoother UX).
-4) Add an automated “scene health check” button that runs preflight without exporting.
-5) Add registration marks option (crosshair) in addition to crop marks once the NaN issue is eliminated.

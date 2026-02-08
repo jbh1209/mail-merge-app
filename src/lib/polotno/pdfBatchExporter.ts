@@ -365,6 +365,91 @@ function combineRecordsIntoMultiPageScene(
 }
 
 // =============================================================================
+// PRINT MARKS (CLIENT-SIDE FALLBACK)
+// =============================================================================
+
+function mmToPixels(mm: number, dpi: number): number {
+  return Math.round(mm * (dpi / 25.4));
+}
+
+/**
+ * Some VPS builds implement crop marks server-side and may crash on malformed scenes.
+ * When `printConfig.clientRenderedMarks` is true, we inject crop marks into the scene
+ * on the client and disable the VPS cropMarks option to avoid that code path.
+ */
+function injectClientCropMarksIfNeeded(scene: PolotnoScene, printConfig?: PrintConfig): PolotnoScene {
+  if (!printConfig?.enablePrintMarks || !printConfig?.clientRenderedMarks) return scene;
+
+  const dpi = scene.dpi || 300;
+  const trimWidth = scene.width;
+  const trimHeight = scene.height;
+
+  if (!Number.isFinite(trimWidth) || !Number.isFinite(trimHeight) || trimWidth <= 0 || trimHeight <= 0) {
+    console.warn('[PolotnoExport] Scene dimensions invalid; skipping client crop marks');
+    return scene;
+  }
+
+  const bleedPx = mmToPixels(printConfig.bleedMm ?? 0, dpi);
+  const offsetPx = mmToPixels(printConfig.cropMarkOffsetMm ?? 3, dpi);
+  const lengthPx = mmToPixels(10, dpi); // standard-ish 10mm crop mark length
+
+  const strokeWidth = 0.75; // px; Polotno will scale into PDF space
+  const stroke = '#000000';
+
+  const addMarksToPage = (page: PolotnoPage, pageIndex: number): PolotnoPage => {
+    const pBleed = typeof page.bleed === 'number' ? page.bleed : bleedPx;
+
+    // Outside-trim reference points (trim sits at [0..trimWidth, 0..trimHeight])
+    const leftX = -pBleed - offsetPx;
+    const rightX = trimWidth + pBleed + offsetPx;
+    const topY = -pBleed - offsetPx;
+    const bottomY = trimHeight + pBleed + offsetPx;
+
+    const mk = (suffix: string, el: any) => ({
+      ...el,
+      id: `${page.id}-cm-${pageIndex}-${suffix}`,
+    });
+
+    const marks = [
+      // TL
+      mk('tl-h', { type: 'line', x: leftX - lengthPx, y: topY, width: lengthPx, height: 0, stroke, strokeWidth }),
+      mk('tl-v', { type: 'line', x: leftX, y: topY - lengthPx, width: 0, height: lengthPx, stroke, strokeWidth }),
+      // TR
+      mk('tr-h', { type: 'line', x: rightX, y: topY, width: lengthPx, height: 0, stroke, strokeWidth }),
+      mk('tr-v', { type: 'line', x: rightX, y: topY - lengthPx, width: 0, height: lengthPx, stroke, strokeWidth }),
+      // BL
+      mk('bl-h', { type: 'line', x: leftX - lengthPx, y: bottomY, width: lengthPx, height: 0, stroke, strokeWidth }),
+      mk('bl-v', { type: 'line', x: leftX, y: bottomY, width: 0, height: lengthPx, stroke, strokeWidth }),
+      // BR
+      mk('br-h', { type: 'line', x: rightX, y: bottomY, width: lengthPx, height: 0, stroke, strokeWidth }),
+      mk('br-v', { type: 'line', x: rightX, y: bottomY, width: 0, height: lengthPx, stroke, strokeWidth }),
+    ];
+
+    // Safety: ensure all coordinates are finite
+    const safeMarks = marks.filter((m) =>
+      Number.isFinite(m.x) && Number.isFinite(m.y) && Number.isFinite(m.width) && Number.isFinite(m.height)
+    );
+
+    if (safeMarks.length !== marks.length) {
+      console.warn('[PolotnoExport] Dropped invalid crop marks:', marks.length - safeMarks.length);
+    }
+
+    return {
+      ...page,
+      bleed: pBleed,
+      children: [...(page.children || []), ...(safeMarks as any)],
+    };
+  };
+
+  console.log('[PolotnoExport] Injecting client crop marks into scene pages');
+
+  return {
+    ...scene,
+    pages: scene.pages.map(addMarksToPage),
+  };
+}
+
+// =============================================================================
 // MAIN EXPORT FUNCTION
 // =============================================================================
 
@@ -434,20 +519,24 @@ export async function batchExportWithPolotno(
       }
 
       // Step 1: Combine all records into a single multi-page scene
-      const combinedScene = combineRecordsIntoMultiPageScene(
+      const combinedSceneRaw = combineRecordsIntoMultiPageScene(
         parsedScene,
         records,
         imageBaseUrl,
         onProgress
       );
 
+      // Optional: inject crop marks client-side and avoid VPS crop-mark code path
+      const combinedScene = injectClientCropMarksIfNeeded(combinedSceneRaw, printConfig);
+      const sendCropMarksToVps = Boolean(printConfig?.enablePrintMarks && !printConfig?.clientRenderedMarks);
+
       // Step 2: Export via VPS (full-page or labels)
       onProgress({
         phase: 'exporting',
         current: 0,
         total: records.length,
-        message: fullPageMode 
-          ? 'Generating vector PDF...' 
+        message: fullPageMode
+          ? 'Generating vector PDF...'
           : 'Generating labels with imposition...',
       });
 
@@ -460,7 +549,7 @@ export async function batchExportWithPolotno(
           cmyk: true,
           title: 'MergeKit Export',
           bleed: printConfig?.bleedMm,
-          cropMarks: printConfig?.enablePrintMarks,
+          cropMarks: sendCropMarksToVps,
         });
 
         if (!result.success || !result.blob) {
@@ -479,7 +568,7 @@ export async function batchExportWithPolotno(
             cmyk: true,
             title: 'Labels Export',
             bleed: printConfig?.bleedMm,
-            cropMarks: printConfig?.enablePrintMarks,
+            cropMarks: sendCropMarksToVps,
           }
         );
 

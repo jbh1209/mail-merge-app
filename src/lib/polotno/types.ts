@@ -53,20 +53,28 @@ export interface PolotnoElement {
   rotation?: number;
   opacity?: number;
   custom?: PolotnoElementCustom;
+
+  // Common paint/stroke properties (used by line/figure/svg)
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  dash?: number[];
+
   // Text-specific
   text?: string;
   fontSize?: number;
   fontFamily?: string;
   fontStyle?: string;
   fontWeight?: string;
-  fill?: string;
   align?: string;
+
   // Image-specific
   src?: string;
   cropX?: number;
   cropY?: number;
   cropWidth?: number;
   cropHeight?: number;
+
   // SVG-specific
   svgSource?: string;
 }

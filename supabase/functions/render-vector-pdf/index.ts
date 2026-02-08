@@ -23,6 +23,78 @@ Deno.serve(async (req) => {
 
   try {
     // ==========================================================================
+    // RENDER VECTOR (Primary endpoint - uses @polotno/pdf-export on VPS)
+    // ==========================================================================
+    if (path === 'render-vector') {
+      console.log('[render-vector-pdf] Vector render request');
+      
+      const body = await req.json();
+      
+      const vpsResponse = await fetch(`${SERVICE_URL}/render-vector`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!vpsResponse.ok) {
+        const errorText = await vpsResponse.text();
+        console.error('[render-vector-pdf] VPS render-vector failed:', vpsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `VPS error: ${vpsResponse.status}`, details: errorText }),
+          { status: vpsResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const pdfBuffer = await vpsResponse.arrayBuffer();
+      console.log('[render-vector-pdf] Vector render successful, returning', pdfBuffer.byteLength, 'bytes');
+      
+      return new Response(pdfBuffer, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/pdf',
+          'Content-Length': pdfBuffer.byteLength.toString(),
+        },
+      });
+    }
+
+    // ==========================================================================
+    // BATCH RENDER VECTOR (Multiple scenes → base64 PDFs)
+    // ==========================================================================
+    if (path === 'batch-render-vector') {
+      console.log('[render-vector-pdf] Batch vector render request');
+      
+      const body = await req.json();
+      
+      const vpsResponse = await fetch(`${SERVICE_URL}/batch-render-vector`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!vpsResponse.ok) {
+        const errorText = await vpsResponse.text();
+        console.error('[render-vector-pdf] VPS batch-render-vector failed:', vpsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `VPS error: ${vpsResponse.status}`, details: errorText }),
+          { status: vpsResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const result = await vpsResponse.json();
+      console.log('[render-vector-pdf] Batch vector render successful:', result.successful, '/', result.total);
+      
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ==========================================================================
     // HEALTH CHECK
     // ==========================================================================
     if (path === 'health') {

@@ -3,15 +3,18 @@
  * 
  * Exports multiple VDP-resolved labels to a single PDF, following the same
  * pipeline as the CESDK exporter:
- * 1. Export per-record PDFs client-side
+ * 1. Export per-record PDFs (client-side for RGB, server-side for CMYK)
  * 2. Upload to temporary storage
  * 3. Invoke compose-label-sheet edge function for final merging
+ * 
+ * For CMYK exports, scenes are sent to the VPS which uses @polotno/pdf-export
+ * to produce true vector PDFs with native PDF/X-1a conversion.
  */
 
 import { supabase } from '@/integrations/supabase/client';
 import type { PolotnoScene } from './types';
 import { resolveVdpVariables } from './vdpResolver';
-import { convertPdfsToCmyk, getProfileForRegion, checkCmykServiceAvailable } from './cmykConverter';
+import { isVectorServiceAvailable, batchExportVectorPdfs } from './vectorPdfExporter';
 
 // =============================================================================
 // TYPES
@@ -298,6 +301,46 @@ async function composeFromStorage(
 }
 
 // =============================================================================
+// CLIENT-SIDE EXPORT HELPER
+// =============================================================================
+
+/**
+ * Export scenes using client-side Polotno rendering (for RGB)
+ */
+async function exportClientSide(
+  parsedScene: PolotnoScene,
+  records: Record<string, string>[],
+  exportPdf: (scene: PolotnoScene) => Promise<Blob>,
+  imageBaseUrl: string | undefined,
+  onProgress: (progress: BatchExportProgress) => void
+): Promise<Blob[]> {
+  const pdfBlobs: Blob[] = [];
+
+  for (let i = 0; i < records.length; i++) {
+    onProgress({
+      phase: 'exporting',
+      current: i + 1,
+      total: records.length,
+      message: `Generating PDF ${i + 1} of ${records.length}...`,
+    });
+
+    // Resolve VDP variables for this record
+    const resolvedScene = resolveVdpVariables(parsedScene, {
+      record: records[i],
+      recordIndex: i,
+      imageBaseUrl,
+    });
+
+    // Export to PDF using Polotno client-side
+    const blob = await exportPdf(resolvedScene);
+    pdfBlobs.push(blob);
+  }
+
+  console.log(`[PolotnoExport] Generated ${pdfBlobs.length} PDFs client-side`);
+  return pdfBlobs;
+}
+
+// =============================================================================
 // MAIN EXPORT FUNCTION
 // =============================================================================
 
@@ -342,93 +385,97 @@ export async function batchExportWithPolotno(
     const workspaceId = await getCurrentWorkspaceId();
     console.log(`[PolotnoExport] Starting batch export for ${records.length} records`);
 
-    // Step 1: Export per-record PDFs using Polotno client-side
+    // Step 1: Determine export strategy
     const wantCmyk = printConfig?.colorMode === 'cmyk';
-    console.log(`[PolotnoExport] Client export, CMYK requested: ${wantCmyk}`);
+    console.log(`[PolotnoExport] CMYK requested: ${wantCmyk}`);
 
-    const pdfBlobs: Blob[] = [];
+    let finalBlobs: Blob[] = [];
 
-    for (let i = 0; i < records.length; i++) {
+    if (wantCmyk) {
+      // CMYK path: Use server-side vector rendering via @polotno/pdf-export
+      console.log('[PolotnoExport] Using server-side vector rendering for CMYK');
+      
       onProgress({
         phase: 'exporting',
-        current: i + 1,
-        total: records.length,
-        message: `Generating PDF ${i + 1} of ${records.length}...`,
-      });
-
-      // Resolve VDP variables for this record
-      const resolvedScene = resolveVdpVariables(parsedScene, {
-        record: records[i],
-        recordIndex: i,
-        imageBaseUrl,
-      });
-
-      // Export to PDF using Polotno client-side
-      const blob = await exportPdf(resolvedScene);
-      pdfBlobs.push(blob);
-    }
-
-    console.log(`[PolotnoExport] Generated ${pdfBlobs.length} PDFs client-side`);
-
-    // Step 2: Apply CMYK conversion via VPS if requested
-    let finalBlobs = pdfBlobs;
-    if (wantCmyk) {
-      onProgress({
-        phase: 'converting',
         current: 0,
         total: records.length,
-        message: 'Checking CMYK converter...',
+        message: 'Checking vector PDF service...',
       });
 
-      const assetCheck = await checkCmykServiceAvailable();
-      if (!assetCheck.available) {
-        console.error('[PolotnoExport] CMYK service not available:', assetCheck.error);
+      const serviceAvailable = await isVectorServiceAvailable();
+      
+      if (!serviceAvailable) {
+        console.warn('[PolotnoExport] Vector service unavailable, falling back to client-side RGB');
         onProgress({
-          phase: 'converting',
-          current: records.length,
+          phase: 'exporting',
+          current: 0,
           total: records.length,
-          message: `CMYK conversion unavailable - ${assetCheck.error}`,
+          message: 'Vector service unavailable - using RGB fallback...',
         });
-        // Continue with RGB blobs
+        // Fall through to client-side export below
+        finalBlobs = await exportClientSide(parsedScene, records, exportPdf, imageBaseUrl, onProgress);
       } else {
+        // Resolve all scenes first
+        onProgress({
+          phase: 'exporting',
+          current: 0,
+          total: records.length,
+          message: 'Preparing scenes for vector rendering...',
+        });
+
+        const resolvedScenes: PolotnoScene[] = [];
+        for (let i = 0; i < records.length; i++) {
+          const resolvedScene = resolveVdpVariables(parsedScene, {
+            record: records[i],
+            recordIndex: i,
+            imageBaseUrl,
+          });
+          resolvedScenes.push(resolvedScene);
+        }
+
+        // Send to VPS for server-side vector PDF generation with native CMYK
         onProgress({
           phase: 'converting',
           current: 0,
           total: records.length,
-          message: 'Converting to CMYK...',
+          message: 'Rendering vector PDFs with CMYK...',
         });
 
-        const profile = getProfileForRegion(printConfig?.region || 'us');
-        console.log(`[PolotnoExport] Starting CMYK conversion with profile: ${profile}`);
-        
-        try {
-          finalBlobs = await convertPdfsToCmyk(pdfBlobs, { profile }, (current, total) => {
+        const vectorResult = await batchExportVectorPdfs(
+          resolvedScenes,
+          {
+            cmyk: true,
+            title: 'MergeKit Export',
+            bleed: printConfig?.bleedMm,
+            cropMarks: printConfig?.enablePrintMarks,
+          },
+          (current, total) => {
             onProgress({
               phase: 'converting',
               current,
               total,
-              message: `CMYK conversion ${current} of ${total}...`,
+              message: `Vector rendering ${current} of ${total}...`,
             });
-          });
-          console.log(`[PolotnoExport] CMYK conversion complete`);
-          onProgress({
-            phase: 'converting',
-            current: records.length,
-            total: records.length,
-            message: 'CMYK conversion complete',
-          });
-        } catch (cmykError) {
-          console.error('[PolotnoExport] CMYK conversion failed:', cmykError);
-          onProgress({
-            phase: 'converting',
-            current: records.length,
-            total: records.length,
-            message: 'CMYK conversion failed - using RGB',
-          });
-          // Continue with RGB blobs
-          finalBlobs = pdfBlobs;
+          }
+        );
+
+        if (vectorResult.errors.length > 0) {
+          console.warn('[PolotnoExport] Some vector exports failed:', vectorResult.errors);
         }
+
+        // Filter out empty blobs (failed exports)
+        finalBlobs = vectorResult.blobs.filter(b => b.size > 0);
+        
+        if (finalBlobs.length === 0) {
+          throw new Error('All vector PDF exports failed');
+        }
+
+        console.log(`[PolotnoExport] Vector rendering complete: ${vectorResult.successful}/${vectorResult.total}`);
       }
+    } else {
+      // RGB path: Use client-side Polotno export (faster for RGB)
+      console.log('[PolotnoExport] Using client-side export for RGB');
+      finalBlobs = await exportClientSide(parsedScene, records, exportPdf, imageBaseUrl, onProgress);
     }
 
     // Step 3: Convert blobs to ArrayBuffers and upload

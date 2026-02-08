@@ -2,8 +2,10 @@
  * Vector PDF Export Client
  * 
  * Calls the edge function proxy which forwards requests to the self-hosted
- * pdf-export-service for true vector PDF generation with optional PDF/X-1a
- * CMYK conversion.
+ * pdf-export-service for true vector PDF generation using @polotno/pdf-export.
+ * 
+ * The VPS uses the official Polotno Node.js package to produce true vector PDFs
+ * with native PDF/X-1a CMYK conversion (no separate Ghostscript step needed).
  */
 
 import type { PolotnoScene } from './types';
@@ -16,10 +18,14 @@ const EDGE_FUNCTION_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/re
 // =============================================================================
 
 export interface VectorExportOptions {
-  /** Enable CMYK conversion via PDF/X-1a (uses Ghostscript on server) */
+  /** Enable CMYK conversion via PDF/X-1a (native in @polotno/pdf-export) */
   cmyk?: boolean;
   /** Document title for PDF metadata */
   title?: string;
+  /** Enable bleed extension */
+  bleed?: number;
+  /** Enable crop marks */
+  cropMarks?: boolean;
 }
 
 export interface VectorExportResult {
@@ -81,14 +87,15 @@ export async function isVectorServiceAvailable(): Promise<boolean> {
 }
 
 // =============================================================================
-// SINGLE PDF EXPORT
+// SINGLE PDF EXPORT (uses @polotno/pdf-export on VPS)
 // =============================================================================
 
 /**
- * Export a single scene to vector PDF via the edge function proxy
+ * Export a single scene to vector PDF via the edge function proxy.
+ * Uses @polotno/pdf-export on the VPS for true vector output.
  * 
  * @param scene - Polotno scene JSON (with VDP already resolved)
- * @param options - Export options (cmyk, title)
+ * @param options - Export options (cmyk, title, bleed, cropMarks)
  * @returns Result with PDF blob or error
  */
 export async function exportVectorPdf(
@@ -103,7 +110,9 @@ export async function exportVectorPdf(
   }
 
   try {
-    const response = await fetch(`${EDGE_FUNCTION_BASE}/render`, {
+    console.log('[VectorExport] Sending scene to VPS for vector rendering');
+    
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/render-vector`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -113,6 +122,8 @@ export async function exportVectorPdf(
         options: {
           cmyk: options.cmyk ?? false,
           title: options.title ?? 'Export',
+          bleed: options.bleed,
+          cropMarks: options.cropMarks,
         },
       }),
     });
@@ -126,6 +137,7 @@ export async function exportVectorPdf(
     }
 
     const blob = await response.blob();
+    console.log('[VectorExport] Vector PDF received:', blob.size, 'bytes');
     return { success: true, blob };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Network error';
@@ -135,17 +147,17 @@ export async function exportVectorPdf(
 }
 
 // =============================================================================
-// BATCH PDF EXPORT
+// BATCH PDF EXPORT (uses @polotno/pdf-export on VPS)
 // =============================================================================
 
 /**
- * Batch export multiple scenes to vector PDFs
+ * Batch export multiple scenes to vector PDFs via the VPS.
  * 
- * Uses the /batch-render endpoint which returns base64-encoded PDFs.
- * Converts responses back to Blobs for upload.
+ * Uses the /batch-render-vector endpoint which leverages @polotno/pdf-export
+ * to produce true vector PDFs with optional CMYK conversion.
  * 
  * @param scenes - Array of Polotno scenes (VDP resolved)
- * @param options - Export options (cmyk, title)
+ * @param options - Export options (cmyk, title, bleed, cropMarks)
  * @param onProgress - Progress callback (current, total)
  * @returns Result with array of blobs and any errors
  */
@@ -163,14 +175,13 @@ export async function batchExportVectorPdfs(
     };
   }
 
-  // For large batches, use batch endpoint
-  // For smaller batches (< 5), use individual calls for better error isolation
-  if (scenes.length >= 5) {
-    return batchExportViaEndpoint(scenes, options, onProgress);
+  // For small batches (< 5), use individual calls for better error isolation
+  if (scenes.length < 5) {
+    return batchExportIndividually(scenes, options, onProgress);
   }
 
-  // Individual exports for small batches
-  return batchExportIndividually(scenes, options, onProgress);
+  // For larger batches, use batch endpoint for efficiency
+  return batchExportViaEndpoint(scenes, options, onProgress);
 }
 
 /**
@@ -215,9 +226,9 @@ async function batchExportViaEndpoint(
   onProgress?: (current: number, total: number) => void
 ): Promise<BatchVectorExportResult> {
   try {
-    console.log(`[VectorExport] Batch exporting ${scenes.length} scenes`);
+    console.log(`[VectorExport] Batch rendering ${scenes.length} scenes via VPS`);
 
-    const response = await fetch(`${EDGE_FUNCTION_BASE}/batch-render`, {
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/batch-render-vector`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -227,6 +238,8 @@ async function batchExportViaEndpoint(
         options: {
           cmyk: options.cmyk ?? false,
           title: options.title ?? 'Export',
+          bleed: options.bleed,
+          cropMarks: options.cropMarks,
         },
       }),
     });

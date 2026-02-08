@@ -1,0 +1,273 @@
+2026-Feb-08 08:48:00.753191 Starting deployment of jbh1209/pdf-export-service:main to localhost.
+2026-Feb-08 08:48:01.731379 Preparing container with helper image: ghcr.io/coollabsio/coolify-helper:1.0.12
+2026-Feb-08 08:48:02.382092 [CMD]: docker stop -t 30 sk0o4coogcogcww0wcswgooc
+2026-Feb-08 08:48:02.382092 Error response from daemon: No such container: sk0o4coogcogcww0wcswgooc
+2026-Feb-08 08:48:02.821367 [CMD]: docker run -d --network coolify --name sk0o4coogcogcww0wcswgooc --rm -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/coollabsio/coolify-helper:1.0.12
+2026-Feb-08 08:48:02.821367 235cbcfaa8f40556f896ec7d78187e484d4c513cd1fe71bb23e246d0a0feb0ab
+2026-Feb-08 08:48:04.049322 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'GIT_SSH_COMMAND="ssh -o ConnectTimeout=30 -p 22 -o Port=22 -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" git ls-remote https://github.com/jbh1209/pdf-export-service refs/heads/main'
+2026-Feb-08 08:48:04.049322 a99a8a0dd3bd950297148e283e84f245b4119a00 refs/heads/main
+2026-Feb-08 08:48:04.071152 ----------------------------------------
+2026-Feb-08 08:48:04.077496 Importing jbh1209/pdf-export-service:main (commit sha a99a8a0dd3bd950297148e283e84f245b4119a00) to /artifacts/sk0o4coogcogcww0wcswgooc.
+2026-Feb-08 08:48:04.437362 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'git clone --depth=1 --recurse-submodules --shallow-submodules -b 'main' 'https://github.com/jbh1209/pdf-export-service' '/artifacts/sk0o4coogcogcww0wcswgooc' && cd '/artifacts/sk0o4coogcogcww0wcswgooc' && if [ -f .gitmodules ]; then sed -i "s#git@\(.*\):#https://\1/#g" '/artifacts/sk0o4coogcogcww0wcswgooc'/.gitmodules || true && git submodule sync && GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" git submodule update --init --recursive --depth=1; fi && cd '/artifacts/sk0o4coogcogcww0wcswgooc' && GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" git lfs pull'
+2026-Feb-08 08:48:04.437362 Cloning into '/artifacts/sk0o4coogcogcww0wcswgooc'...
+2026-Feb-08 08:48:06.529636 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'cd /artifacts/sk0o4coogcogcww0wcswgooc && git log -1 a99a8a0dd3bd950297148e283e84f245b4119a00 --pretty=%B'
+2026-Feb-08 08:48:06.529636 Update Dockerfile
+2026-Feb-08 08:48:06.853857 Image not found (sw0ok0oo4s0848oowwk88kw4:a99a8a0dd3bd950297148e283e84f245b4119a00). Building new image.
+2026-Feb-08 08:48:08.327451 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'cat /artifacts/sk0o4coogcogcww0wcswgooc/Dockerfile'
+2026-Feb-08 08:48:08.327451 FROM node:20-slim
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Install system dependencies including Ghostscript and qpdf for PDF handling
+2026-Feb-08 08:48:08.327451 RUN apt-get update && apt-get install -y \
+2026-Feb-08 08:48:08.327451 ghostscript \
+2026-Feb-08 08:48:08.327451 qpdf \
+2026-Feb-08 08:48:08.327451 fonts-dejavu-core \
+2026-Feb-08 08:48:08.327451 fonts-liberation \
+2026-Feb-08 08:48:08.327451 fontconfig \
+2026-Feb-08 08:48:08.327451 curl \
+2026-Feb-08 08:48:08.327451 && rm -rf /var/lib/apt/lists/*
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Create app directory
+2026-Feb-08 08:48:08.327451 WORKDIR /app
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Copy package files
+2026-Feb-08 08:48:08.327451 COPY package*.json ./
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Install dependencies
+2026-Feb-08 08:48:08.327451 RUN npm install --omit=dev
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Copy ICC profiles for color management
+2026-Feb-08 08:48:08.327451 COPY profiles/ ./profiles/
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Copy app source
+2026-Feb-08 08:48:08.327451 COPY . .
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Expose port
+2026-Feb-08 08:48:08.327451 EXPOSE 3000
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 # Health check
+2026-Feb-08 08:48:08.327451 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+2026-Feb-08 08:48:08.327451 CMD curl -f http://localhost:3000/health || exit 1
+2026-Feb-08 08:48:08.327451
+2026-Feb-08 08:48:08.327451 CMD ["node", "server.js"]
+2026-Feb-08 08:48:08.740965 Creating build-time .env file in /artifacts (outside Docker context).
+2026-Feb-08 08:48:09.500869 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'cat /artifacts/sk0o4coogcogcww0wcswgooc/Dockerfile'
+2026-Feb-08 08:48:09.500869 FROM node:20-slim
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Install system dependencies including Ghostscript and qpdf for PDF handling
+2026-Feb-08 08:48:09.500869 RUN apt-get update && apt-get install -y \
+2026-Feb-08 08:48:09.500869 ghostscript \
+2026-Feb-08 08:48:09.500869 qpdf \
+2026-Feb-08 08:48:09.500869 fonts-dejavu-core \
+2026-Feb-08 08:48:09.500869 fonts-liberation \
+2026-Feb-08 08:48:09.500869 fontconfig \
+2026-Feb-08 08:48:09.500869 curl \
+2026-Feb-08 08:48:09.500869 && rm -rf /var/lib/apt/lists/*
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Create app directory
+2026-Feb-08 08:48:09.500869 WORKDIR /app
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Copy package files
+2026-Feb-08 08:48:09.500869 COPY package*.json ./
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Install dependencies
+2026-Feb-08 08:48:09.500869 RUN npm install --omit=dev
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Copy ICC profiles for color management
+2026-Feb-08 08:48:09.500869 COPY profiles/ ./profiles/
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Copy app source
+2026-Feb-08 08:48:09.500869 COPY . .
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Expose port
+2026-Feb-08 08:48:09.500869 EXPOSE 3000
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 # Health check
+2026-Feb-08 08:48:09.500869 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+2026-Feb-08 08:48:09.500869 CMD curl -f http://localhost:3000/health || exit 1
+2026-Feb-08 08:48:09.500869
+2026-Feb-08 08:48:09.500869 CMD ["node", "server.js"]
+2026-Feb-08 08:48:09.515785 Final Dockerfile:
+2026-Feb-08 08:48:10.239256 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'cat /artifacts/sk0o4coogcogcww0wcswgooc/Dockerfile'
+2026-Feb-08 08:48:10.239256 FROM node:20-slim
+2026-Feb-08 08:48:10.239256 ARG API_SECRET=<REDACTED>
+2026-Feb-08 08:48:10.239256 ARG COOLIFY_URL=https://pdf.jaimar.dev
+2026-Feb-08 08:48:10.239256 ARG COOLIFY_FQDN=pdf.jaimar.dev
+2026-Feb-08 08:48:10.239256 ARG COOLIFY_BRANCH=main
+2026-Feb-08 08:48:10.239256 ARG COOLIFY_RESOURCE_UUID=sw0ok0oo4s0848oowwk88kw4
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Install system dependencies including Ghostscript and qpdf for PDF handling
+2026-Feb-08 08:48:10.239256 RUN apt-get update && apt-get install -y \
+2026-Feb-08 08:48:10.239256 ghostscript \
+2026-Feb-08 08:48:10.239256 qpdf \
+2026-Feb-08 08:48:10.239256 fonts-dejavu-core \
+2026-Feb-08 08:48:10.239256 fonts-liberation \
+2026-Feb-08 08:48:10.239256 fontconfig \
+2026-Feb-08 08:48:10.239256 curl \
+2026-Feb-08 08:48:10.239256 && rm -rf /var/lib/apt/lists/*
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Create app directory
+2026-Feb-08 08:48:10.239256 WORKDIR /app
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Copy package files
+2026-Feb-08 08:48:10.239256 COPY package*.json ./
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Install dependencies
+2026-Feb-08 08:48:10.239256 RUN npm install --omit=dev
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Copy ICC profiles for color management
+2026-Feb-08 08:48:10.239256 COPY profiles/ ./profiles/
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Copy app source
+2026-Feb-08 08:48:10.239256 COPY . .
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Expose port
+2026-Feb-08 08:48:10.239256 EXPOSE 3000
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 # Health check
+2026-Feb-08 08:48:10.239256 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+2026-Feb-08 08:48:10.239256 CMD curl -f http://localhost:3000/health || exit 1
+2026-Feb-08 08:48:10.239256
+2026-Feb-08 08:48:10.239256 CMD ["node", "server.js"]
+2026-Feb-08 08:48:10.249372 ----------------------------------------
+2026-Feb-08 08:48:10.257056 Building docker image started.
+2026-Feb-08 08:48:10.261613 To check the current progress, click on Show Debug Logs.
+2026-Feb-08 08:48:11.024697 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'cat /artifacts/build.sh'
+2026-Feb-08 08:48:11.024697 cd /artifacts/sk0o4coogcogcww0wcswgooc && set -a && source /artifacts/build-time.env && set +a && docker build --add-host coolify:10.0.1.5 --add-host coolify-db:10.0.1.2 --add-host coolify-realtime:10.0.1.3 --add-host coolify-redis:10.0.1.4 --network host -f /artifacts/sk0o4coogcogcww0wcswgooc/Dockerfile --build-arg COOLIFY_URL --build-arg COOLIFY_FQDN --build-arg COOLIFY_BRANCH --build-arg COOLIFY_RESOURCE_UUID --build-arg API_SECRET --build-arg COOLIFY_BUILD_SECRETS_HASH=449087815af2d65c2dc59180cdc9856d2633c51bbdc67fd1aa0880a624ae2106 --build-arg 'COOLIFY_URL' --build-arg 'COOLIFY_FQDN' --build-arg 'COOLIFY_BRANCH' --build-arg 'COOLIFY_RESOURCE_UUID' --progress plain -t sw0ok0oo4s0848oowwk88kw4:a99a8a0dd3bd950297148e283e84f245b4119a00 /artifacts/sk0o4coogcogcww0wcswgooc
+2026-Feb-08 08:48:11.686320 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'bash /artifacts/build.sh'
+2026-Feb-08 08:48:11.686320 #0 building with "default" instance using docker driver
+2026-Feb-08 08:48:11.686320
+2026-Feb-08 08:48:11.686320 #1 [internal] load build definition from Dockerfile
+2026-Feb-08 08:48:11.686320 #1 transferring dockerfile: 930B done
+2026-Feb-08 08:48:11.686320 #1 DONE 0.0s
+2026-Feb-08 08:48:11.686320
+2026-Feb-08 08:48:11.686320 #2 [internal] load metadata for docker.io/library/node:20-slim
+2026-Feb-08 08:48:12.250130 #2 DONE 0.7s
+2026-Feb-08 08:48:12.353077 #3 [internal] load .dockerignore
+2026-Feb-08 08:48:12.353077 #3 transferring context: 2B done
+2026-Feb-08 08:48:12.353077 #3 DONE 0.0s
+2026-Feb-08 08:48:12.353077
+2026-Feb-08 08:48:12.353077 #4 [1/7] FROM docker.io/library/node:20-slim@sha256:c6585df72c34172bebd8d36abed961e231d7d3b5cee2e01294c4495e8a03f687
+2026-Feb-08 08:48:12.353077 #4 resolve docker.io/library/node:20-slim@sha256:c6585df72c34172bebd8d36abed961e231d7d3b5cee2e01294c4495e8a03f687 0.0s done
+2026-Feb-08 08:48:12.353077 #4 DONE 0.0s
+2026-Feb-08 08:48:12.353077
+2026-Feb-08 08:48:12.353077 #5 [internal] load build context
+2026-Feb-08 08:48:12.353077 #5 transferring context: 5.31MB 0.1s done
+2026-Feb-08 08:48:12.353077 #5 DONE 0.1s
+2026-Feb-08 08:48:12.560435 #6 [3/7] WORKDIR /app
+2026-Feb-08 08:48:12.560435 #6 CACHED
+2026-Feb-08 08:48:12.560435
+2026-Feb-08 08:48:12.560435 #7 [4/7] COPY package*.json ./
+2026-Feb-08 08:48:12.560435 #7 CACHED
+2026-Feb-08 08:48:12.560435
+2026-Feb-08 08:48:12.560435 #8 [5/7] RUN npm install --omit=dev
+2026-Feb-08 08:48:12.560435 #8 CACHED
+2026-Feb-08 08:48:12.560435
+2026-Feb-08 08:48:12.560435 #9 [2/7] RUN apt-get update && apt-get install -y ghostscript qpdf fonts-dejavu-core fonts-liberation fontconfig curl && rm -rf /var/lib/apt/lists/*
+2026-Feb-08 08:48:12.560435 #9 CACHED
+2026-Feb-08 08:48:12.560435
+2026-Feb-08 08:48:12.560435 #10 [6/7] COPY profiles/ ./profiles/
+2026-Feb-08 08:48:12.560435 #10 CACHED
+2026-Feb-08 08:48:12.560435
+2026-Feb-08 08:48:12.560435 #11 [7/7] COPY . .
+2026-Feb-08 08:48:12.560435 #11 DONE 0.0s
+2026-Feb-08 08:48:12.560435
+2026-Feb-08 08:48:12.560435 #12 exporting to image
+2026-Feb-08 08:48:12.560435 #12 exporting layers
+2026-Feb-08 08:48:12.666871 #12 exporting layers 0.3s done
+2026-Feb-08 08:48:12.666871 #12 exporting manifest sha256:85f1e06d05cf16ab497b8dc6f2585513c7ed36a867acbebcd886c43de6623afd
+2026-Feb-08 08:48:12.788063 #12 exporting manifest sha256:85f1e06d05cf16ab497b8dc6f2585513c7ed36a867acbebcd886c43de6623afd done
+2026-Feb-08 08:48:12.788063 #12 exporting config sha256:6c25eb0ae7d1e20b9f8f58337b9758af509b0a94703753b02c1b10142e6c4642 done
+2026-Feb-08 08:48:12.788063 #12 exporting attestation manifest sha256:c45f384fbe9bff167dbf209a4c149c7bd2fe0265891cdbe316f7f42fd2a574d7 0.0s done
+2026-Feb-08 08:48:12.788063 #12 exporting manifest list sha256:c72c9a975f90f6aabe6ddb3c5701af15d2ac13a26a1be9c5122194246442869e done
+2026-Feb-08 08:48:12.788063 #12 naming to docker.io/library/sw0ok0oo4s0848oowwk88kw4:a99a8a0dd3bd950297148e283e84f245b4119a00 done
+2026-Feb-08 08:48:12.788063 #12 unpacking to docker.io/library/sw0ok0oo4s0848oowwk88kw4:a99a8a0dd3bd950297148e283e84f245b4119a00 0.1s done
+2026-Feb-08 08:48:12.788063 #12 DONE 0.4s
+2026-Feb-08 08:48:12.890297 1 warning found (use docker --debug to expand):
+2026-Feb-08 08:48:12.890297 - SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ARG "API_SECRET") (line 2)
+2026-Feb-08 08:48:12.905906 Building docker image completed.
+2026-Feb-08 08:48:12.917905 Creating .env file with runtime variables for container.
+2026-Feb-08 08:48:13.614265 ----------------------------------------
+2026-Feb-08 08:48:13.619996 Rolling update started.
+2026-Feb-08 08:48:14.427311 [CMD]: docker exec sk0o4coogcogcww0wcswgooc bash -c 'COOLIFY_URL=https://pdf.jaimar.dev COOLIFY_FQDN=pdf.jaimar.dev COOLIFY_BRANCH=main COOLIFY_RESOURCE_UUID=sw0ok0oo4s0848oowwk88kw4 docker compose --project-name sw0ok0oo4s0848oowwk88kw4 --project-directory /artifacts/sk0o4coogcogcww0wcswgooc -f /artifacts/sk0o4coogcogcww0wcswgooc/docker-compose.yaml up --build -d'
+2026-Feb-08 08:48:14.427311 Container sw0ok0oo4s0848oowwk88kw4-084759118653 Creating
+2026-Feb-08 08:48:14.492028 sw0ok0oo4s0848oowwk88kw4-084759118653 Your kernel does not support memory swappiness capabilities or the cgroup is not mounted. Memory swappiness discarded.
+2026-Feb-08 08:48:14.495691 Container sw0ok0oo4s0848oowwk88kw4-084759118653 Created
+2026-Feb-08 08:48:14.504460 Container sw0ok0oo4s0848oowwk88kw4-084759118653 Starting
+2026-Feb-08 08:48:14.663586 Container sw0ok0oo4s0848oowwk88kw4-084759118653 Started
+2026-Feb-08 08:48:14.695687 New container started.
+2026-Feb-08 08:48:14.710242 Custom healthcheck found in Dockerfile.
+2026-Feb-08 08:48:14.719358 Waiting for healthcheck to pass on the new container.
+2026-Feb-08 08:48:14.733262 Waiting for the start period (5 seconds) before starting healthcheck.
+2026-Feb-08 08:48:20.065369 [CMD]: docker inspect --format='{{json .State.Health.Status}}' sw0ok0oo4s0848oowwk88kw4-084759118653
+2026-Feb-08 08:48:20.065369 "unhealthy"
+2026-Feb-08 08:48:20.389384 [CMD]: docker inspect --format='{{json .State.Health.Log}}' sw0ok0oo4s0848oowwk88kw4-084759118653
+2026-Feb-08 08:48:20.389384 []
+2026-Feb-08 08:48:20.397012 Attempt 1 of 3 | Healthcheck status: "unhealthy"
+2026-Feb-08 08:48:20.403951 New container is unhealthy.
+2026-Feb-08 08:48:20.410178 ----------------------------------------
+2026-Feb-08 08:48:20.415568 Container logs:
+2026-Feb-08 08:48:20.736873 [CMD]: docker logs -n 100 sw0ok0oo4s0848oowwk88kw4-084759118653
+2026-Feb-08 08:48:20.736873 file:///app/server.js:6
+2026-Feb-08 08:48:20.736873 import { jsonToPDF, jsonToPDFBase64 } from '@polotno/pdf-export';
+2026-Feb-08 08:48:20.736873 ^^^^^^^^^^^^^^^
+2026-Feb-08 08:48:20.736873 SyntaxError: The requested module '@polotno/pdf-export' does not provide an export named 'jsonToPDFBase64'
+2026-Feb-08 08:48:20.736873 at ModuleJob._instantiate (node:internal/modules/esm/module_job:213:21)
+2026-Feb-08 08:48:20.736873 at async ModuleJob.run (node:internal/modules/esm/module_job:320:5)
+2026-Feb-08 08:48:20.736873 at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+2026-Feb-08 08:48:20.736873 at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2026-Feb-08 08:48:20.736873
+2026-Feb-08 08:48:20.736873 Node.js v20.20.0
+2026-Feb-08 08:48:20.736873 file:///app/server.js:6
+2026-Feb-08 08:48:20.736873 import { jsonToPDF, jsonToPDFBase64 } from '@polotno/pdf-export';
+2026-Feb-08 08:48:20.736873 ^^^^^^^^^^^^^^^
+2026-Feb-08 08:48:20.736873 SyntaxError: The requested module '@polotno/pdf-export' does not provide an export named 'jsonToPDFBase64'
+2026-Feb-08 08:48:20.736873 at ModuleJob._instantiate (node:internal/modules/esm/module_job:213:21)
+2026-Feb-08 08:48:20.736873 at async ModuleJob.run (node:internal/modules/esm/module_job:320:5)
+2026-Feb-08 08:48:20.736873 at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+2026-Feb-08 08:48:20.736873 at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2026-Feb-08 08:48:20.736873
+2026-Feb-08 08:48:20.736873 Node.js v20.20.0
+2026-Feb-08 08:48:20.736873 file:///app/server.js:6
+2026-Feb-08 08:48:20.736873 import { jsonToPDF, jsonToPDFBase64 } from '@polotno/pdf-export';
+2026-Feb-08 08:48:20.736873 ^^^^^^^^^^^^^^^
+2026-Feb-08 08:48:20.736873 SyntaxError: The requested module '@polotno/pdf-export' does not provide an export named 'jsonToPDFBase64'
+2026-Feb-08 08:48:20.736873 at ModuleJob._instantiate (node:internal/modules/esm/module_job:213:21)
+2026-Feb-08 08:48:20.736873 at async ModuleJob.run (node:internal/modules/esm/module_job:320:5)
+2026-Feb-08 08:48:20.736873 at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+2026-Feb-08 08:48:20.736873 at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2026-Feb-08 08:48:20.736873
+2026-Feb-08 08:48:20.736873 Node.js v20.20.0
+2026-Feb-08 08:48:20.736873 file:///app/server.js:6
+2026-Feb-08 08:48:20.736873 import { jsonToPDF, jsonToPDFBase64 } from '@polotno/pdf-export';
+2026-Feb-08 08:48:20.736873 ^^^^^^^^^^^^^^^
+2026-Feb-08 08:48:20.736873 SyntaxError: The requested module '@polotno/pdf-export' does not provide an export named 'jsonToPDFBase64'
+2026-Feb-08 08:48:20.736873 at ModuleJob._instantiate (node:internal/modules/esm/module_job:213:21)
+2026-Feb-08 08:48:20.736873 at async ModuleJob.run (node:internal/modules/esm/module_job:320:5)
+2026-Feb-08 08:48:20.736873 at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+2026-Feb-08 08:48:20.736873 at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2026-Feb-08 08:48:20.736873
+2026-Feb-08 08:48:20.736873 Node.js v20.20.0
+2026-Feb-08 08:48:20.736873 file:///app/server.js:6
+2026-Feb-08 08:48:20.736873 import { jsonToPDF, jsonToPDFBase64 } from '@polotno/pdf-export';
+2026-Feb-08 08:48:20.736873 ^^^^^^^^^^^^^^^
+2026-Feb-08 08:48:20.736873 SyntaxError: The requested module '@polotno/pdf-export' does not provide an export named 'jsonToPDFBase64'
+2026-Feb-08 08:48:20.736873 at ModuleJob._instantiate (node:internal/modules/esm/module_job:213:21)
+2026-Feb-08 08:48:20.736873 at async ModuleJob.run (node:internal/modules/esm/module_job:320:5)
+2026-Feb-08 08:48:20.736873 at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+2026-Feb-08 08:48:20.736873 at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+2026-Feb-08 08:48:20.736873
+2026-Feb-08 08:48:20.736873 Node.js v20.20.0
+2026-Feb-08 08:48:20.742113 ----------------------------------------
+2026-Feb-08 08:48:20.749426 Removing old containers.
+2026-Feb-08 08:48:20.754816 ----------------------------------------
+2026-Feb-08 08:48:20.760520 WARNING: Dockerfile or Docker Image based deployment detected. The healthcheck needs a curl or wget command to check the health of the application. Please make sure that it is available in the image or turn off healthcheck on Coolify's UI.
+2026-Feb-08 08:48:20.765829 ----------------------------------------
+2026-Feb-08 08:48:20.770579 New container is not healthy, rolling back to the old container.
+2026-Feb-08 08:48:21.752564 [CMD]: docker stop -t 30 sw0ok0oo4s0848oowwk88kw4-084759118653
+2026-Feb-08 08:48:21.752564 sw0ok0oo4s0848oowwk88kw4-084759118653
+2026-Feb-08 08:48:22.111650 [CMD]: docker rm -f sw0ok0oo4s0848oowwk88kw4-084759118653
+2026-Feb-08 08:48:22.111650 sw0ok0oo4s0848oowwk88kw4-084759118653
+2026-Feb-08 08:48:22.119805 Rolling update completed.
+2026-Feb-08 08:48:23.090637 Gracefully shutting down build container: sk0o4coogcogcww0wcswgooc
+2026-Feb-08 08:48:23.564116 [CMD]: docker stop -t 30 sk0o4coogcogcww0wcswgooc
+2026-Feb-08 08:48:23.564116 sk0o4coogcogcww0wcswgooc

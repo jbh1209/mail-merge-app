@@ -163,10 +163,18 @@ export async function exportMultiPagePdf(
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await response.json().catch(() => ({} as any));
+      const details = typeof errorData?.details === 'string' ? errorData.details : '';
+
+      // Surface details for debugging (truncated to avoid huge UI strings)
+      const detailsSnippet = details ? ` — ${details.slice(0, 500)}` : '';
+      const message = (errorData?.error as string) || `Service returned ${response.status}`;
+
+      console.error('[VectorExport] export-multipage failed:', response.status, message, detailsSnippet);
+
       return {
         success: false,
-        error: errorData.error || `Service returned ${response.status}`,
+        error: `${message}${detailsSnippet}`,
       };
     }
 

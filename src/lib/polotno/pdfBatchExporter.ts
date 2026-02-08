@@ -533,7 +533,11 @@ export async function batchExportWithPolotno(
 
       // Optional: inject crop marks client-side and avoid VPS crop-mark code path
       const sceneWithMarks = injectClientCropMarksIfNeeded(combinedSceneRaw, printConfig);
-      const sendCropMarksToVps = Boolean(printConfig?.enablePrintMarks && !printConfig?.clientRenderedMarks);
+      
+      // ALWAYS send cropMarks: false to VPS - client handles all marks now
+      // The deployed VPS doesn't have proper crop mark support and crashes on malformed scenes
+      const sendCropMarksToVps = false;
+      console.log('[PolotnoExport] 🔧 cropMarks sent to VPS: false (client handles marks)');
 
       // Step 1.5: Run preflight sanitization to catch NaN/Infinity values
       onProgress({
@@ -544,7 +548,22 @@ export async function batchExportWithPolotno(
       });
 
       const sanitizationResult = sanitizePolotnoSceneForVps(sceneWithMarks);
-      logSanitizationReport(sanitizationResult);
+      
+      // Always log prominently
+      console.log('━'.repeat(60));
+      console.log('🔍 SCENE PREFLIGHT VALIDATION REPORT');
+      console.log('━'.repeat(60));
+      console.log(`   Scene dimensions: ${sceneWithMarks.width}×${sceneWithMarks.height} (${sceneWithMarks.unit || 'px'})`);
+      console.log(`   DPI: ${sceneWithMarks.dpi || 'undefined'}`);
+      console.log(`   Pages: ${sceneWithMarks.pages?.length || 0}`);
+      console.log(`   Invalid values fixed: ${sanitizationResult.changedCount}`);
+      if (sanitizationResult.changedCount > 0) {
+        console.log(`   First issues:`);
+        sanitizationResult.issues.slice(0, 5).forEach(issue => {
+          console.log(`     • ${issue.path} = ${String(issue.originalValue)} → ${issue.replacedWith}`);
+        });
+      }
+      console.log('━'.repeat(60));
 
       // Use the sanitized scene for export
       const combinedScene = sanitizationResult.sanitizedScene;

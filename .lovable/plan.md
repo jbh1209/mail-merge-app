@@ -1,77 +1,174 @@
-# Fix Vector PDF Fidelity: Multi-Page Export Architecture
 
-## ✅ IMPLEMENTATION COMPLETE
+# Fix Missing Crop Marks in CMYK PDF Export
 
-### Changes Made
+## Problem Summary
+Crop marks are not appearing in the CMYK vector PDF output despite the VPS passing `cropMarkSize` to `@polotno/pdf-export`.
 
-#### 1. VPS Documentation (for user to deploy)
-- Created `docs/VPS_MULTIPAGE_EXPORT_UPDATE.md` with complete server.js and Dockerfile updates
-- Added `/export-multipage` endpoint for multi-page PDF export
-- Added `/export-labels` endpoint for label imposition with vector preservation
-- Added `/compose-pdfs` endpoint for merging PDFs with qpdf
+## Root Cause Analysis
+The `@polotno/pdf-export` Node.js package has **different options** than the browser-side `store.saveAsPDF()`:
 
-#### 2. Edge Function Updates
-- Updated `supabase/functions/render-vector-pdf/index.ts` with new endpoint proxies:
-  - `/export-multipage` - Multi-page scene to single PDF
-  - `/export-labels` - Labels with server-side imposition  
-  - `/compose-pdfs` - Vector-safe PDF merging
+| Option | `store.saveAsPDF()` (Browser) | `jsonToPDF()` (Node) |
+|--------|------------------------------|----------------------|
+| `includeBleed` | ✅ Supported | ❌ NOT Supported |
+| `cropMarkSize` | ✅ Supported | ❌ NOT Supported |
+| `pdfx1a` | ❌ | ✅ Supported |
+| `spotColors` | ❌ | ✅ Supported |
+| `metadata` | ❌ | ✅ Supported |
 
-#### 3. Client-Side Updates
-- **`src/lib/polotno/vectorPdfExporter.ts`**:
-  - Added `exportMultiPagePdf()` - Primary method for full-page exports
-  - Added `exportLabelsWithImposition()` - For label sheets with server-side tiling
-  - Deprecated batch individual export in favor of multi-page
+The VPS currently passes `cropMarkSize: 42` to `jsonToPDF()`, but this option is **silently ignored** because the Node package doesn't support it.
 
-- **`src/lib/polotno/pdfBatchExporter.ts`**:
-  - New `combineRecordsIntoMultiPageScene()` - Combines all VDP records into single scene
-  - Rewrote `batchExportWithPolotno()` for new multi-page flow
-  - CMYK path now uses multi-page export (no pdf-lib merging!)
-  - RGB path falls back to legacy flow
+Bleed works because it's stored on the **page JSON data** (`page.bleed`), which the Node package respects when rendering.
 
----
+## Solution Options
 
-## New Architecture
+### Option A: Draw Crop Marks via Polotno Elements (Recommended)
+Add invisible crop mark elements directly to the scene JSON before rendering:
+- Add thin line elements at each corner of the trim box
+- Position them in the bleed area (outside trim, inside media)
+- Use registration black color
+- These render as true vectors through Polotno
 
-### Full-Page CMYK Exports (Certificates, Cards, Badges)
+**Pros:** True vectors, no post-processing needed
+**Cons:** Slightly more complex scene modification
+
+### Option B: Post-Process with Ghostscript
+After Polotno generates the PDF, use Ghostscript's `-dUseCropBox` or manual PostScript injection to add crop marks.
+
+**Pros:** Separate from scene data
+**Cons:** More complex, may affect vector quality
+
+### Option C: Use PDF-lib to Add Marks After Ghostscript
+After CMYK conversion, use a PDF library to draw crop marks on each page.
+
+**Pros:** Clean separation of concerns
+**Cons:** Adds another processing step
+
+## Recommended Approach: Option A
+
+Inject crop mark line elements into the Polotno scene JSON before calling `jsonToPDF()`. This produces native vector crop marks without post-processing.
+
+## Implementation Plan
+
+### 1. VPS Server Update (`server.js`)
+
+Add a helper function to inject crop mark elements into the scene:
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│  Request arrives with scene JSON + options.cropMarks   │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ If cropMarks enabled:                           │   │
+│  │   For each page:                                │   │
+│  │     - Calculate trim box corners                │   │
+│  │     - Add 8 line elements (2 per corner)       │   │
+│  │     - Position in bleed zone (offset from trim) │   │
+│  │     - Set color to registration black          │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Pass modified scene to jsonToPDF()                     │
+└─────────────────────────────────────────────────────────┘
 ```
-Client → Resolve ALL records → Combine into multi-page scene → VPS exports single PDF → Done!
+
+**Crop mark geometry (per corner):**
+- Mark length: 10mm (~42px at 300 DPI)
+- Mark offset: 3mm (~35px at 300 DPI) from trim edge
+- Stroke width: 0.25pt (hairline)
+- Color: `#000000` (registration black)
+
+### 2. Updated `/export-multipage` Endpoint Logic
+
+```javascript
+// Pseudo-code for crop mark injection
+function injectCropMarks(scene, bleedPx, cropMarkLengthPx, cropMarkOffsetPx) {
+  const modifiedPages = scene.pages.map(page => {
+    const { width, height } = page;
+    const bleed = page.bleed || bleedPx;
+    
+    // Trim box is the original page size
+    // Crop marks go in the bleed zone
+    const cropMarkElements = generateCropMarkLines(
+      width,      // trim width
+      height,     // trim height  
+      bleed,      // bleed extension
+      cropMarkLengthPx,
+      cropMarkOffsetPx
+    );
+    
+    return {
+      ...page,
+      children: [...(page.children || []), ...cropMarkElements]
+    };
+  });
+  
+  return { ...scene, pages: modifiedPages };
+}
 ```
 
-### Label CMYK Exports (With Imposition)
+### 3. Crop Mark Line Elements
+
+Each corner gets two perpendicular lines:
+
+```javascript
+// Example: Top-left corner
+const topLeftHorizontal = {
+  id: 'crop-tl-h',
+  type: 'line',
+  x: -bleed - cropMarkOffset - cropMarkLength,
+  y: 0,
+  width: cropMarkLength,
+  height: 0,
+  stroke: '#000000',
+  strokeWidth: 0.75,  // ~0.25pt
+};
+
+const topLeftVertical = {
+  id: 'crop-tl-v',
+  type: 'line',
+  x: 0,
+  y: -bleed - cropMarkOffset - cropMarkLength,
+  width: 0,
+  height: cropMarkLength,
+  stroke: '#000000',
+  strokeWidth: 0.75,
+};
 ```
-Client → Resolve ALL records → Combine into multi-page scene → VPS exports + imposes with qpdf → Done!
-```
 
-### RGB Exports (Unchanged Legacy Flow)
-```
-Client → Export each record → Upload individually → compose-label-sheet merges → Done
-```
+### 4. Client-Side Changes (None Required)
 
----
+The client already sends `cropMarks: true` in the options. No frontend changes needed.
 
-## Next Steps for User
+## Files to Update
 
-1. **Deploy VPS updates** from `docs/VPS_MULTIPAGE_EXPORT_UPDATE.md`:
-   - Update `Dockerfile` to install `qpdf`
-   - Replace `server.js` with new version
-   - Commit, push, and redeploy
+| File | Change |
+|------|--------|
+| `docs/VPS_SERVER_JS_COMPLETE.js` | Add `injectCropMarks()` helper function |
+| VPS `server.js` | Call `injectCropMarks()` when `options.cropMarks` is true |
 
-2. **Test** a CMYK export with 6+ records
+## UX Improvement: Progress Bar
 
-3. **Verify** in Adobe Acrobat:
-   - PDF Producer shows Polotno/Ghostscript (not pdf-lib)
-   - Content is vector (not rasterized)
-   - CMYK color space preserved
+As a secondary improvement, the progress bar jumps from 0% to 100% because the VPS processes everything in one request. To improve this:
 
----
+1. Add streaming progress updates via SSE/WebSocket (complex)
+2. Or show an indeterminate spinner during the "Generating vector PDF" phase with estimated time
 
-## Benefits Achieved
+This is a lower priority than fixing crop marks.
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| Vector fidelity | Lost in pdf-lib merge | Preserved (native multi-page) |
-| Network calls | N calls for N records | 1 call for all |
-| VPS processing | N separate exports | 1 combined export |
-| Memory usage | N blobs in browser | 1 blob |
-| PDF Producer | pdf-lib | @polotno/pdf-export |
+## Technical Notes
 
+- Polotno's `line` element type renders as true vector paths
+- Crop marks should be positioned using negative coordinates (in the bleed zone)
+- The DPI conversion (300 DPI scene) means 1mm ≈ 11.8px
+- Registration black (#000000) converts to 100% K in CMYK mode
+
+## Testing Verification
+
+After deployment:
+1. Export a CMYK multi-page PDF with bleed and crop marks enabled
+2. Open in Adobe Acrobat
+3. Verify:
+   - File > Properties shows "Ghostscript" as Producer
+   - Output Preview shows CMYK color space
+   - Crop marks appear at each corner as thin lines
+   - Marks are vectors (zoom in - no pixelation)
+   - Text remains selectable/vector (not flattened)

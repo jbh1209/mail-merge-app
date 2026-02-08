@@ -6,6 +6,9 @@
  * 
  * The VPS uses the official Polotno Node.js package to produce true vector PDFs
  * with native PDF/X-1a CMYK conversion (no separate Ghostscript step needed).
+ * 
+ * NEW: Multi-page export support - combines all VDP-resolved records into a 
+ * single multi-page scene and exports in one call for maximum vector fidelity.
  */
 
 import type { PolotnoScene } from './types';
@@ -39,6 +42,34 @@ export interface BatchVectorExportResult {
   errors: string[];
   successful: number;
   total: number;
+}
+
+export interface MultiPageExportResult {
+  success: boolean;
+  blob?: Blob;
+  pageCount?: number;
+  error?: string;
+}
+
+export interface AveryLayoutConfig {
+  sheetWidthMm: number;
+  sheetHeightMm: number;
+  labelWidthMm: number;
+  labelHeightMm: number;
+  labelsPerSheet: number;
+  columns: number;
+  rows: number;
+  marginTopMm: number;
+  marginLeftMm: number;
+  gapXMm: number;
+  gapYMm: number;
+}
+
+export interface LabelExportResult {
+  success: boolean;
+  blob?: Blob;
+  labelCount?: number;
+  error?: string;
 }
 
 // =============================================================================
@@ -83,6 +114,146 @@ export async function isVectorServiceAvailable(): Promise<boolean> {
   } catch (error) {
     console.warn('[VectorExport] Service unavailable:', error);
     return false;
+  }
+}
+
+// =============================================================================
+// MULTI-PAGE EXPORT (NEW - Primary method for full-page exports)
+// =============================================================================
+
+/**
+ * Export a multi-page scene to a single vector PDF.
+ * This is the preferred method for full-page exports (certificates, cards, badges).
+ * 
+ * The VPS uses @polotno/pdf-export to natively handle multi-page scenes,
+ * producing a single PDF with all pages preserved as true vectors.
+ * 
+ * @param scene - Combined multi-page Polotno scene (all VDP records resolved)
+ * @param options - Export options (cmyk, title, bleed, cropMarks)
+ * @returns Result with single PDF blob containing all pages
+ */
+export async function exportMultiPagePdf(
+  scene: PolotnoScene,
+  options: VectorExportOptions = {}
+): Promise<MultiPageExportResult> {
+  if (!import.meta.env.VITE_SUPABASE_URL) {
+    return { 
+      success: false, 
+      error: 'Supabase URL not configured' 
+    };
+  }
+
+  try {
+    console.log(`[VectorExport] Exporting multi-page PDF: ${scene.pages.length} pages (CMYK: ${options.cmyk})`);
+    
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/export-multipage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        scene,
+        options: {
+          cmyk: options.cmyk ?? false,
+          title: options.title ?? 'MergeKit Export',
+          bleed: options.bleed,
+          cropMarks: options.cropMarks,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errorData.error || `Service returned ${response.status}`,
+      };
+    }
+
+    const blob = await response.blob();
+    const pageCount = parseInt(response.headers.get('X-Page-Count') || '0', 10) || scene.pages.length;
+    
+    console.log(`[VectorExport] Multi-page PDF received: ${blob.size} bytes, ${pageCount} pages`);
+    
+    return { 
+      success: true, 
+      blob,
+      pageCount,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    console.error('[VectorExport] Multi-page export failed:', error);
+    return { success: false, error: message };
+  }
+}
+
+// =============================================================================
+// LABEL EXPORT WITH IMPOSITION (NEW - For label sheets)
+// =============================================================================
+
+/**
+ * Export labels with server-side imposition.
+ * The VPS handles both PDF generation and label tiling using vector-preserving tools.
+ * 
+ * @param scene - Multi-page scene where each page is one label
+ * @param layout - Avery layout configuration for sheet imposition
+ * @param options - Export options (cmyk, title)
+ * @returns Result with imposed PDF blob
+ */
+export async function exportLabelsWithImposition(
+  scene: PolotnoScene,
+  layout: AveryLayoutConfig,
+  options: VectorExportOptions = {}
+): Promise<LabelExportResult> {
+  if (!import.meta.env.VITE_SUPABASE_URL) {
+    return { 
+      success: false, 
+      error: 'Supabase URL not configured' 
+    };
+  }
+
+  try {
+    console.log(`[VectorExport] Exporting ${scene.pages.length} labels for imposition (CMYK: ${options.cmyk})`);
+    
+    const response = await fetch(`${EDGE_FUNCTION_BASE}/export-labels`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        scene,
+        layout,
+        options: {
+          cmyk: options.cmyk ?? false,
+          title: options.title ?? 'Labels Export',
+          bleed: options.bleed,
+          cropMarks: options.cropMarks,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error: errorData.error || `Service returned ${response.status}`,
+      };
+    }
+
+    const blob = await response.blob();
+    const labelCount = parseInt(response.headers.get('X-Label-Count') || '0', 10) || scene.pages.length;
+    
+    console.log(`[VectorExport] Label export received: ${blob.size} bytes, ${labelCount} labels`);
+    
+    return { 
+      success: true, 
+      blob,
+      labelCount,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network error';
+    console.error('[VectorExport] Label export failed:', error);
+    return { success: false, error: message };
   }
 }
 
@@ -152,6 +323,8 @@ export async function exportVectorPdf(
 
 /**
  * Batch export multiple scenes to vector PDFs via the VPS.
+ * 
+ * @deprecated Use exportMultiPagePdf() for better vector fidelity
  * 
  * Uses the /batch-render-vector endpoint which leverages @polotno/pdf-export
  * to produce true vector PDFs with optional CMYK conversion.

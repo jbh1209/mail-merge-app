@@ -23,6 +23,135 @@ Deno.serve(async (req) => {
 
   try {
     // ==========================================================================
+    // EXPORT MULTI-PAGE (New primary endpoint for full-page exports)
+    // ==========================================================================
+    if (path === 'export-multipage') {
+      console.log('[render-vector-pdf] Multi-page export request');
+      
+      const body = await req.json();
+      
+      const vpsResponse = await fetch(`${SERVICE_URL}/export-multipage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!vpsResponse.ok) {
+        const errorText = await vpsResponse.text();
+        console.error('[render-vector-pdf] VPS export-multipage failed:', vpsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `VPS error: ${vpsResponse.status}`, details: errorText }),
+          { status: vpsResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const pdfBuffer = await vpsResponse.arrayBuffer();
+      const pageCount = vpsResponse.headers.get('X-Page-Count') || 'unknown';
+      const renderTime = vpsResponse.headers.get('X-Render-Time-Ms') || 'unknown';
+      
+      console.log(`[render-vector-pdf] Multi-page export successful: ${pdfBuffer.byteLength} bytes, ${pageCount} pages in ${renderTime}ms`);
+      
+      return new Response(pdfBuffer, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/pdf',
+          'Content-Length': pdfBuffer.byteLength.toString(),
+          'X-Page-Count': pageCount,
+          'X-Render-Time-Ms': renderTime,
+        },
+      });
+    }
+
+    // ==========================================================================
+    // EXPORT LABELS (New endpoint for label imposition)
+    // ==========================================================================
+    if (path === 'export-labels') {
+      console.log('[render-vector-pdf] Label export request');
+      
+      const body = await req.json();
+      
+      const vpsResponse = await fetch(`${SERVICE_URL}/export-labels`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!vpsResponse.ok) {
+        const errorText = await vpsResponse.text();
+        console.error('[render-vector-pdf] VPS export-labels failed:', vpsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `VPS error: ${vpsResponse.status}`, details: errorText }),
+          { status: vpsResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const pdfBuffer = await vpsResponse.arrayBuffer();
+      const labelCount = vpsResponse.headers.get('X-Label-Count') || 'unknown';
+      const renderTime = vpsResponse.headers.get('X-Render-Time-Ms') || 'unknown';
+      
+      console.log(`[render-vector-pdf] Label export successful: ${pdfBuffer.byteLength} bytes, ${labelCount} labels in ${renderTime}ms`);
+      
+      return new Response(pdfBuffer, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/pdf',
+          'Content-Length': pdfBuffer.byteLength.toString(),
+          'X-Label-Count': labelCount,
+          'X-Render-Time-Ms': renderTime,
+        },
+      });
+    }
+
+    // ==========================================================================
+    // COMPOSE PDFs (Merge multiple PDFs preserving vectors)
+    // ==========================================================================
+    if (path === 'compose-pdfs') {
+      console.log('[render-vector-pdf] Compose PDFs request');
+      
+      const body = await req.json();
+      
+      const vpsResponse = await fetch(`${SERVICE_URL}/compose-pdfs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_SECRET,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!vpsResponse.ok) {
+        const errorText = await vpsResponse.text();
+        console.error('[render-vector-pdf] VPS compose-pdfs failed:', vpsResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ error: `VPS error: ${vpsResponse.status}`, details: errorText }),
+          { status: vpsResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const pdfBuffer = await vpsResponse.arrayBuffer();
+      const composeTime = vpsResponse.headers.get('X-Compose-Time-Ms') || 'unknown';
+      const pageCount = vpsResponse.headers.get('X-Page-Count') || 'unknown';
+      
+      console.log(`[render-vector-pdf] Compose successful: ${pdfBuffer.byteLength} bytes, ${pageCount} pages in ${composeTime}ms`);
+      
+      return new Response(pdfBuffer, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/pdf',
+          'Content-Length': pdfBuffer.byteLength.toString(),
+          'X-Page-Count': pageCount,
+          'X-Compose-Time-Ms': composeTime,
+        },
+      });
+    }
+
+    // ==========================================================================
     // RENDER VECTOR (Primary endpoint - uses @polotno/pdf-export on VPS)
     // ==========================================================================
     if (path === 'render-vector') {
@@ -135,7 +264,7 @@ Deno.serve(async (req) => {
     }
 
     // ==========================================================================
-    // CMYK CONVERSION (New primary endpoint)
+    // CMYK CONVERSION (Standalone endpoint)
     // ==========================================================================
     if (path === 'convert-cmyk') {
       console.log('[render-vector-pdf] CMYK conversion request');
@@ -297,7 +426,10 @@ Deno.serve(async (req) => {
 
     // Unknown endpoint
     return new Response(
-      JSON.stringify({ error: 'Unknown endpoint. Use /health, /convert-cmyk, /batch-convert-cmyk, /render, or /batch-render' }),
+      JSON.stringify({ 
+        error: 'Unknown endpoint', 
+        available: ['/health', '/export-multipage', '/export-labels', '/compose-pdfs', '/render-vector', '/batch-render-vector', '/convert-cmyk'] 
+      }),
       { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

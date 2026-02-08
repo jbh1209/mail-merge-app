@@ -46,12 +46,9 @@ export interface SanitizationResult {
 /** Maximum number of issues to track (prevents memory bloat on severely corrupted scenes) */
 const MAX_TRACKED_ISSUES = 50;
 
-/** Default replacement value for invalid numbers */
-const DEFAULT_REPLACEMENT = 0;
-
 /** 
  * Keys that are expected to be numeric in Polotno scene objects.
- * When these keys have null values, they should be replaced with 0.
+ * When these keys have null values, they should be replaced with schema-aware defaults.
  * This handles cases where JSON.stringify converts NaN → null.
  */
 const NUMERIC_KEYS = new Set([
@@ -61,6 +58,58 @@ const NUMERIC_KEYS = new Set([
   'skewX', 'skewY', 'shadowOffsetX', 'shadowOffsetY', 'shadowBlur',
   'borderSize', 'padding', 'blurRadius', 'angle', 'brightness', 'contrast',
 ]);
+
+/**
+ * Schema-aware replacement values for invalid numbers.
+ * These defaults are chosen to be safe for PDF rendering (NOT blanket 0).
+ */
+const SCHEMA_DEFAULTS: Record<string, number> = {
+  // Critical: dpi=0 causes division by zero in PDF rendering
+  dpi: 300,
+  // Visibility: opacity=0 makes elements invisible
+  opacity: 1,
+  // Scale: scale=0 makes elements invisible
+  scaleX: 1,
+  scaleY: 1,
+  // Typography
+  lineHeight: 1.2,
+  letterSpacing: 0,
+  fontSize: 12,
+  // Stroke
+  strokeWidth: 1,
+  // Transform (safe to be 0)
+  rotation: 0,
+  skewX: 0,
+  skewY: 0,
+  x: 0,
+  y: 0,
+  // Geometry (safe to be 0 for elements, but root-level is validated separately)
+  width: 0,
+  height: 0,
+  // Other
+  bleed: 0,
+  cropX: 0,
+  cropY: 0,
+  cropWidth: 0,
+  cropHeight: 0,
+  cornerRadius: 0,
+  shadowOffsetX: 0,
+  shadowOffsetY: 0,
+  shadowBlur: 0,
+  borderSize: 0,
+  padding: 0,
+  blurRadius: 0,
+  angle: 0,
+  brightness: 0,
+  contrast: 0,
+};
+
+/**
+ * Get the safe replacement value for a given key
+ */
+function getReplacementForKey(key: string): number {
+  return SCHEMA_DEFAULTS[key] ?? 0;
+}
 
 // =============================================================================
 // CORE SANITIZATION LOGIC
@@ -77,17 +126,18 @@ function deepSanitize(
   issues: SanitizationIssue[],
   parentKey?: string
 ): unknown {
-  // Handle null - check if this is a numeric key that should default to 0
+  // Handle null - check if this is a numeric key that should get a schema-aware default
   if (obj === null) {
     if (parentKey && NUMERIC_KEYS.has(parentKey)) {
+      const replacement = getReplacementForKey(parentKey);
       if (issues.length < MAX_TRACKED_ISSUES) {
         issues.push({
           path,
           originalValue: null,
-          replacedWith: DEFAULT_REPLACEMENT,
+          replacedWith: replacement,
         });
       }
-      return DEFAULT_REPLACEMENT;
+      return replacement;
     }
     return obj;
   }
@@ -100,15 +150,17 @@ function deepSanitize(
   // Check if it's a number that needs fixing
   if (typeof obj === 'number') {
     if (!Number.isFinite(obj)) {
+      // Use schema-aware replacement based on the key
+      const replacement = parentKey ? getReplacementForKey(parentKey) : 0;
       // Track the issue (up to the limit)
       if (issues.length < MAX_TRACKED_ISSUES) {
         issues.push({
           path,
           originalValue: obj,
-          replacedWith: DEFAULT_REPLACEMENT,
+          replacedWith: replacement,
         });
       }
-      return DEFAULT_REPLACEMENT;
+      return replacement;
     }
     return obj;
   }

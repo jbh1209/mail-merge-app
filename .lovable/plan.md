@@ -1,154 +1,120 @@
 
-## What’s actually happening (and why it still fails)
 
-The VPS error `"unsupported number: NaN"` is being thrown inside `@polotno/pdf-export` while writing the PDF. That means **some numeric value in the scene is still ending up as NaN at render-time**, even after our client-side sanitization.
+# Simplified Professional Print Pipeline
 
-From code inspection, there’s a high-probability culprit:
+## The Problem (and why we kept going in circles)
 
-- `src/lib/polotno/vdpResolver.ts` copies **root-level geometry** from the “current scene” into the merged/base scene without validation:
+The deployed VPS server (`tmp/vps/server.js`) calls `jsonToPDF` like this:
 
-  - `merged.width = currentScene.width;`
-  - `merged.height = currentScene.height;`
-  - `if (currentScene.dpi !== undefined) merged.dpi = currentScene.dpi;`
+```text
+await jsonToPDF(scene, outputPath, {
+  pdfx1a: options.cmyk,   // <-- triggers internal Ghostscript, crashes on edge-case values
+  title: options.title,
+});
+```
 
-If `currentScene.width/height/dpi` are `null` (or some invalid non-number) at any point, they get propagated into the final multi-page scene we send to the VPS.
+Two problems:
+1. **`pdfx1a: true` causes the NaN crash** -- it triggers Polotno's internal Ghostscript/CMYK conversion which is fragile with certain scene values
+2. **`includeBleed` and `cropMarkSize` are never passed** -- Polotno natively supports bleed and crop marks, but the VPS isn't using those options
 
-Then the sanitizer currently does:
-- `width: null` → `0`
-- `height: null` → `0`
-- `dpi: null` → `0`
+Meanwhile, the `docs/VPS_SERVER_JS_COMPLETE.js` file already has the correct two-pass approach (Polotno for vectors, then separate Ghostscript for CMYK), but it was never deployed to the actual VPS.
 
-Those “fixed” values are **not safe defaults** for PDF rendering (especially `dpi=0`), and they can easily cause internal `px -> pt` conversions to produce Infinity/NaN.
+## The Fix: Simple, Two-Pass Pipeline
 
-So the system is doing what we told it to do (sanitize), but the **default replacement policy is wrong for critical root keys**, and `vdpResolver` is likely introducing the invalid root geometry in the first place.
+The approach is straightforward -- let each tool do what it's good at:
 
-## Goal
+```text
+Step 1: Polotno generates a vector PDF with bleed + crop marks (RGB)
+        jsonToPDF(scene, path, { includeBleed: true, cropMarkSize: 20 })
 
-Make the “Professional print output” pipeline robust and boring:
-1) Never allow invalid `scene.width/height/dpi` into the exported scene.
-2) Sanitize with **key-specific safe defaults** (especially for dpi/scale/opacity).
-3) Fail early with a clear, actionable error if the scene’s root geometry is still broken.
+Step 2: Ghostscript converts RGB to CMYK (preserving vectors)
+        gs -sDEVICE=pdfwrite -dColorConversionStrategy=/CMYK ...
+```
 
----
+No client-side crop mark injection. No scene JSON manipulation for marks. No `pdfx1a`. Just two clean steps.
 
-## Implementation approach (small, targeted, and debuggable)
+## What Changes
 
-### A) Fix the source: validate root-level geometry propagation (vdpResolver)
+### 1. Update VPS Server (`tmp/vps/server.js`)
 
-**File:** `src/lib/polotno/vdpResolver.ts`
+Replace the `/export-multipage` endpoint:
 
-In `mergeLayoutToBase(...)`, change root transfers to:
+**Before:**
+```javascript
+await jsonToPDF(scene, outputPath, {
+  pdfx1a: options.cmyk,
+  title: options.title || 'MergeKit Export',
+});
+```
 
-- Only copy `width/height` if they are finite and > 0.
-- Only copy `dpi` if finite and > 0 (and likely clamp to a sane range, e.g. 72–1200).
-- Only copy `unit` if it’s one of the allowed values (`'mm' | 'cm' | 'in' | 'pt' | 'px'`).
-- If invalid, **keep the base/merged values** (do not overwrite).
+**After:**
+```javascript
+// PASS 1: Vector PDF with native bleed + crop marks (RGB)
+await jsonToPDF(scene, vectorPath, {
+  title: options.title || 'MergeKit Export',
+  includeBleed: true,
+  cropMarkSize: bleedPx > 0 ? 20 : 0,
+  // NO pdfx1a -- we handle CMYK separately
+});
 
-This prevents “bad root geometry” from ever reaching export.
+// PASS 2: CMYK conversion via Ghostscript (only if requested)
+if (wantCmyk) {
+  await execAsync(`gs -q -dNOPAUSE -dBATCH -dSAFER \
+    -sDEVICE=pdfwrite \
+    -dColorConversionStrategy=/CMYK \
+    -dProcessColorModel=/DeviceCMYK \
+    -dPreserveHalftoneInfo=true \
+    -dPreserveOverprintSettings=true \
+    -sOutputICCProfile="${iccProfile}" \
+    -sOutputFile="${cmykPath}" \
+    "${vectorPath}"`);
+}
+```
 
-**Why this matters:** even a single record/preview scene with a transient invalid root dimension can poison the merged scene and crash the VPS.
+This is essentially what `docs/VPS_SERVER_JS_COMPLETE.js` already does but with Polotno's native bleed/crop mark support added.
 
----
+### 2. Simplify Client Code (`src/lib/polotno/pdfBatchExporter.ts`)
 
-### B) Fix the sanitizer defaults: schema-aware replacements
+Remove all client-side crop mark injection logic for the professional export path. The VPS handles everything. The client just needs to:
+- Build the combined multi-page scene (already working)
+- Send it with `bleed` value and `cropMarks: true`
+- The VPS does the rest
 
-**File:** `src/lib/polotno/sceneSanitizer.ts`
+Remove:
+- `injectClientCropMarksIfNeeded` calls for professional export
+- `sendCropMarksToVps = false` override
+- Complex crop mark element generation in the JSON
 
-Update sanitization to replace invalid values with **correct defaults per key**, not a blanket `0`.
+### 3. Pass Bleed Value Properly
 
-Proposed defaults:
-- `dpi`: **300** (never 0)
-- `opacity`: **1**
-- `scaleX`, `scaleY`: **1**
-- `lineHeight`: **1.2** (or 1)
-- `strokeWidth`: **1** (or 0.75 if you prefer)
-- `rotation`, `skewX`, `skewY`, `x`, `y`: **0**
-- `width`, `height`: **0** is acceptable for *some* elements, but **root-level scene.width/scene.height must be > 0**, so we should not rely on sanitizer to “fix” root geometry—validate it separately (next step).
+The client sends `bleedMm` in the options. The VPS converts mm to pixels and sets `bleed` on each page before calling `jsonToPDF`. Each page in the scene needs its `bleed` property set (in pixels) for Polotno to know the bleed size.
 
-Mechanics:
-- Replace `DEFAULT_REPLACEMENT` with a function like `getReplacement(parentKey, path)`:
-  - If `parentKey === 'dpi'` return 300
-  - If `parentKey === 'opacity'` return 1
-  - etc.
+### 4. Keep the Sanitizer (Safety Net)
 
-Also improve array handling so `parentKey` can be threaded into nested objects consistently (it’s fine as-is, but the replacements should be more correct).
+The scene sanitizer stays as a safety net but is no longer the primary defense. With `pdfx1a` removed, the NaN-sensitive Ghostscript path inside Polotno is bypassed entirely. The separate Ghostscript call for CMYK conversion is much more robust.
 
----
+## Files to Change
 
-### C) Add a hard “export preflight assert” for root geometry (fail fast, clear error)
+1. **`tmp/vps/server.js`** -- Update `/export-multipage` to two-pass (Polotno with `includeBleed` + `cropMarkSize`, then Ghostscript for CMYK). This file needs to be redeployed to the VPS manually.
 
-**File:** `src/lib/polotno/pdfBatchExporter.ts`
+2. **`src/lib/polotno/pdfBatchExporter.ts`** -- Remove client-side crop mark injection for professional path. Send `cropMarks: true` and `bleed: bleedMm` to VPS.
 
-Right before calling `exportMultiPagePdf` / `exportLabelsWithImposition`, validate:
+3. **`src/lib/polotno/vectorPdfExporter.ts`** -- Pass `cropMarks` and `bleed` through to the edge function cleanly.
 
-- `scene.width` finite and > 0
-- `scene.height` finite and > 0
-- `scene.dpi` finite and > 0 (if missing, set 300 before export; if invalid, set 300 or error)
+4. **`supabase/functions/render-vector-pdf/index.ts`** -- Ensure the edge function proxy passes `bleed` and `cropMarks` to the VPS unchanged.
 
-If invalid, stop export with a message like:
-- “Export failed before sending to render service: invalid document dimensions (width/height/dpi). Please refresh the editor and try again.”
+## Why This Will Work
 
-Also log a compact “root geometry snapshot”:
-- width, height, dpi, unit, pages count
-- first page’s child count
+- Polotno's own `includeBleed` and `cropMarkSize` are battle-tested -- it's the same code path used by thousands of Polotno users for print exports
+- Removing `pdfx1a` eliminates the fragile internal Ghostscript call that causes NaN crashes
+- The separate Ghostscript CMYK pass uses well-known flags that preserve vectors
+- No more injecting synthetic "line" elements into the JSON scene -- Polotno draws the crop marks itself as part of the PDF rendering
 
-This makes the next failure actionable immediately without guessing.
+## Verification
 
----
+1. Deploy updated `server.js` to VPS
+2. Hard refresh the app
+3. Export with Professional print output ON, CMYK selected
+4. Result: vector PDF with bleed, crop marks, and CMYK color space
+5. Verify in Adobe Acrobat: Output Preview shows CMYK, crop marks visible outside trim area
 
-### D) Keep the “safeBleed” and `cropMarks` handling consistent
-
-You already added `safeBleed` and `cropMarks ?? false` in the exporter. As part of this pass we’ll ensure:
-
-- Professional export always uses:
-  - `bleed: safeBleed` (finite number)
-  - `cropMarks: false` (since client injects marks when enabled OR we bypass VPS crop mark logic)
-
-If the UI toggle says “Include 3mm bleed + crop marks”, we should:
-- Inject client marks when enabled
-- Still send `cropMarks: false` to VPS to avoid server-side injection paths
-
-(From your screenshot the call is `/export-multipage`, and VPS is crashing inside `jsonToPDF`, so keeping the VPS option surface minimal is still good.)
-
----
-
-## Files that will be changed
-
-1) `src/lib/polotno/vdpResolver.ts`
-   - Guard root geometry propagation in `mergeLayoutToBase`.
-
-2) `src/lib/polotno/sceneSanitizer.ts`
-   - Implement key-specific replacements (especially `dpi`, `opacity`, `scaleX/Y`).
-
-3) `src/lib/polotno/pdfBatchExporter.ts`
-   - Add export-time “root geometry preflight assert”
-   - Ensure `cropMarks` is never sent as `true` to VPS for professional path (client is source of truth)
-   - Keep the existing `safeBleed` coercion
-
----
-
-## Verification procedure (what we should see after this)
-
-1) In Preview app, hard refresh.
-2) Run “Generate PDFs” with:
-   - Professional print output: ON
-   - Color mode: CMYK
-3) If it fails:
-   - The UI should now show a clear *preflight* error if root geometry is invalid (instead of a mysterious VPS NaN).
-4) If it succeeds:
-   - The VPS call `/export-multipage` should return 200.
-   - The resulting PDF should include bleed/crops (via client-injected marks) and CMYK mode.
-
----
-
-## Why this should finally stop the NaN loop
-
-- Right now the pipeline can “successfully sanitize” a broken dpi/width/height into values that still break rendering (notably `dpi=0`).
-- By preventing invalid root geometry from being written (vdpResolver) and using sane replacements (sanitizer), we remove the major class of NaN-producing math at the rendering layer.
-- By asserting root geometry right before export, we prevent silent corruption from ever reaching the VPS again.
-
----
-
-## One critical unknown (we’ll handle without extra back-and-forth)
-
-We don’t currently know *why* `currentScene.width/height/dpi` is becoming `null`/invalid—however, the above changes make that irrelevant for reliability, and the new logs will tell us exactly when it happens so we can optionally trace it later without blocking exports.

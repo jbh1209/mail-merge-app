@@ -27,14 +27,16 @@ const EDGE_FUNCTION_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/re
 // =============================================================================
 
 export interface VectorExportOptions {
-  /** Enable CMYK conversion via PDF/X-1a (native in @polotno/pdf-export) */
+  /** Enable CMYK conversion via separate Ghostscript pass (two-pass pipeline) */
   cmyk?: boolean;
   /** Document title for PDF metadata */
   title?: string;
-  /** Enable bleed extension */
+  /** Bleed in mm — VPS converts to px and uses Polotno's native includeBleed */
   bleed?: number;
-  /** Enable crop marks */
+  /** Enable native Polotno crop marks (drawn by Polotno, not injected into JSON) */
   cropMarks?: boolean;
+  /** ICC profile: 'gracol' (US) or 'fogra39' (EU) */
+  iccProfile?: string;
 }
 
 export interface VectorExportResult {
@@ -181,6 +183,7 @@ export async function exportMultiPagePdf(
           title: options.title ?? 'MergeKit Export',
           bleed: Number.isFinite(options.bleed) ? options.bleed : 0,
           cropMarks: options.cropMarks ?? false,
+          iccProfile: options.iccProfile,
         },
       }),
     });
@@ -283,6 +286,7 @@ export async function exportLabelsWithImposition(
           title: options.title ?? 'Labels Export',
           bleed: Number.isFinite(options.bleed) ? options.bleed : 0,
           cropMarks: options.cropMarks ?? false,
+          iccProfile: options.iccProfile,
         },
       }),
     });

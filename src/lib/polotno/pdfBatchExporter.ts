@@ -531,13 +531,11 @@ export async function batchExportWithPolotno(
         onProgress
       );
 
-      // Optional: inject crop marks client-side and avoid VPS crop-mark code path
-      const sceneWithMarks = injectClientCropMarksIfNeeded(combinedSceneRaw, printConfig);
-      
-      // ALWAYS send cropMarks: false to VPS - client handles all marks now
-      // The deployed VPS doesn't have proper crop mark support and crashes on malformed scenes
-      const sendCropMarksToVps = false;
-      console.log('[PolotnoExport] 🔧 cropMarks sent to VPS: false (client handles marks)');
+      // TWO-PASS PIPELINE: VPS handles bleed + crop marks natively via Polotno,
+      // then converts to CMYK via Ghostscript. No client-side crop mark injection needed.
+      const sceneWithMarks = combinedSceneRaw; // No client-side mark injection
+      const sendCropMarksToVps = printConfig?.enablePrintMarks === true;
+      console.log(`[PolotnoExport] 🔧 Two-pass pipeline: cropMarks=${sendCropMarksToVps}, bleed=${printConfig?.bleedMm ?? 0}mm`);
 
       // Step 1.5: Run preflight sanitization to catch NaN/Infinity values
       onProgress({
@@ -627,11 +625,13 @@ export async function batchExportWithPolotno(
         // Full-page export: Single multi-page PDF
         // Coerce bleed to 0 if not a finite number to prevent VPS NaN errors
         const safeBleed = Number.isFinite(printConfig?.bleedMm) ? printConfig.bleedMm : 0;
+        const iccProfile = printConfig?.region === 'us' ? 'gracol' : 'fogra39';
         const result = await exportMultiPagePdf(combinedScene, {
           cmyk: true,
           title: 'MergeKit Export',
           bleed: safeBleed,
           cropMarks: sendCropMarksToVps,
+          iccProfile,
         });
 
         if (!result.success || !result.blob) {
@@ -648,6 +648,7 @@ export async function batchExportWithPolotno(
         // Label export: VPS handles imposition
         // Coerce bleed to 0 if not a finite number to prevent VPS NaN errors
         const safeBleed = Number.isFinite(printConfig?.bleedMm) ? printConfig.bleedMm : 0;
+        const iccProfile = printConfig?.region === 'us' ? 'gracol' : 'fogra39';
         const result = await exportLabelsWithImposition(
           combinedScene,
           layout as VectorAveryLayout,
@@ -656,6 +657,7 @@ export async function batchExportWithPolotno(
             title: 'Labels Export',
             bleed: safeBleed,
             cropMarks: sendCropMarksToVps,
+            iccProfile,
           }
         );
 
